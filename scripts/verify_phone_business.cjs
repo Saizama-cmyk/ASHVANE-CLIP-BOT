@@ -19,7 +19,7 @@ const assert = require('node:assert/strict');
    await route.fulfill({status:200,contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'},body:JSON.stringify(data)});
   });
   await page.route('https://api.github.com/**',route=>route.fulfill({json:{}}));
-  await page.goto('http://127.0.0.1:8139');
+  await page.goto(process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8139');
 
   await page.getByRole('button',{name:/Hollow.*Scary stories/}).click();
   await page.getByRole('tab',{name:'Create',exact:true}).waitFor();

@@ -202,6 +202,16 @@ class StoryStudio:
         if self.busy:
             self.cancel(self._active_id)
             await asyncio.gather(self._task, return_exceptions=True)
+        # Cancellation before the coroutine's first turn cannot execute its finally.
+        # Persist the interrupted draft explicitly so it survives a later relaunch.
+        for project in self.projects:
+            if project.get("status") in ACTIVE:
+                project.update(status="interrupted", error="Hollow stopped. Your saved story is still available.")
+                for agent in project.get("agents", []):
+                    if agent.get("status") in {"idle", "running"}:
+                        agent.update(status="skipped", detail=project["error"])
+                self._persist_job(project)
+        self._active_id = ""
 
     def _capabilities(self) -> dict:
         if self.capabilities is not None:
@@ -241,6 +251,8 @@ class StoryStudio:
             return None
 
     def _available(self) -> None:
+        if not self.settings.businesses.hollow_enabled:
+            raise StoryBusy("Hollow is stopped. Start it from the business switcher")
         if self._closed:
             raise StoryBusy("Story production is shutting down")
         if not self.settings.stories.enabled:

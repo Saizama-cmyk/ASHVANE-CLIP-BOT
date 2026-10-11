@@ -441,7 +441,9 @@ def test_research_api_guards_validation_and_delete(tmp_path):
         s, calls = settings(), []
         async with httpx.AsyncClient(transport=transport_for(replies(s), calls)) as model_http:
             engine = studio(tmp_path, model_http, s)
-            ctx = SimpleNamespace(settings=s, paths=SimpleNamespace(data=tmp_path), pipeline=SimpleNamespace(research=engine))
+            ctx = SimpleNamespace(settings=s, paths=SimpleNamespace(data=tmp_path), pipeline=SimpleNamespace(
+                research=engine, business_enabled=lambda business: True, _business_transition=set(),
+                _business_requests={"clips": {}, "stories": {}}))
             app = create_app(ctx)
             base = f"http://127.0.0.1:{s.dashboard.port}"
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=base) as client:

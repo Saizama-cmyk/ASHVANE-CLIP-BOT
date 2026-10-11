@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Easing, StyleSheet, View } from "react-native";
 import { C } from "./theme";
 
-// A single spatial transition when crossing the Stories boundary. It animates the live shell,
+// A single spatial transition when crossing between businesses. It animates the live shell,
 // including its header and tabs. No screenshots, persistent animation loop or hidden content.
-const businessFor = tab => tab === "stories" || tab.startsWith("story-") ? "stories" : ["tools", "chat", "code"].includes(tab) ? null : "clips";
+const businessFor = tab => ["tools", "chat", "code"].includes(tab) ? null : tab === "stories" || tab.startsWith("story-") ? "stories" : tab === "music" || tab.startsWith("music-") ? "music" : tab === "social" || tab.startsWith("social-") ? "social" : "clips";
 
 export function usePortal(initial = "desk") {
   const [tab, setTab] = useState(initial);

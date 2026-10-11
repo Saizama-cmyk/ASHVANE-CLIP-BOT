@@ -1,8 +1,9 @@
 # Ashvane — workspace guide
 
 Free, local, open-source (AGPL-3.0) business dashboard for Windows and phone. Ashvane is
-the parent; **Surge** is its streamer-clipping business and **Hollow** is its original
-scary-story business. The switcher beside the Ashvane name changes the whole business
+the parent; **Surge** handles streamer clips, **Hollow** handles original scary stories,
+**Resonance** handles music, and **Social Studio** handles client social content.
+The switcher beside the Ashvane name changes the whole business
 workspace. See `docs/BUSINESSES.md` for boundaries and connection storage.
 
 Surge watches Twitch/Kick, detects moments, cuts/transcribes/judges/edits vertical clips
@@ -13,9 +14,12 @@ publishes through its own accounts and queue.
 ## Rules
 - Add another business only when the owner explicitly asks. Apply future updates to the
   business the owner names. Do not add unrelated ventures or dashboard features.
-- Keep Surge and Hollow destination credentials, queues and navigation separate. Shared
+- Keep all businesses' destination credentials, queues and navigation separate. Shared
   OAuth application registration is allowed; user/channel tokens must never be inherited.
-- $0: no paid APIs/services. Only local AI (Ollama, Whisper). ffmpeg does all editing.
+- $0: no paid APIs/services. Use existing local engines. Video editing uses ffmpeg;
+  the owner's explicit music requirement overrides this for Resonance: native REAPER
+  performs music edits and exports through the LocalSongLab adapter. Never claim a
+  native render or listening result unless it actually completed.
 - Python 3.12, deps limited to requirements.txt (+ nvidia cuBLAS/cuDNN wheels for GPU Whisper).
 - Async everywhere; `logging.getLogger("clipbot.<module>")`; never swallow exceptions; kill every
   child process on shutdown.
@@ -32,3 +36,6 @@ publishers/, analytics, clip_import, pets, syslog, updater, ollama_setup, deskto
 dashboard/ (FastAPI + static UI, pet.html). installer/: Inno Setup full + web installer, release.
 Hollow: stories.py, story_render.py, story_art.py, story_voice.py, story_publishing.py,
 story_api.py. Business navigation: dashboard/static/business.js and business.css.
+Resonance: music_api.py, music_producer.py, integrations/localsonglab. Social Studio:
+social_api.py. Independent engine controls: business_runtime.py. Research evidence:
+docs/MUSIC_PRODUCTION_RESEARCH.md and docs/music-production-ledger.json.

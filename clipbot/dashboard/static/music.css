@@ -1,0 +1,53 @@
+/* SUBJECT: Resonance turns this owner's local YuE2 takes into editable REAPER music.
+   GROUND: the observatory's listening desk: source take, production direction, versions.
+   PALETTE: blue-biased void #070A10, hull #111925, recess #0B121D,
+   telemetry #98A9BA, ink #DFE8ED, amber action #DAA66B; existing Ashvane tokens.
+   TYPE: Bahnschrift headings identify sessions; Segoe UI text keeps controls legible;
+   Consolas time/tempo provides aligned production measurements.
+   SPACE: within controls 8/12px; session regions 24/32px. SHAPE: 8px, tonal elevation.
+   MOTION: two moments: 100ms press receipt and existing business portal; no fake meters.
+   SIGNATURE: source audition alongside exported versions, so changes can be heard.
+   CRITIQUE: a generic music dashboard inherits decorative waveforms and album tiles.
+   Replaced those with real audio controls and a source-to-version listening path.
+   Shared palette/type are deliberately retained because this is one Ashvane shell. */
+#musicNav[hidden],.music-workspace [hidden]{display:none!important}
+body.music-mode .rail-foot .status,body.music-mode #pauseBtn{display:none!important}
+.music-workspace{min-width:0;--music-recess:#0B121D}
+.music-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:24px}
+.music-intro h2{font:500 28px/1.2 var(--head);margin:0 0 8px;letter-spacing:-.015em}
+.music-intro p{color:var(--muted);font-size:13px;line-height:1.6;margin:0;max-width:64ch}
+.music-engine{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:16px 20px;background:var(--plate-2);border-radius:8px;margin-bottom:24px}
+.music-engine p{flex:1;min-width:160px;margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.music-engine strong{color:var(--text);display:block;font-weight:500}
+.music-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:24px;align-items:start}
+.music-panel{background:var(--plate);border-radius:8px;padding:24px;min-width:0}
+.music-panel h3{font:500 20px/1.25 var(--head);margin:0 0 16px}
+.music-panel p,.music-help{font-size:13px;line-height:1.65;color:var(--muted);max-width:70ch}
+.music-field{display:grid;gap:8px;margin-bottom:18px;min-width:0}
+.music-field label,.music-field legend{font-size:13px;color:var(--text)}
+.music-field input,.music-field select,.music-field textarea{width:100%;min-width:0;min-height:42px;padding:10px 12px;font:14px/1.5 var(--body)}
+.music-field textarea{resize:vertical}.music-field .music-help{margin:0;font-size:12px}
+.music-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px}
+.music-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px}
+.music-actions .btn{white-space:normal;text-align:center;line-height:1.4}
+.music-status{margin:16px 0 0!important;overflow-wrap:anywhere;color:var(--muted);font-size:13px;line-height:1.6}
+.music-status.error,.music-workspace .error{color:var(--reject)}
+.music-job{background:var(--plate-2);border-radius:8px;padding:16px;margin-top:20px}
+.music-job strong{font-size:14px;font-weight:500}.music-job p{margin:8px 0 0}
+.music-audition{border-left:2px solid var(--molten);padding-left:18px;margin:24px 0}
+.music-audition h3{margin-bottom:8px}.music-audition audio,.music-version audio{width:100%;margin:12px 0;display:block}
+.music-source-title{overflow-wrap:anywhere}.music-source-meta{white-space:pre-wrap;overflow-wrap:anywhere}
+.music-list{display:grid;gap:8px;margin-top:16px}.music-take{display:block;width:100%;text-align:left;border:1px solid transparent;border-radius:8px;background:var(--music-recess);color:var(--text);padding:14px 16px;cursor:pointer}
+.music-take b{display:block;font-size:14px;font-weight:500;overflow-wrap:anywhere}.music-take small{display:block;color:var(--muted);font-size:12px;line-height:1.5;margin-top:5px;overflow-wrap:anywhere}
+.music-take:hover{background:var(--plate-2)}.music-take[aria-pressed=true]{background:var(--plate-3);border-color:var(--molten)}
+.music-take:active{background:var(--line-2)}.music-workspace :is(button,a,input,select,textarea,summary):focus-visible{outline:2px solid var(--molten);outline-offset:3px}
+.music-workspace .btn:disabled{background:var(--plate-3);color:var(--muted);cursor:not-allowed;transform:none}.music-workspace .btn:disabled:hover{background:var(--plate-3)}
+.music-workspace :is(input,textarea)::selection{background:var(--line-2);color:var(--text)}.music-workspace{caret-color:var(--molten);scrollbar-color:var(--line-2) var(--base)}
+.music-workspace a{text-underline-offset:3px}.music-workspace details{margin-top:20px}.music-workspace summary{cursor:pointer;font-size:13px;padding:8px 0;color:var(--muted)}
+.music-workspace details[open] summary{margin-bottom:12px}.music-check{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.6;margin:8px 0}.music-check input{margin-top:4px;accent-color:var(--molten)}
+.music-versions{display:grid;gap:12px;margin-top:20px}.music-version{padding:16px;background:var(--music-recess);border-radius:8px;overflow-wrap:anywhere}.music-version h4{font:500 16px var(--head);margin:0}.music-version p{margin:8px 0}.music-version .btn{display:inline-flex;margin-top:4px}
+.music-numbers{font-family:var(--mono);font-variant-numeric:tabular-nums}.music-empty{padding:16px 0}.music-empty p{margin:8px 0}
+.music-settings .fields{padding:0;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))}.music-settings .field{min-width:0}.music-settings input{max-width:100%}
+.music-pattern{margin:16px 0;padding:12px;background:var(--music-recess);border-radius:8px}.music-pattern h4{margin:0 0 10px;font-size:13px;font-weight:500}.music-pattern-steps{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;margin-bottom:12px}.music-pattern-steps button{padding:8px 0;min-height:36px;border:1px solid var(--line-2);border-radius:4px;background:var(--plate);color:var(--muted);cursor:pointer;font:12px var(--mono)}.music-pattern-steps button[aria-pressed=true]{background:var(--molten);color:var(--base)}.music-pattern-steps button:hover{border-color:var(--molten)}.music-pattern-steps button:active{background:var(--line-2)}.music-pattern .music-field{margin-bottom:0}.music-pattern .music-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.music-source-meta{font-family:inherit;white-space:pre-wrap;max-width:100%;font-size:13px;line-height:1.65}
+@media(max-width:1000px){.music-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:640px){.music-intro{display:block;margin-bottom:20px}.music-intro h2{font-size:25px}.music-intro .btn{margin-top:14px}.music-engine{padding:16px;gap:10px;margin-bottom:20px}.music-panel{padding:20px 16px}.music-grid{gap:20px}.music-fields{grid-template-columns:minmax(0,1fr)}.music-field :is(input,select,textarea){font-size:16px}.music-actions .btn{min-height:44px}.music-audition{padding-left:12px}.music-panel h3{font-size:19px}}

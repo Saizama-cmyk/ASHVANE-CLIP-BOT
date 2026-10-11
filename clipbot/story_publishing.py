@@ -393,7 +393,8 @@ class StoryPublishing:
             self._publishing = False
 
     async def tick(self):
-        if self._tick_lock.locked() or not self.settings.stories.enabled:
+        if (self._tick_lock.locked() or not self.settings.stories.enabled
+                or not self.settings.businesses.hollow_enabled):
             return
         async with self._tick_lock:
             await self.initialize()

@@ -1,0 +1,147 @@
+{
+  "question": "Which production decisions help creator-specific AI music, and what can REAPER automation actually validate?",
+  "claims": [
+    {
+      "id": "C1",
+      "statement": "Reference comparison should account for loudness and preserve the creator's rough-mix intent.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://www.izotope.com/community/blog/13-tips-for-using-references-while-mixing",
+          "origin": "nick-messitte-practice",
+          "kind": "primary"
+        },
+        {
+          "url": "https://www.soundonsound.com/techniques/secrets-mix-engineers-tony-maserati",
+          "origin": "tony-maserati-interview",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "statement": "Groove involves intentional timing and velocity choices; random variation is not equivalent to musical feel.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://www.ableton.com/en/live-manual/12/using-grooves/",
+          "origin": "ableton-manual",
+          "kind": "primary"
+        },
+        {
+          "url": "https://www.soundonsound.com/techniques/programming-realistic-drum-parts",
+          "origin": "sos-drum-programming",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "statement": "REAPER exposes native project, track and FX operations through its ReaScript API.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://www.reaper.fm/sdk/reascript/reascript.php",
+          "origin": "reaper-docs",
+          "kind": "primary"
+        },
+        {
+          "url": "https://www.reaper.fm/sdk/reascript/reascripthelp.html",
+          "origin": "reaper-docs",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "statement": "In the cited source-separation listener study, metric relationships differed across stems.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://arxiv.org/html/2507.06917v3",
+          "origin": "separation-listener-study-2507-06917",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "statement": "SongBench proposes multidimensional expert assessment of generated songs.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://arxiv.org/html/2604.25937v1",
+          "origin": "songbench-2604-25937",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "statement": "Spotify normalization and EBU broadcast recommendations describe different destination contexts.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://support.spotify.com/us/artists/article/loudness-normalization/",
+          "origin": "spotify-policy",
+          "kind": "primary"
+        },
+        {
+          "url": "https://tech.ebu.ch/publications/r128",
+          "origin": "ebu-r128",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "statement": "Demucs documents automatic stem rescaling that can affect relative balance.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://github.com/facebookresearch/demucs",
+          "origin": "demucs-docs",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "statement": "YuE2 generation documentation distinguishes editable inputs, retained artifacts and generated audio.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://github.com/multimodal-art-projection/YuE/blob/main/docs/generation.md",
+          "origin": "yue2-docs",
+          "kind": "primary"
+        },
+        {
+          "url": "https://github.com/multimodal-art-projection/YuE/blob/main/skills/yue2-music/SKILL.md",
+          "origin": "yue2-docs",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "statement": "Kirwan reports retaining the original Hozier vocal while replacing backing.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [
+        {
+          "url": "https://www.soundonsound.com/techniques/inside-track-hozier-take-me-church",
+          "origin": "rob-kirwan-interview",
+          "kind": "primary"
+        }
+      ]
+    }
+  ]
+}

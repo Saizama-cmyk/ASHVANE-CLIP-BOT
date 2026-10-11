@@ -144,6 +144,12 @@ class ClipBotApp:
             if is_frozen():  # the installed exe owns the Run key; dev runs only touch it on toggle
                 self.sync_autostart()
             await self.pipeline.start()
+            if self.settings.businesses.resonance_enabled:
+                from .music_api import set_music_running
+                try:
+                    await set_music_running(self, True)
+                except Exception:
+                    logger.exception("Resonance startup needs attention")
             if self._server:
                 while not self._server.started and not server_task.done():
                     await asyncio.sleep(STARTUP_POLL_S)
@@ -163,6 +169,12 @@ class ClipBotApp:
                 self._server.should_exit = True
             if server_task:
                 await asyncio.gather(server_task, return_exceptions=True)
+            from .business_runtime import close_business_runtime
+            from .music_api import close_music
+            from .social_api import close_social
+            await close_business_runtime(self)
+            await close_social(self)
+            await close_music(self)
             await self.pipeline.stop()
             self.stopped.set()
             logger.info("%s stopped", APP_NAME)

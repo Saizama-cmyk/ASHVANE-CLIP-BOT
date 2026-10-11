@@ -1,5 +1,5 @@
 /**
- * Ashvane on the phone: Clips and Stories, with shared optional tools.
+ * Ashvane on the phone: four independently controlled businesses and shared tools.
  *
  *   Desk       the clip desk on your PC, over your own Wi-Fi or Tailscale
  *   Stories    original narrated horror production and its own publishing controls
@@ -23,6 +23,8 @@ import Desk from "./Desk";
 import Research, { useResearch } from "./Research";
 import Stories, { useStories } from "./Stories";
 import StoryAccounts from "./StoryAccounts";
+import Music from "./Music";
+import Social from "./Social";
 import { PortalOverlay, usePortal } from "./Portal";
 import { Clips, Live, Log, SettingsTab, SignIn, Studio } from "./Remote";
 import { Button, C, Card, Icon, IconButton, Pill, t } from "./theme";
@@ -33,6 +35,12 @@ const RELEASE_API = "https://api.github.com/repos/Saizama-cmyk/ASHVANE-CLIP-BOT/
 const RELEASE_PAGE = "https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-latest";
 const CLIP_TABS = [["desk", "Desk", "albums"], ["research", "Research", "search"]];
 const STORY_TABS = [["stories", "Create", "moon"], ["story-library", "Library", "albums"], ["story-publishing", "Publishing", "send"], ["story-accounts", "Accounts", "people"], ["story-settings", "Settings", "settings"]];
+const MUSIC_TABS = [["music", "Create", "musical-notes"], ["music-library", "Library", "albums"], ["music-production", "Production", "options"], ["music-settings", "Settings", "settings"]];
+const SOCIAL_TABS = [["social", "Clients", "people"], ["social-content", "Content", "create"], ["social-calendar", "Calendar", "calendar"], ["social-assets", "Assets", "images"], ["social-profiles", "Profiles", "link"], ["social-settings", "Settings", "settings"]];
+const BUSINESS = [["clips", "Surge", "Streamer clips", CLIP_TABS], ["stories", "Hollow", "Scary stories", STORY_TABS], ["music", "Resonance", "Music production", MUSIC_TABS], ["social", "Social Studio", "Client content", SOCIAL_TABS]];
+const businessFor = key => BUSINESS.find(([, , , tabs]) => tabs.some(([tab]) => tab === key))?.[0];
+const isMusic = key => businessFor(key) === "music";
+const isSocial = key => businessFor(key) === "social";
 const isStory = key => key === "stories" || key.startsWith("story-");
 const DESK_TABS = [["today", "Today"], ["live", "Live"], ["clips", "Clips"], ["studio", "Studio"], ["settings", "Settings"], ["log", "Log"]];
 
@@ -66,23 +74,25 @@ function Main() {
   const portal = usePortal("desk");
   const { tab, navigate } = portal;
   const [business, setBusiness] = useState("clips");
-  const remembered = useRef({ clips: "desk", stories: "stories" });
+  const remembered = useRef({ clips: "desk", stories: "stories", music: "music", social: "social" });
+  const [businessStates, setBusinessStates] = useState([]), [businessError, setBusinessError] = useState(""), [runtimeBusy, setRuntimeBusy] = useState(false);
   const storyEdits = useRef(false);
   const onStoryDirty = useCallback(value => { storyEdits.current = value; }, []);
   const setTab = useCallback(next => {
     const go = () => {
-      if ([...CLIP_TABS, ...STORY_TABS].some(([key]) => key === next)) {
-        const target = isStory(next) ? "stories" : "clips";
+      if (businessFor(next)) {
+        const target = businessFor(next);
         remembered.current[target] = next; setBusiness(target);
       }
       navigate(next);
     };
-    if (isStory(tab) && next !== tab && storyEdits.current) {
+    const unmountsEditor = businessFor(next) !== businessFor(tab) || isStory(tab) || [tab, next].some(key => ["music-settings", "social-settings"].includes(key));
+    if (next !== tab && unmountsEditor && storyEdits.current) {
       if (Platform.OS === "web") {
-        if (globalThis.confirm("Leave without saving your story edits?")) { storyEdits.current = false; go(); }
+        if (globalThis.confirm("Leave without saving your workspace edits?")) { storyEdits.current = false; go(); }
         return;
       }
-      Alert.alert("Leave without saving?", "Your manuscript or scene edits have not been saved to the PC.", [
+      Alert.alert("Leave without saving?", "Your workspace edits have not been saved to the PC.", [
         { text: "Keep editing", style: "cancel" },
         { text: "Discard edits", style: "destructive", onPress: () => { storyEdits.current = false; go(); } },
       ]);
@@ -143,6 +153,32 @@ function Main() {
     return promise;
   }, [host, token, signOut, currentSession]);
 
+  const loadBusinesses = useCallback(async () => {
+    if (!host || !token) return;
+    const r = await call(host, "/api/businesses", { token });
+    if (r.status === 401) { await signOut(true); return; }
+    if (!r.ok) throw new Error(typeof r.data?.detail === "string" ? r.data.detail : "Business controls could not load. Pull down or retry.");
+    if (session.current !== currentSession) return;
+    setBusinessStates(r.data.businesses || []); setBusinessError("");
+  }, [host, token, currentSession, signOut]);
+  useEffect(() => { setBusinessStates([]); setBusinessError(""); }, [host, token]);
+  useEffect(() => {
+    if (!host || !token || !foreground || lock.locked) return;
+    let alive = true, timer;
+    const tick = async () => { try { await loadBusinesses(); } catch (e) { if (alive) setBusinessError(e.message); } if (alive) timer = setTimeout(tick, POLL_MS); };
+    tick(); return () => { alive = false; clearTimeout(timer); };
+  }, [host, token, foreground, lock.locked, loadBusinesses]);
+  const toggleBusiness = async () => {
+    const current = businessStates.find(row => row.id === business); if (!current || runtimeBusy) return;
+    setRuntimeBusy(true); setBusinessError("");
+    try {
+      const r = await call(host, `/api/businesses/${business}`, { token, method: "POST", body: { enabled: !current.enabled }, timeout: 65000 });
+      if (r.status === 401) { await signOut(true); return; }
+      if (!r.ok || r.data?.ok === false) throw new Error(r.data?.detail || "Business control failed. Retry.");
+      setBusinessStates(r.data.businesses || []);
+    } catch (e) { setBusinessError(e.message); } finally { setRuntimeBusy(false); }
+  };
+
   const research = useResearch({ host, token, active: foreground && !lock.locked && ["desk", "research"].includes(tab), onUnauthorized: signOut });
   const stories = useStories({ host, token, active: foreground && !lock.locked && isStory(tab), onUnauthorized: signOut });
 
@@ -175,8 +211,10 @@ function Main() {
 
   const linked = !!(host && token);
   const connection = !linked ? ["Not connected", "plain"] : offline ? ["Can't reach PC", "bad"] : !loaded ? ["Connecting", "plain"] : ["Connected", "good"];
-  const TABS = [...(business === "stories" ? STORY_TABS : CLIP_TABS), ["tools", "Tools", "grid"]];
-  const remoteTab = isStory(tab) || ["desk", "research"].includes(tab);
+  const selectedBusiness = BUSINESS.find(([id]) => id === business);
+  const runtime = businessStates.find(row => row.id === business);
+  const TABS = [...selectedBusiness[3], ["tools", "Tools", "grid"]];
+  const remoteTab = !!businessFor(tab);
   const title = tab === "chat" ? "Assistant" : tab === "code" ? "Code" : TABS.find(x => x[0] === tab)?.[1] || "Desk";
 
   return (
@@ -186,14 +224,16 @@ function Main() {
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 }}>
           <Image source={require("./assets/icon.png")} resizeMode="contain" style={{ width: 28, height: 28 }} />
-          <View style={{ flex: 1 }}><Text style={t.h2}>Ashvane</Text><Text style={t.faint}>{business === "stories" ? "Hollow" : "Surge"} · {title}</Text></View>
-          {remoteTab && <Pill label={isStory(tab) && linked ? (stories.error ? "Check connection" : stories.data ? "Connected" : "Connecting") : connection[0]} tone={isStory(tab) && linked ? (stories.error ? "bad" : stories.data ? "good" : "plain") : connection[1]} />}
+          <View style={{ flex: 1 }}><Text style={t.h2}>Ashvane</Text><Text style={t.faint}>{selectedBusiness[1]} · {title}</Text></View>
+          {remoteTab && <Pill label={!linked ? "Not connected" : businessError ? "Check PC" : businessStates.length ? "Connected" : "Connecting"} tone={!linked || !businessStates.length ? "plain" : businessError ? "bad" : "good"} />}
           {remoteTab && linked && <IconButton icon="log-out-outline" label="Sign out" onPress={() => signOut(false)} />}
         </View>
 
-        <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 12 }}>
-          {[["clips", "Surge", "Streamer clips"], ["stories", "Hollow", "Scary stories"]].map(([key, name, description]) => <Pressable key={key} accessibilityRole="button" accessibilityLabel={`${name} · ${description}`} accessibilityState={{ selected: business === key }} aria-selected={business === key} onPress={() => setTab(remembered.current[key])} style={({ pressed }) => ({ flex: 1, minHeight: 56, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: business === key ? C.ember : C.line, backgroundColor: business === key ? C.emberSoft : C.s1, opacity: pressed ? 0.7 : 1 })}><Text style={[t.body, { fontWeight: "600", color: business === key ? C.ember : C.ink }]}>{name}</Text><Text style={t.faint}>{description}</Text></Pressable>)}
+        <View accessibilityRole="tablist" style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, paddingBottom: 10 }}>
+          {BUSINESS.map(([key, name, description]) => <Pressable key={key} accessibilityRole="button" accessibilityLabel={`${name} · ${description}`} accessibilityState={{ selected: business === key }} aria-selected={business === key} onPress={() => setTab(remembered.current[key])} style={({ pressed }) => ({ width: "48%", flexGrow: 1, minHeight: 54, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: business === key ? C.ember : C.line, backgroundColor: business === key ? C.emberSoft : C.s1, opacity: pressed ? 0.7 : 1 })}><Text style={[t.body, { fontWeight: "600", color: business === key ? C.ember : C.ink }]}>{name}</Text><Text style={t.faint}>{description}</Text></Pressable>)}
         </View>
+        {remoteTab && linked && <View style={{ flexDirection: "row", gap: 12, alignItems: "center", paddingHorizontal: 16, paddingBottom: 10 }}><View style={{ flex: 1 }}><Text accessibilityLiveRegion="polite" style={t.faint}>{runtime?.message || "Checking business runtime…"}</Text>{runtime?.busy && !runtime.message && <Text style={t.faint}>{runtime.enabled ? "Work in progress" : "Stopping · current work is finishing"}</Text>}</View><Button small label={`${runtime?.enabled ? "Stop" : "Start"} ${selectedBusiness[1]}`} busy={runtimeBusy} disabled={!runtime || (!runtime.enabled && runtime.busy)} onPress={toggleBusiness} /></View>}
+        {!!businessError && remoteTab && <Banner tone="bad" text={businessError} onPress={() => loadBusinesses().catch(e => setBusinessError(e.message))} />}
         {!!note && <Banner tone="plain" text={note} />}
         {!!update && <Banner tone="live" text={`Version ${update} is out · tap to get it`} onPress={() => Linking.openURL(RELEASE_PAGE)} />}
 
@@ -205,10 +245,14 @@ function Main() {
             </>
           ) : (
             <>
-              {!isStory(tab) && offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
+              {businessFor(tab) === "clips" && offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
               {isStory(tab) && !["story-accounts", "story-settings"].includes(tab) && <Stories screen={tab} studio={stories} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} />}
               {tab === "story-accounts" && <StoryAccounts host={host} token={token} onUnauthorized={signOut} onChanged={stories.load} onDirtyChange={onStoryDirty} />}
               {tab === "story-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["stories"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
+              {isMusic(tab) && tab !== "music-settings" && <Music screen={tab} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} active={foreground && !lock.locked} runtime={runtime} />}
+              {tab === "music-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["music"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
+              {tab === "social-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["social"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
+              {isSocial(tab) && tab !== "social-settings" && <Social screen={tab} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} active={foreground && !lock.locked} runtime={runtime} />}
               {tab === "desk" && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 56 }}
                 contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}>
                 {DESK_TABS.map(([key, label]) => {
@@ -221,7 +265,7 @@ function Main() {
                     </Pressable>);
                 })}
               </ScrollView>}
-              {!isStory(tab) && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
+              {businessFor(tab) === "clips" && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
                 refreshControl={<RefreshControl tintColor={C.ink2} refreshing={refreshing}
                   onRefresh={async () => { setRefreshing(true); try { await Promise.all([poll(), research.load()]); setRefreshVersion(v => v + 1); } finally { setRefreshing(false); } }} />}>
                 {tab === "research" ? <Research research={research} /> : <>
@@ -229,7 +273,7 @@ function Main() {
                   {deskTab === "live" && <Live state={state} onPause={pause} busy={busy} host={host} token={token} />}
                   {deskTab === "clips" && <Clips host={host} token={token} state={state} toast={toast} refreshVersion={refreshVersion} onError={onError} />}
                   {deskTab === "studio" && <Studio key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
-                  {deskTab === "settings" && <SettingsTab excludeSections={["stories", "story_accounts"]} key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
+                  {deskTab === "settings" && <SettingsTab excludeSections={["stories", "story_accounts", "music", "social", "businesses"]} key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
                   {deskTab === "log" && <Log key={refreshVersion} host={host} token={token} state={state} onError={onError} />}
                 </>}
               </ScrollView>}
@@ -240,18 +284,18 @@ function Main() {
         </View>
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: C.s1, borderTopWidth: 1, borderTopColor: C.line }}>
-          <View style={{ flexDirection: "row", paddingTop: 6 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={business === "social"} contentContainerStyle={{ flexGrow: 1, flexDirection: "row", paddingTop: 6 }}>
             {TABS.map(([key, label, icon]) => {
               const on = key === tab || (key === "tools" && ["chat", "code"].includes(tab));
               return (
                 <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: on }} aria-selected={on}
-                  style={{ flex: 1, alignItems: "center", paddingVertical: 6, gap: 3 }}>
+                  style={{ flex: 1, minWidth: business === "social" ? 60 : 0, alignItems: "center", paddingVertical: 6, gap: 3 }}>
                   <View style={{ width: 22, height: 3, borderRadius: 2, marginBottom: 3, backgroundColor: on ? C.ember : "transparent" }} />
                   <Icon name={on ? icon : `${icon}-outline`} size={22} color={on ? C.ink : C.ink3} />
                   <Text style={{ fontSize: 10.5, fontWeight: "600", color: on ? C.ink : C.ink3 }}>{label}</Text>
                 </Pressable>);
             })}
-          </View>
+          </ScrollView>
         </SafeAreaView>
       </SafeAreaView>
       </Animated.View>

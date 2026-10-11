@@ -246,6 +246,8 @@ class Scheduler:
             c.error = self.last_error[name] = str(exc)
             await asyncio.to_thread(self.store.upsert_candidate, c)
             return PublishResult(False, error=str(exc))
+        if not self.settings.businesses.surge_enabled:
+            return PublishResult(False, error="Surge is stopped; this clip remains queued")
         logger.info("posting %s to %s: %s", c.id, name, post.title)
         result = await self.publishers[name].publish(Path(c.final_path), post)
         await asyncio.to_thread(self.store.record_post, c.id, name, result.remote_id, result.url,

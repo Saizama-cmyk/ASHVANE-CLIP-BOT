@@ -1,0 +1,251 @@
+--- a/app/server.py
++++ b/app/server.py
+@@ -19,6 +19,8 @@
+ import remote_access
+ import reference_pipeline
+ import audition_library
++import reaper_pipeline
++import launch
+ 
+ try:
+     import rap_assistant
+@@ -54,6 +56,13 @@
+ _job_lock = threading.Lock()
+ _active_job = None
+ _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
++_runtime_lock = threading.RLock()
++_runtime_state_path = APP_DIR / "runtime-state.json"
++try:
++    _runtime_enabled = json.loads(_runtime_state_path.read_text(encoding="utf-8")).get("enabled", True) is True
++except (OSError, ValueError):
++    _runtime_enabled = True
++reaper_pipeline.set_enabled(_runtime_enabled)
+ 
+ 
+ class AppError(Exception):
+@@ -65,6 +74,60 @@
+ class StudioUnavailable(AppError):
+     def __init__(self):
+         super().__init__("Studio is unavailable. Close this tab and reopen Local Song Lab using its launcher, then retry.", 503)
++
++
++def runtime_status():
++    ready = launch.studio_running() if _runtime_enabled else False
++    return {"enabled": _runtime_enabled, "ready": ready, "message": "Music service ready." if ready else "Music service starting; saved media remain readable." if _runtime_enabled else "Music service stopped; saved media and the normal REAPER editor remain available."}
++
++
++def set_runtime(payload):
++    global _runtime_enabled, _active_job
++    if not isinstance(payload, dict) or set(payload) != {"enabled"} or type(payload["enabled"]) is not bool:
++        raise AppError("Choose whether the music business is enabled.")
++    enabled = payload["enabled"]
++    with _runtime_lock, _create_lock:
++        _runtime_enabled = enabled
++        reaper_pipeline._save(_runtime_state_path, {"enabled": enabled})
++        reaper_pipeline.set_enabled(enabled)
++        if enabled:
++            try:
++                launch.ensure_studio()
++            except (OSError, RuntimeError) as error:
++                raise AppError("Music was enabled but YuE2 Studio could not start. Check its retained launcher log.", 503) from error
++        else:
++            if _active_job:
++                try:
++                    studio("song_job_cancel", {"job_id": _active_job})
++                except AppError:
++                    print("Music stop: owned generation cancellation could not reach Studio", flush=True)
++                _active_job = None
++            for pipeline in (voice_pipeline, training_pipeline):
++                if pipeline:
++                    for ident in list(pipeline._JOBS):
++                        pipeline.cancel_job(ident)
++            for reference in reference_pipeline.list_references():
++                if reference.get("status") in ("queued", "running", "analyzing"):
++                    reference_pipeline.cancel(reference["id"])
++            if rap_assistant and (rap_assistant.any_busy() or reaper_pipeline.any_gpu_busy()):
++                try:
++                    rap_assistant._rpc("assistant_stop", timeout=5)
++                except (OSError, ValueError, RuntimeError):
++                    print("Music stop: local assistant did not confirm unloading", flush=True)
++            try:
++                launch.stop_owned_studio()
++            except (OSError, RuntimeError):
++                print("Music stop: the owned Studio process could not be stopped", flush=True)
++    return runtime_status()
++
++
++def require_runtime(path):
++    model_work = (path in {"/api/create", "/api/process", "/api/training/start", "/api/references/upload", "/api/references/describe", "/api/rap/describe", "/api/rap/draft", "/api/reaper/projects"}
++                  or re.fullmatch(r"/api/references/[0-9a-f-]{36}/analyze", path)
++                  or re.fullmatch(r"/api/reaper/projects/[0-9a-f-]{36}/(?:edit|export)", path)
++                  or re.fullmatch(r"/api/reaper/projects/[0-9a-f-]{36}/revisions/[0-9a-f-]{36}/listen", path))
++    if model_work and not _runtime_enabled:
++        raise AppError("The music business is stopped. Start it before requesting new work.", 409)
+ 
+ 
+ def studio(name, arguments=None):
+@@ -193,7 +256,7 @@
+     """Check all local work without requiring YuE2's generation model."""
+     own_busy = refresh_active()
+     raw = studio("studio_status")
+-    return own_busy or bool(rap_assistant and rap_assistant.any_busy()) or bool(voice_pipeline and voice_pipeline.any_busy()) or bool(
++    return own_busy or reaper_pipeline.any_gpu_busy() or bool(rap_assistant and rap_assistant.any_busy()) or bool(voice_pipeline and voice_pipeline.any_busy()) or bool(
+         training_pipeline and training_pipeline.any_busy()) or any(native_work_active(raw.get(key)) for key in (
+         "song_jobs", "covers_and_karaoke", "stems", "midi", "preparation", "training", "processing"))
+ 
+@@ -376,7 +439,12 @@
+ def library_audio(ident):
+     if ident in reference_pipeline.studio_song_ids():
+         raise AppError("Choose a generated take from the song library.", 404)
+-    files = studio("library_song_files", {"song_id": valid_id(ident)})
++    try:
++        if not _runtime_enabled:
++            raise StudioUnavailable()
++        files = studio("library_song_files", {"song_id": valid_id(ident)})
++    except StudioUnavailable:
++        return reaper_pipeline.retained_audio(valid_id(ident))
+     audio = files.get("audio")
+     if not isinstance(audio, str) or not audio:
+         raise AppError("That take has no playable audio.", 404)
+@@ -572,6 +640,7 @@
+                 raise AppError("That page was not found.", 404)
+             path = parsed.path
+             if writing:
++                require_runtime(path)
+                 if path == "/api/references/upload":
+                     lengths = self.headers.get_all("Content-Length", [])
+                     names = self.headers.get_all("X-File-Name", [])
+@@ -587,6 +656,47 @@
+                     self.json_response(reference_pipeline.receive_upload(name, int(lengths[0]), self.rfile), 202)
+                     return
+                 payload = self.read_json()
++                if path == "/api/runtime":
++                    self.json_response(set_runtime(payload))
++                    return
++                revision_listen = re.fullmatch(r"/api/reaper/projects/([0-9a-f-]{36})/revisions/([0-9a-f-]{36})/listen", path)
++                if revision_listen:
++                    if payload != {}:
++                        raise AppError("Listen to an owned rendered revision with an empty request.")
++                    if not _create_lock.acquire(blocking=False):
++                        raise AppError("The local engine already has a request.", 409)
++                    try:
++                        if gpu_busy():
++                            raise AppError("The local GPU work slot is busy.", 409)
++                        self.json_response(reaper_pipeline.start_listening(*revision_listen.groups()), 202)
++                    finally:
++                        _create_lock.release()
++                    return
++                listen_cancel = re.fullmatch(r"/api/reaper/listening/([0-9a-f-]{36})/cancel", path)
++                if listen_cancel:
++                    if payload != {}:
++                        raise AppError("Cancel an owned listener with an empty request.")
++                    self.json_response(reaper_pipeline.cancel_listening(listen_cancel[1]))
++                    return
++                if path == "/api/reaper/projects":
++                    self.json_response(reaper_pipeline.create_project(payload), 201)
++                    return
++                reaper_action = re.fullmatch(r"/api/reaper/projects/([0-9a-f-]{36})/(open|export|edit|validate|cancel)", path)
++                if reaper_action:
++                    ident, action = reaper_action.groups()
++                    if action == "open":
++                        if payload != {}:
++                            raise AppError("Open a managed project with an empty request.")
++                        self.json_response(reaper_pipeline.open_project(ident))
++                    elif action == "validate":
++                        self.json_response(reaper_pipeline.validate_plan(ident, payload))
++                    elif action == "cancel":
++                        if payload != {}:
++                            raise AppError("Cancel a managed native job with an empty request.")
++                        self.json_response(reaper_pipeline.cancel_project(ident))
++                    else:
++                        self.json_response(reaper_pipeline.start_revision(ident, payload, edit=action == "edit"), 202)
++                    return
+                 reference_action = re.fullmatch(r"/api/references/([0-9a-f-]{36})/(analyze|cancel)", path)
+                 if reference_action:
+                     if payload != {}:
+@@ -669,8 +779,24 @@
+                     self.json_response(job_public(studio("song_job_get", {"job_id": ident})))
+                     return
+                 raise AppError("That action was not found.", 404)
+-            if path == "/api/status":
++            if path == "/api/runtime":
++                self.json_response(runtime_status())
++            elif path == "/api/reaper/status":
++                self.json_response(reaper_pipeline.status())
++            elif path == "/api/reaper/projects":
++                self.json_response({"projects": reaper_pipeline.status()["projects"]})
++            elif re.fullmatch(r"/api/reaper/listening/[0-9a-f-]{36}", path):
++                self.json_response(reaper_pipeline.get_listening(path.rsplit("/", 1)[1]))
++            elif re.fullmatch(r"/api/reaper/projects/[0-9a-f-]{36}", path):
++                self.json_response(reaper_pipeline.get_project(path.rsplit("/", 1)[1]))
++            elif re.fullmatch(r"/reaper/(media|download)/[0-9a-f-]{36}/[0-9a-f-]{36}", path):
++                _, _, action, ident, revision = path.split("/")
++                self.stream_file(reaper_pipeline.media_path(ident, revision), action == "download")
++            elif path == "/api/status":
+                 try:
++                    if not _runtime_enabled:
++                        self.json_response({"ready": False, "busy": False, "message": "Music service stopped; saved media remain readable.", "engine": "YuE2 local · BF16"})
++                        return
+                     self.json_response(engine_status())
+                 except AppError as error:
+                     self.json_response({"ready": False, "busy": False, "message": str(error), "engine": "YuE2 local · BF16"})
+@@ -678,10 +804,16 @@
+                 # Studio truncates long detailed lists at 60 KB, sometimes in
+                 # the middle of JSON audio codes. Concise list + individual
+                 # concise reads preserves valid JSON and actual lyric text.
+-                raw = studio("library_songs_list")
++                try:
++                    if not _runtime_enabled:
++                        raise StudioUnavailable()
++                    raw = studio("library_songs_list")
++                except StudioUnavailable:
++                    self.json_response({"songs": [song_public(row) for row in reaper_pipeline.retained_songs()]})
++                    return
+                 rows = raw if isinstance(raw, list) else raw.get("songs", [])
+                 songs = []
+-                reference_songs = reference_pipeline.studio_song_ids()
++                reference_songs = reference_pipeline.studio_song_ids() | reaper_pipeline.listener_song_ids()
+                 for row in rows:
+                     ident = valid_id(row.get("id"))
+                     if ident in reference_songs:
+@@ -726,12 +858,18 @@
+                 if ident in reference_pipeline.studio_song_ids():
+                     raise AppError("That generated take was not found.", 404)
+                 try:
+-                    raw = studio("library_song_get", {"song_id": ident, "response_format": "detailed"})
++                    if not _runtime_enabled:
++                        raise StudioUnavailable()
++                    try:
++                        raw = studio("library_song_get", {"song_id": ident, "response_format": "detailed"})
++                    except StudioUnavailable:
++                        # Long detailed results can exceed native text limits.
++                        raw = studio("library_song_get", {"song_id": ident})
+                 except StudioUnavailable:
+-                    # Long songs can exceed Studio's text result limit because
+-                    # detailed results include all audio codes. Keep playback,
+-                    # lyrics and safe settings available even without a score.
+-                    raw = studio("library_song_get", {"song_id": ident})
++                    rows = reaper_pipeline.retained_songs(ident)
++                    if not rows:
++                        raise AppError("That retained generated take was not found.", 404)
++                    raw = rows[0]
+                 self.json_response(song_public(raw, True))
+             elif path.startswith("/api/jobs/"):
+                 ident = valid_id(path[len("/api/jobs/"):])
+@@ -760,7 +898,7 @@
+                 self.stream_file(WEB_DIR / filename)
+             else:
+                 raise AppError("That page was not found.", 404)
+-        except (AppError, reference_pipeline.ReferenceError) as error:
++        except (AppError, reference_pipeline.ReferenceError, reaper_pipeline.ReaperError) as error:
+             # Don't reuse a socket containing an unread rejected request body.
+             self.close_connection = True
+             self.json_response({"error": str(error)}, error.status)
+@@ -783,6 +921,7 @@
+     except KeyboardInterrupt:
+         pass
+     finally:
++        reaper_pipeline.shutdown()
+         server.server_close()
+         if REMOTE_ACCESS:
+             remote_access.keep_host_awake(False)

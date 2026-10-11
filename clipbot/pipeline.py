@@ -119,6 +119,7 @@ class Pipeline:
         self.gpu: dict | None = None
         self._tasks: list[asyncio.Task] = []
         self._inflight: dict[str, asyncio.Task] = {}
+        self._pending_candidates: dict[str, Candidate] = {}
         self._stage_of: dict[str, Stage] = {}
         self._audio_seen: dict[str, str] = {}
         self._discovery_wake = asyncio.Event()
@@ -132,6 +133,13 @@ class Pipeline:
                                "results": [], "job_id": "", "started_at": None,
                                "finished_at": None, "interrupted": False, "error": ""}
         self._running = False
+        self._business_locks = {"clips": asyncio.Lock(), "stories": asyncio.Lock()}
+        self._business_transition: set[str] = set()
+        self._business_errors: dict[str, str] = {}
+        self._business_running = {"clips": False, "stories": False}
+        self._business_tasks: dict[str, list[asyncio.Task]] = {"clips": [], "stories": []}
+        self._business_reconcile_task: asyncio.Task | None = None
+        self._business_requests: dict[str, dict[asyncio.Task, bool]] = {"clips": {}, "stories": {}}
         self.blocked = ""
         # created in start() (need the HTTP client / running loop)
         self.discovery: Discovery
@@ -176,29 +184,18 @@ class Pipeline:
         self.importer = ClipImporter(s, self.store, self.discovery, self.paths, self._launch,
                                      lambda: list(self.targets.values()))
         self._running = True
-        await self._recover()
-        self.scheduler.start()
-        self.analytics.start()
-        self.trends.start()
-        self.research.start()
-        self.stories.start()
-        self._tasks.append(asyncio.create_task(self.story_renderer.initialize(), name="story-voices"))
-        self.story_publishing.start()
         self.model_setup = ModelSetup(s, self.http)
-        self._tasks.append(asyncio.create_task(self._first_run_models(), name="model-setup"))
-        loops = [(self._gpu_loop(), "gpu"), (self._housekeeping_loop(), "housekeeping"),
-                 (self._sweep_loop(), "sweeper")]
+        loops = [(self._gpu_loop(), "gpu")]
         missing = [n for n, exe in (("ffmpeg", ffmpeg_exe(s)), ("ffprobe", ffprobe_exe(s))) if not exe]
         if s.app.check_ffmpeg_on_start and missing:
             self.blocked = (f"{' and '.join(missing)} not found — captures are off until you install "
                             f"it or set Settings → Paths, then restart Ashvane")
             logger.error(self.blocked)
-        else:
-            loops += [(self._discovery_loop(), "discovery"), (self._detector_loop(), "detector"),
-                      (self._audio_loop(), "audio")]
-            self.importer.start()
         for coro, name in loops:
             self._tasks.append(asyncio.create_task(coro, name=name))
+        # Disabled businesses never launch their queues, discovery or generation on startup.
+        self.stories._closed = True
+        await self.reconcile_businesses(initial=True)
         logger.info("pipeline started (data: %s)", self.paths.data)
 
     async def stop(self) -> None:
@@ -208,9 +205,17 @@ class Pipeline:
         self._running = False
         logger.info("pipeline stopping")
         grace = self.settings.app.shutdown_timeout_s
+        if self._business_reconcile_task:
+            self._business_reconcile_task.cancel()
+            await asyncio.gather(self._business_reconcile_task, return_exceptions=True)
+        scoped = [task for tasks in self._business_tasks.values() for task in tasks]
+        for task in scoped:
+            task.cancel()
+        await asyncio.gather(*scoped, return_exceptions=True)
         for t in self._tasks + list(self._inflight.values()):
             t.cancel()
         await asyncio.gather(*self._tasks, *self._inflight.values(), return_exceptions=True)
+        await self._persist_pending_candidates()
         self._tasks.clear()
         await asyncio.gather(self.captures.stop_all(), self.chat.stop(), self.scheduler.stop(),
                              self.analytics.stop(), self.importer.stop(), self.trends.stop(),
@@ -251,8 +256,148 @@ class Pipeline:
         loop.create_task(self._ai_limit.set_limit(s.workers.ai_stage))
         if (old.twitch, old.kick, old.discovery) != (s.twitch, s.kick, s.discovery):
             self._discovery_wake.set()
-        loop.create_task(self._abandon_stale())
+        if old.clip.abandon_after_h != s.clip.abandon_after_h:
+            loop.create_task(self._abandon_stale())
         loop.create_task(self._refresh_failsafe())
+        if old.businesses != s.businesses:
+            self.request_business_reconcile()
+
+    def business_enabled(self, business: str) -> bool:
+        if business == "clips":
+            return self.settings.businesses.surge_enabled
+        if business == "stories":
+            return self.settings.businesses.hollow_enabled
+        if business == "music":
+            return self.settings.businesses.resonance_enabled
+        raise ValueError("Unknown business")
+
+    def request_business_reconcile(self) -> None:
+        if not self._running:
+            return
+        self._business_reconcile_task = asyncio.create_task(
+            self.reconcile_businesses(), name="business-runtime")
+        self._tasks.append(self._business_reconcile_task)
+        self._business_reconcile_task.add_done_callback(self._business_reconciled)
+
+    @staticmethod
+    def _business_reconciled(task: asyncio.Task) -> None:
+        if not task.cancelled() and task.exception():
+            logger.error("business runtime transition failed", exc_info=task.exception())
+
+    async def reconcile_businesses(self, *, initial: bool = False) -> None:
+        await asyncio.gather(*(self._reconcile_business(business, initial=initial)
+                               for business in ("clips", "stories")))
+
+    async def _reconcile_business(self, business: str, *, initial: bool = False) -> None:
+        async with self._business_locks[business]:
+            # Settings can change while a slow upload/inference drains. Recheck after
+            # every transition so rapid off/on clicks converge to the persisted choice.
+            while self._running and self.business_enabled(business) != self._business_running[business]:
+                self._business_transition.add(business)
+                try:
+                    if self.business_enabled(business):
+                        await self._start_business(business, initial=initial)
+                    else:
+                        await self._stop_business(business)
+                    self._business_errors.pop(business, None)
+                except Exception as exc:
+                    self._business_errors[business] = f"Business transition failed: {exc}"
+                    raise
+                finally:
+                    self._business_transition.discard(business)
+
+    def business_state(self, business: str) -> dict:
+        enabled = self.business_enabled(business)
+        running = self._running and self._business_running[business]
+        transitioning = (enabled != running or business in self._business_transition) and self._running
+        if business == "clips":
+            busy = bool(self._inflight or self._business_requests[business])
+            busy = busy or bool(getattr(getattr(self, "scheduler", None), "_busy", {}))
+            busy = busy or bool(getattr(getattr(self, "research", None), "busy", False))
+        else:
+            busy = bool(getattr(getattr(self, "stories", None), "busy", False))
+            busy = busy or bool(getattr(getattr(self, "story_publishing", None), "_publishing", False))
+        message = ("Starting" if enabled else "Stopping; saving current work") if transitioning else (
+            "Running" if running else "Stopped; saved work is kept")
+        if business == "clips" and enabled and self.blocked:
+            message = self.blocked
+        if business in self._business_errors:
+            message = self._business_errors[business]
+        return {"enabled": enabled, "running": running and enabled and not transitioning,
+                "busy": busy or transitioning, "message": message}
+
+    async def _start_business(self, business: str, *, initial: bool = False) -> None:
+        self._business_running[business] = True
+        tasks = self._business_tasks[business]
+        if business == "stories":
+            self.stories.start()
+            self.story_publishing.start()
+            tasks.append(asyncio.create_task(self.story_renderer.initialize(), name="story-voices"))
+            return
+        if initial:
+            await self._recover()
+        else:
+            await self._persist_pending_candidates()
+            # A user pause keeps the original queue, including clips past the usual
+            # restart freshness cutoff; stopping a business must not discard its jobs.
+            for candidate in await asyncio.to_thread(self.store.active_candidates):
+                if candidate.raw_path and Path(candidate.raw_path).exists():
+                    self._launch(candidate)
+        self.scheduler.start()
+        self.analytics.start()
+        self.trends.start()
+        self.research.start()
+        self.captures.paused = self.paused
+        self.captures_paused = self.paused
+        tasks.append(asyncio.create_task(self._first_run_models(), name="model-setup"))
+        tasks.append(asyncio.create_task(self._housekeeping_loop(), name="housekeeping"))
+        tasks.append(asyncio.create_task(self._sweep_loop(), name="sweeper"))
+        if not self.blocked:
+            for coroutine, name in ((self._discovery_loop(), "discovery"),
+                                    (self._detector_loop(), "detector"),
+                                    (self._audio_loop(), "audio")):
+                tasks.append(asyncio.create_task(coroutine, name=name))
+            self.importer.start()
+
+    async def _stop_business(self, business: str) -> None:
+        # Keep running true internally until the drain finishes; status reports stopping.
+        tasks, self._business_tasks[business] = self._business_tasks[business], []
+        requests = list(self._business_requests[business].items())
+        for task in tasks + [task for task, drain in requests if not drain]:
+            task.cancel()
+        if business == "stories":
+            await asyncio.gather(*tasks, self.story_publishing.stop(), self.stories.stop(),
+                                 self.story_renderer.stop())
+        else:
+            candidates = list(self._inflight.values())
+            for task in candidates:
+                task.cancel()
+            # Stop queue intake before draining uploads: cancelling a remote request
+            # without an uncertainty marker could create duplicate posts on restart.
+            scheduler_task, self.scheduler._task = self.scheduler._task, None
+            if scheduler_task:
+                scheduler_task.cancel()
+            await asyncio.gather(*tasks, *candidates, *([scheduler_task] if scheduler_task else []),
+                                 self.importer.stop(), self.analytics.stop(), self.trends.stop(),
+                                 self.research.stop(), self.captures.stop_all(), self.chat.stop(),
+                                 return_exceptions=True)
+            await self._persist_pending_candidates()
+            for key in self.targets:
+                self.detector.remove(key)
+            self.targets.clear()
+            # CaptureManager otherwise retains stopped instances and set_targets()
+            # treats them as already started when the business is enabled again.
+            if hasattr(self.captures, "captures"):
+                self.captures.captures.clear()
+            self._audio_seen.clear()
+            self.captures_paused = False
+            await asyncio.gather(*list(self.scheduler._busy.values()),
+                                 *([self._publish_batch_task] if self._publish_batch_task else []),
+                                 return_exceptions=True)
+            self.scheduler._busy.clear()
+            await asyncio.to_thread(self.transcriber.unload)
+        await asyncio.gather(*(task for task, _drain in requests), return_exceptions=True)
+        self._business_running[business] = False
 
     @property
     def running(self) -> bool:
@@ -269,7 +414,7 @@ class Pipeline:
 
     @property
     def paused(self) -> bool:
-        return self.manual_paused or self.failsafe_paused or self.disk_paused
+        return not self.business_enabled("clips") or self.manual_paused or self.failsafe_paused or self.disk_paused
 
     def _update_failsafe(self, pressure: float) -> bool:
         """Hysteresis: engage at ≥ pause_at, release at ≤ resume_at. Returns the state.
@@ -456,6 +601,12 @@ class Pipeline:
 
     # ------------------------------------------------------------------ candidates
     def _launch(self, c: Candidate) -> None:
+        # The stop click may cancel this task before its first coroutine turn.
+        # Retain the unsaved candidate until its first durable write or stop drain.
+        self._pending_candidates[c.id] = c
+        if not self.business_enabled("clips"):
+            # Preserve imported work that finished concurrently with the stop click.
+            return
         task = asyncio.create_task(self._run_candidate(c), name=f"cand:{c.id}")
         self._inflight[c.id] = task
         self._stage_of[c.id] = c.stage
@@ -475,6 +626,12 @@ class Pipeline:
             c.stage = stage
             self._stage_of[c.id] = stage
         await asyncio.to_thread(self.store.upsert_candidate, c)
+        self._pending_candidates.pop(c.id, None)
+
+    async def _persist_pending_candidates(self) -> None:
+        for candidate in list(self._pending_candidates.values()):
+            await asyncio.to_thread(self.store.upsert_candidate, candidate)
+            self._pending_candidates.pop(candidate.id, None)
 
     async def _check_disk(self) -> None:
         """Keep the buffer drive usable: tidy up first, pause only if that was not enough.
@@ -502,6 +659,8 @@ class Pipeline:
 
     async def _abandon_stale(self) -> None:
         """Written off at startup: their buffered video is long gone, so they can never finish."""
+        if not self.business_enabled("clips"):
+            return
         hours = self.settings.clip.abandon_after_h
         cutoff = time.time() - hours * 3600
         dropped = await asyncio.to_thread(
@@ -820,6 +979,8 @@ class Pipeline:
 
     async def submit_event(self, event: SpikeEvent) -> str:
         """Inject a spike (used by tests and the dashboard's manual clip button)."""
+        if not self.business_enabled("clips"):
+            raise RuntimeError("Surge is stopped")
         c = Candidate(id=event.id, event=event, raw_path="",
                       start_wall=event.t_wall - self.settings.clip.pre_s,
                       end_wall=event.t_wall + self.settings.clip.post_s)
@@ -882,6 +1043,8 @@ class Pipeline:
 
     async def publish_now(self, cid: str, platforms: list[str], *, scheduled_only: bool = False) -> dict:
         """Render the clip if it never was (e.g. a rejected one), then post it immediately."""
+        if not self.business_enabled("clips"):
+            return {"ok": False, "error": "Surge is stopped"}
         lock = self._media_locks.setdefault(cid, asyncio.Lock())
         async with lock:
             return await self._publish_now_locked(cid, platforms, scheduled_only=scheduled_only)
@@ -927,6 +1090,8 @@ class Pipeline:
 
     async def start_publishing_batch(self) -> dict:
         """Snapshot this click's queue once; new arrivals belong to a later request."""
+        if not self.business_enabled("clips"):
+            return {"ok": False, "error": "Surge is stopped"}
         async with self._publish_batch_lock:
             if self._publish_batch_task and not self._publish_batch_task.done():
                 return {"ok": True, **self.publishing_batch_snapshot()}
@@ -948,6 +1113,10 @@ class Pipeline:
     async def _run_publishing_batch(self, ids: list[str], platforms: list[str]) -> None:
         try:
             for cid in ids:
+                if not self.business_enabled("clips"):
+                    self._publish_batch.update(status="idle", interrupted=True,
+                                               error="Surge stopped; unfinished clips remain queued.")
+                    return
                 self._publish_batch["current_id"] = cid
                 try:
                     current = await asyncio.to_thread(self.store.get_candidate, cid)

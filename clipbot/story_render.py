@@ -104,6 +104,8 @@ class StoryRenderer:
         old = self.settings.stories
         self.settings = settings
         new = settings.stories
+        if not settings.businesses.hollow_enabled:
+            return
         if (old.narrator_backend, old.kokoro_model_path, old.kokoro_voices_path, old.kokoro_lang) != (new.narrator_backend, new.kokoro_model_path, new.kokoro_voices_path, new.kokoro_lang):
             if self._refresh_task and not self._refresh_task.done():
                 self._refresh_task.cancel()

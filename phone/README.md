@@ -2,10 +2,12 @@
 
 A native app that runs your Ashvane content desk from your phone: today's production and post results,
 source research, scripts and platform copy, streams, clip reviews, manual posting, settings and the log.
-Use the **Surge / Hollow** switcher beside the Ashvane brand to change businesses. Surge (Streamer clips) contains
-Desk and Research. Hollow (Scary stories) contains Create, Library, Publishing, Accounts and Settings, with its own
-channels, credentials and posting preferences. Each business remembers its last screen. Assistant
-and Code remain optional shared Tools.
+Use the business switcher beneath Ashvane to open **Surge**, **Hollow**, **Resonance** or **Social Studio**.
+Surge owns streamer clips and research. Hollow owns scary stories and its separate publishing accounts.
+Resonance creates local music, auditions sources and prepares editable REAPER sessions. Social Studio
+keeps each client’s brand rules, styles, drafts, calendar, reference assets and public profile links.
+Each business remembers its last screen. Switching workspaces never starts an engine: use the
+selected business’s independent Start / Stop control. Assistant and Code remain shared optional Tools.
 It talks to Ashvane on your PC over your own Wi-Fi or configured Tailscale connection using your profile sign-in.
 
 ## Get the file
@@ -77,7 +79,7 @@ npm ci
 npx expo run:android  # requires Android SDK, a full JDK and an emulator or connected device
 ```
 
-`App.js` handles the two-business switcher and shared Tools navigation. `Stories.js` provides the
+`App.js` handles the four-business switcher, independent runtime controls and shared Tools navigation. `Stories.js` provides the
 story composer, manuscript and scene controls, private review, final video preview and independent
 publishing controls. `StoryAccounts.js` edits only story credentials, preserves blank secrets, and
 starts OAuth in the PC browser; the returned sign-in link and pasted return URL provide phone recovery.
@@ -95,3 +97,26 @@ provide the content desk screens. The app uses the web dashboard API and authent
 token from `/api/auth/login`. The local AI tools use a custom native module, so a native development
 build is required instead of the standard Expo Go app. See [phone revamp verification](../docs/PHONE-REVAMP.md)
 for bundle checks and the remaining device checks.
+
+## Music and social workspaces
+
+`Music.js` uses the authenticated `/api/music` bridge. Generation, producer and REAPER export jobs
+can be cancelled separately. Production notes remain editable; opening REAPER explicitly opens it
+on the PC. A rendered version still needs your audition. Readiness comes from the local tools,
+not simply from REAPER being installed. Music Settings edits only the music configuration.
+
+`Social.js` loads each client’s own rules, styles, posts, public profiles and registered assets.
+QuirkyCMD is seeded by the PC when its recovered project context exists. Archive assets stay labelled
+as historical references. Calendar dates are planning records; publishing remains manual.
+The phone does not connect Social Studio to Surge or Hollow accounts. Social Settings edits only
+the social configuration. Unsaved edits are guarded when leaving a workspace or changing clients.
+
+`BusinessMedia.js` fetches private audio, images and videos with a bearer header. Native previews
+use temporary private cache files, and browser previews use temporary object URLs; leaving a preview
+cleans up the local copy. No session token is put in a media URL.
+
+Isolated verification: export with `npx expo export --platform all --output-dir ../artifacts/phone-four-business-export`,
+serve that directory at `127.0.0.1:8140`, then run `node scripts/verify_phone_workspaces.cjs` from the repo root.
+The verifier uses fixture endpoints only and covers both 320px and 390px layouts, runtime isolation,
+music transactions, client-scoped social editing and authenticated media. Native release version
+1.0.24 is assigned by the existing release workflow when the integrated change is published.

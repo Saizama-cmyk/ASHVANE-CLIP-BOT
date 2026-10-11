@@ -118,6 +118,12 @@ def create_app(ctx) -> FastAPI:
     profiles = ProfileStore()
     from ..story_api import install_story_routes
     install_story_routes(app, ctx)
+    from ..music_api import install_music_routes
+    from ..social_api import install_social_routes
+    from ..business_runtime import install_business_runtime_routes
+    install_music_routes(app, ctx)
+    install_social_routes(app, ctx)
+    install_business_runtime_routes(app, ctx)
 
     def a_cfg():
         return ctx.settings.app

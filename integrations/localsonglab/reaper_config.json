@@ -1,0 +1,20 @@
+{
+  "reaper_executable": "C:/Program Files/REAPER (x64)/reaper.exe",
+  "reaper_resource_dir": "",
+  "sample_rate": 22050,
+  "render_sample_rate": 48000,
+  "render_timeout_seconds": 300,
+  "native_edit_timeout_seconds": 90,
+  "max_project_seconds": 600,
+  "default_bpm": 90,
+  "default_bars": 8,
+  "default_style": "boom-bap",
+  "default_key": "C",
+  "default_beat_gain_db": -8,
+  "default_vocal_gain_db": -3,
+  "synth_note_seconds": 0.22,
+  "synth_bass_seconds": 0.45,
+  "synth_kick_seconds": 0.28,
+  "synth_snare_seconds": 0.16,
+  "synth_hat_seconds": 0.07
+}

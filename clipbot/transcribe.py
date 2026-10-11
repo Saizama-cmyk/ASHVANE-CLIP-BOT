@@ -164,6 +164,14 @@ class Transcriber:
         async with self._sem:
             self.jobs += 1
             try:
-                return await asyncio.to_thread(self._transcribe_sync, str(path))
+                worker = asyncio.create_task(asyncio.to_thread(self._transcribe_sync, str(path)))
+                try:
+                    return await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    # Native decoding cannot be safely interrupted from another thread.
+                    # Drain the current inference before releasing its slot/GPU model;
+                    # the cancelled candidate never proceeds into another stage.
+                    await asyncio.gather(worker, return_exceptions=True)
+                    raise
             finally:
                 self.jobs -= 1
