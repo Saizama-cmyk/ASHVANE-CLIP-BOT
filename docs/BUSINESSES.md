@@ -78,9 +78,11 @@ a native export, measures it and optionally obtains a tentative audio observatio
 Saved revisions are private auditions; no music publishing or automatic release
 approval is implemented. Changing tempo alone is not audio time stretching.
 
-The first native integration test on this PC was blocked at REAPER startup/evaluation
-initialization. No successful native edit/export or model listening result was
-observed. Finish REAPER's first-run setup on the PC, then test a small revision.
+After the owner completed REAPER startup setup on 11 October 2026, a native test
+successfully changed a test track to -10 dB and pan 0.2, then exported a one-second
+48 kHz stereo PCM24 WAV. Read-back confirmed the edits; decoded audio was non-silent
+with no clipped samples. Native health now reports verified. This checks editing
+and export operation, not musical quality or model listening.
 Read `docs/MUSIC_PRODUCTION_RESEARCH.md` for production principles and limits.
 
 ## Social Studio

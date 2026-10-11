@@ -101,16 +101,17 @@ Revisions have `id,status,message,plan`, and on a rendered completion
 failed/cancelled. Successful native revisions refresh the saved track/FX inventory
 and BPM for subsequent planning. Save manual editor changes before exporting.
 
-## Native verification limitation
+## Native verification
 
-The installed REAPER 7.82 process was responsive but stalled before loading the
-verification project under both script and direct render startup. Its window
-reported **EVALUATION LICENSE**. No native WAV, successful native edit or listener
-result was produced. The adapter reports blocked native health and retains the
-failed revision logs. Open REAPER on the PC, finish any startup/evaluation/audio
-setup dialogs, then retry an export. No license was purchased, modified or bypassed.
+After the owner finished startup setup on 11 October 2026, REAPER 7.82 completed
+a native level/pan edit and export of the one-second verification session.
+Read-back confirmed -10 dB and pan 0.2. The resulting stereo PCM24 WAV has a
+48 kHz sample rate, non-silent decoded audio and zero clipped samples. The media
+route served the verified WAV, and native health reports verified. Earlier failed
+startup logs remain retained. No license was purchased, modified or bypassed.
 
 A real completed artist render was copied into a 59.998667-second replacement
 session with separate dry vocals/backing and custom generated notes. SHA-256 checks
 confirmed its four original audio assets were unchanged. That verifies source
-preservation and session preparation; native rendering remains unverified.
+preservation and session preparation. The later short-session test verifies native
+editing/export; the full retained-vocal session and model listening remain unverified.
