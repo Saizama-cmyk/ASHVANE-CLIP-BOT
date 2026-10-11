@@ -1,6 +1,7 @@
 """Start the Windows package against isolated disabled-capture data and verify its desk/API."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+import wave
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -17,6 +19,9 @@ from clipbot.config import Settings, merge_incoming, save_settings
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--neural", action="store_true", help="Also run the frozen local neural narration worker")
+    args = parser.parse_args()
     data = ROOT / "artifacts" / "packaged-preview-data"
     os.environ["CLIPBOT_HOME"] = str(data)
     settings = merge_incoming(Settings(), {
@@ -59,14 +64,14 @@ def main():
                                     json={"name": "Packaged preview", "password": "packaged-preview-2026"})
                 login.raise_for_status()
                 report["checks"]["sign_in"] = True
-                for route in ("/api/state", "/api/research", "/api/setup", "/api/settings/schema", "/api/publishing/batch"):
+                for route in ("/api/state", "/api/research", "/api/setup", "/api/settings/schema", "/api/publishing/batch", "/api/stories", "/api/stories/publishing"):
                     response = client.get(route)
                     response.raise_for_status()
                     response.json()
                     report["checks"][route] = True
                 research = client.get("/api/research").json()
                 report["sources"], report["ideas"] = len(research["sources"]), len(research["ideas"])
-                for name in ("index.html", "desk.js", "desk.css"):
+                for name in ("index.html", "desk.js", "desk.css", "stories.js", "stories.css", "cosmic.js", "cosmic.css"):
                     route = "/" if name == "index.html" else f"/static/{name}"
                     response = client.get(route)
                     response.raise_for_status()
@@ -82,6 +87,30 @@ def main():
                 process.kill()
                 process.wait()
             (ROOT / "artifacts" / "packaged-smoke-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if args.neural:
+        folder = ROOT / "artifacts" / "packaged-neural-check"
+        folder.mkdir(parents=True, exist_ok=True)
+        models = Path(os.environ["LOCALAPPDATA"]) / "Ashvane" / "models" / "stories"
+        audio = folder / "narration.wav"
+        audio.unlink(missing_ok=True)
+        plan = {"root": str(folder), "model_path": str(models / "kokoro.onnx"),
+                "voices_path": str(models / "voices.bin"), "voice": "am_adam",
+                "speed": .92, "lang": "en-us", "threads": 2,
+                "scenes": [{"path": str(audio), "text": "Behind the sealed door, my own voice asked to come inside."}]}
+        plan_path = folder / "plan.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        result = subprocess.run([str(executable), "--story-voice", str(plan_path)], cwd=package,
+                                capture_output=True, timeout=180,
+                                creationflags=subprocess.CREATE_NO_WINDOW)
+        if result.returncode or not audio.is_file():
+            raise RuntimeError(f"Frozen neural narrator failed ({result.returncode}): {result.stderr[-1000:]!r}")
+        with wave.open(str(audio)) as wav:
+            samples = wav.readframes(wav.getnframes())
+            if not samples or not any(samples):
+                raise RuntimeError("Frozen narrator produced silence")
+            report["checks"]["frozen_neural_narrator"] = True
+            report["narration_duration_s"] = wav.getnframes() / wav.getframerate()
+        (ROOT / "artifacts" / "packaged-smoke-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps(report))
 
 

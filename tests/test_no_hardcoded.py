@@ -21,7 +21,9 @@ from clipbot import config as C
 PKG = Path(__file__).resolve().parent.parent / "clipbot"
 UNIT_VALUES = {0, 1, -1, 2, 24, 60, 100, 1000, 1024, 3600, 86400}
 # Drawing proportions of the icon are artwork; hardware.py IS the table of recommended values.
-EXCLUDED = {"config.py", "icon.py", "hardware.py"}
+# story_art.py contains original illustration coordinates/pigments, like icon.py;
+# production timing, dimensions, motion and quality remain in StoriesCfg.
+EXCLUDED = {"config.py", "icon.py", "hardware.py", "story_art.py"}
 REVIEWED_CONSTANTS = {
     "util.py": {"ERR_SNIPPET"},                                         # log/display truncation
     "app.py": {"STARTUP_POLL_S", "LAN_PROBE_PORT"},                                       # wait-for-bind poll

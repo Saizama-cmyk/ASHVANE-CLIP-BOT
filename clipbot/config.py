@@ -1439,6 +1439,72 @@ class ReviewCfg(Section):
     frame_end_margin_s: float = F(0.15, "Last-frame seek margin (s)", "Seek just before the end to avoid requesting a frame after the final encoded frame.", ge=0.05, le=2)
 
 
+class StoriesCfg(Section):
+    """Original fiction production, independent of the streamer clipping pipeline."""
+    enabled: bool = F(True, "Story studio", "Create original narrated horror stories with local AI.")
+    model: str = F("", "Story team model", "Local Ollama model for the director, writer and jury. Empty uses your AI model.", widget="ollama_models")
+    temperature: float = F(0.7, "Story creativity", "Director and writer creativity. The jury uses zero.", ge=0, le=2)
+    timeout_s: float = F(600, "Story team timeout (s)", "Maximum time for each local model role.", ge=10, le=3600)
+    model_num_predict: int = F(8192, "Story response tokens", "Maximum response tokens per role; longer episodes need more tokens.", ge=256, le=32768)
+    target_words_min_ratio: float = F(0.55, "Minimum target word ratio", "Reject manuscripts far shorter than the requested narration target.", ge=0.1, le=1)
+    target_words_max_ratio: float = F(1.5, "Maximum target word ratio", "Reject or repair manuscripts far longer than the requested narration target.", ge=1, le=3)
+    role_max_attempts: int = F(2, "Story structural repair attempts", "Bounded attempts to repair malformed or overlong local writer output; never overrides a jury rejection.", ge=1, le=3)
+    jury_revision_attempts: int = F(1, "Story editorial revisions", "Allow the writer to revise a rejected story once, then require a fresh independent jury decision. Never forces approval.", ge=0, le=2)
+    scene_target_s: int = F(15, "Story scene pace (s)", "Target narration duration per illustrated scene; also bounds scene count for short stories.", ge=5, le=120)
+    max_projects: int = F(100, "Saved stories", "Maximum projects kept in the story library.", ge=1, le=1000)
+    max_scenes: int = F(24, "Scenes per story", "Maximum original illustrated scenes per episode.", ge=1, le=100)
+    max_script_words: int = F(3000, "Maximum story words", "Bounds local writing and narration work.", ge=40, le=10000)
+    min_script_words: int = F(40, "Minimum story words", "Reject incomplete stories shorter than this.", ge=1, le=1000)
+    min_duration_s: int = F(30, "Minimum requested duration (s)", "Shortest story target.", ge=10, le=900)
+    max_duration_s: int = F(900, "Maximum requested duration (s)", "Longest story target. Final length is measured from narration.", ge=30, le=3600)
+    max_topic_chars: int = F(1200, "Premise length", "Maximum characters in a story premise.", ge=10, le=10000)
+    max_title_chars: int = F(100, "Story title length", "Maximum public story title characters.", ge=10, le=100)
+    max_visual_prompt_chars: int = F(2000, "Scene direction length", "Maximum characters in each original visual direction.", ge=100, le=10000)
+    default_duration_s: int = F(60, "Default story duration (s)", "Start with a Short; choose longer episodes in Stories.", ge=30, le=900)
+    default_genre: Literal["paranormal", "psychological", "creature", "urban_legend", "analog", "cosmic", "folklore", "sci_fi", "survival"] = F("paranormal", "Default genre", "Starting genre for new original stories.")
+    default_format: Literal["still", "animated"] = F("animated", "Default visual format", "Illustrated stills or moving shadow-theatre scenes.")
+    narrator_backend: Literal["windows", "kokoro_local", "openai_compatible"] = F("windows", "Narrator", "Windows voices work immediately. Kokoro provides installed local neural voices; an installed local speech server is also supported.")
+    kokoro_model_path: str = F("", "Kokoro model file", "Local ONNX model. Empty uses models/stories/kokoro.onnx.", widget="path")
+    kokoro_voices_path: str = F("", "Kokoro voice file", "Local Kokoro voice bank. Empty uses models/stories/voices.bin.", widget="path")
+    kokoro_speed: float = F(0.92, "Kokoro narration speed", "Natural local neural narration speed; values below one leave more room for suspense.", ge=0.5, le=2)
+    kokoro_lang: Literal["en-us", "en-gb"] = F("en-us", "Kokoro language", "English phonemization for original story narration.")
+    kokoro_threads: int = F(2, "Neural narrator CPU threads", "CPU workers for local Kokoro narration; keeps model work bounded.", ge=1, le=32)
+    speech_url: str = F("", "Local speech server", "Optional local HTTP base URL exposing /v1/audio/speech. No cloud services; credentials are never sent.")
+    speech_model: str = F("kokoro", "Speech server model", "Model accepted by your installed local speech server.")
+    voice: str = F("", "Narrator voice", "Windows voice name, or voice ID for a local speech server. Empty uses the available default.")
+    speech_rate: int = F(-1, "Windows reading rate", "Windows narration rate from -10 to 10; negative values read more slowly.", ge=-10, le=10)
+    narration_words_per_min: int = F(130, "Narration estimate (words/min)", "Writing target only; finished video duration is measured from real audio.", ge=60, le=240)
+    image_provider_url: str = F("", "Local illustration server", "Optional local AUTOMATIC1111-compatible base URL exposing /sdapi/v1/txt2img. Otherwise original procedural shadow-theatre art is used.")
+    image_steps: int = F(20, "Illustration sampling steps", "Local illustration sampling effort.", ge=1, le=100)
+    generated_media_max_mb: int = F(128, "Local generated media limit (MB)", "Maximum decoded response from a local narration or illustration service.", ge=1, le=512)
+    image_width: int = F(720, "Short video width", "Portrait width; longer episodes swap width and height for landscape.", ge=256, le=2160)
+    image_height: int = F(1280, "Short video height", "Portrait height; must be even for H.264.", ge=256, le=3840)
+    fps: int = F(24, "Story frame rate", "Frame rate for illustrated stills and scene animation.", ge=12, le=60)
+    crf: int = F(20, "Story video quality", "H.264 constant quality, lower is sharper and larger.", ge=10, le=35)
+    scene_motion: float = F(0.12, "Scene movement", "Amount of character movement in animated shadow-theatre scenes.", ge=0, le=0.5)
+    episode_threshold_s: int = F(180, "Landscape episode threshold (s)", "Targets above this use landscape; shorter stories use portrait.", ge=60, le=900)
+    narration_gap_s: float = F(0.4, "Scene narration pause (s)", "A short breath between scene readings.", ge=0, le=3)
+    render_timeout_s: float = F(1800, "Story render timeout (s)", "Maximum time for a render subprocess.", ge=30, le=7200)
+    audio_bitrate: str = F("192k", "Story audio bitrate", "AAC narration bitrate in finished videos.")
+    captions: bool = F(True, "Story subtitles", "Burn scene-timed narration subtitles into finished stories.")
+    caption_words: int = F(7, "Story caption words", "Maximum words per subtitle. Timing is estimated from the actual scene audio.", ge=2, le=20)
+    caption_font_size: int = F(42, "Story subtitle size", "Subtitle size in portrait output, scaled down for landscape.", ge=16, le=96)
+    caption_font: str = F("Segoe UI", "Story subtitle font", "Installed typeface used for story narration captions.")
+    prompt: str = F("Create original fictional horror for an adult general audience, without graphic gore or sexual content. Never imitate a creator, copy an existing story, clone a voice or claim fiction is true. Begin with a concrete impossible detail or immediate unsettling problem. Ground the narrator in one place and desire. Escalate through distinct clues with cause and consequence. Deliver a comprehensible reveal and an earned final consequence, not a generic 'it was a dream'. Avoid greetings, logos, subscribe requests and filler. Vary premise, characters, setting, narrative structure and ending between stories. Scene narration is the exact public spoken script; visual prompts describe original images without labels, scores or reviewer notes. Genre is independent of visual format. Titles create honest curiosity about one specific story detail; descriptions briefly introduce the premise and label original fiction. Use a few relevant hashtags, no keyword stuffing or false TRUE labels. Target roughly 130 spoken words per minute and a complete arc.", "Story direction", "Instructions shared by the original-fiction team.", widget="textarea")
+    jury_prompt: str = F("Judge the story as a horror viewer: immediate hook, understandable setup, escalating specific events, coherent reveal, earned ending, original characters and premise, suitable narration and scene directions. Reject copied franchise/creator stories, unsupported TRUE labels, excessive gore, sexual content, hate, private production analysis in public copy, filler or incomplete endings. Give specific issues privately. Approval requires a complete publishable original fictional narrative; never pass merely because the output matches JSON.", "Story jury", "Private quality gate. Its analysis is never narration or public metadata.", widget="textarea")
+    auto_render: bool = F(True, "Render approved story drafts", "Automatically narrate and render newly generated stories that pass the story jury.")
+    auto_publish: bool = F(True, "Automatically publish approved stories", "Send finished jury-approved stories to the selected connected destinations using the independent Stories queue.")
+    publish_destinations: list[Literal["youtube", "tiktok", "instagram", "facebook", "discord"]] = F(default_factory=lambda: ["youtube"], title="Story destinations", description="Connected accounts used for Stories. Streamer-clip switches and caption templates are separate.")
+    publish_privacy: Literal["public", "unlisted", "private"] = F("public", "Story YouTube visibility", "Visibility for original story uploads, independent of streamer clips.")
+    youtube_category_id: str = F("24", "Story YouTube category", "YouTube category for original stories (24 is Entertainment).")
+    synthetic_disclosure: bool = F(True, "Disclose synthetic content", "Mark original story YouTube uploads as containing synthetic media. Public copy also labels original fiction.")
+    publish_daily_cap: int = F(3, "Stories per destination per day", "Independent story publication cap; an upload with uncertain result also consumes a slot until checked.", ge=0, le=100)
+    publish_gap_min: int = F(120, "Time between story uploads (min)", "Minimum time between story attempts on each destination.", ge=0, le=1440)
+    publish_tick_s: float = F(20, "Story queue interval (s)", "How often the story production/publishing queue checks for work.", ge=2, le=600)
+    account_retry_s: float = F(60, "Story account retry interval (s)", "Retry transient destination-account verification failures after this pause.", ge=5, le=3600)
+    request_max_bytes: int = F(1048576, "Story request limit (bytes)", "Maximum decoded incoming Stories JSON body.", ge=4096, le=10485760)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="ignore", validate_assignment=True)
 
@@ -1464,6 +1530,7 @@ class Settings(BaseModel):
     clip_import: ClipImportCfg = Field(default_factory=ClipImportCfg, title="Popular clips")
     trends: TrendsCfg = Field(default_factory=TrendsCfg, title="Trends")
     research: ResearchCfg = Field(default_factory=ResearchCfg, title="Research studio")
+    stories: StoriesCfg = Field(default_factory=StoriesCfg, title="Stories")
     analytics: AnalyticsCfg = Field(default_factory=AnalyticsCfg, title="Analytics")
     dashboard: DashboardCfg = Field(default_factory=DashboardCfg, title="Dashboard")
     pets: PetsCfg = Field(default_factory=PetsCfg, title="Desktop pet")
@@ -1479,6 +1546,12 @@ class Settings(BaseModel):
             raise ValueError("clip.min_len_s must not exceed clip.max_len_s")
         if self.ai.hashtags_min > self.ai.hashtags_max:
             raise ValueError("ai.hashtags_min must not exceed ai.hashtags_max")
+        if self.stories.min_duration_s > self.stories.max_duration_s:
+            raise ValueError("stories.min_duration_s must not exceed stories.max_duration_s")
+        if self.stories.min_script_words > self.stories.max_script_words:
+            raise ValueError("stories.min_script_words must not exceed stories.max_script_words")
+        if self.stories.image_width % 2 or self.stories.image_height % 2:
+            raise ValueError("Story video dimensions must be even")
         return self
 
 

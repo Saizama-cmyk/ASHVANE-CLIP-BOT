@@ -747,6 +747,8 @@ nav button:hover .i3{transform:scale(1.08)}
 </style>
 <!-- Existing component layout is retained above; the daily desk theme is authoritative. -->
 <link rel="stylesheet" href="/static/desk.css">
+<link rel="stylesheet" href="/static/stories.css">
+<link rel="stylesheet" href="/static/cosmic.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -783,14 +785,15 @@ nav button:hover .i3{transform:scale(1.08)}
   <div class="brand"><img src="/static/art/mark-96.png" alt="" width="42" height="42"><div><b>Ashvane</b><span>Capture / cut / publish</span></div></div>
   <nav role="tablist" aria-orientation="vertical" aria-label="Sections">
     <button role="tab" aria-selected="true" data-view="clips" title="Clips"><span class="desk-nav-mark" aria-hidden="true">01</span><span class="t">Clips</span></button>
-    <button role="tab" aria-selected="false" data-view="studio" title="Studio"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Studio</span></button>
-    <button role="tab" aria-selected="false" data-view="live" title="Live"><i class="ico i3" style="--i:url(/static/ui/chrome/live.png);--ia:url(/static/ui/ember/live.png)" aria-hidden="true"></i><span class="t">Live</span></button>
-    <button role="tab" aria-selected="false" data-view="research" title="Research"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Research</span></button>
-    <button role="tab" aria-selected="false" data-view="desk" title="Today"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Today</span></button>
-    <button role="tab" aria-selected="false" data-view="growth" title="Growth"><i class="ico i3" style="--i:url(/static/ui/chrome/growth.png);--ia:url(/static/ui/ember/growth.png)" aria-hidden="true"></i><span class="t">Growth</span></button>
-    <button role="tab" aria-selected="false" data-view="system" title="System"><i class="ico i3" style="--i:url(/static/ui/chrome/system.png);--ia:url(/static/ui/ember/system.png)" aria-hidden="true"></i><span class="t">System</span></button>
-    <button role="tab" aria-selected="false" data-view="settings" title="Settings"><i class="ico i3" style="--i:url(/static/ui/chrome/settings.png);--ia:url(/static/ui/ember/settings.png)" aria-hidden="true"></i><span class="t">Settings</span></button>
-    <button role="tab" aria-selected="false" data-view="setup" title="Setup"><i class="ico i3" style="--i:url(/static/ui/chrome/setup.png);--ia:url(/static/ui/ember/setup.png)" aria-hidden="true"></i><span class="t">Setup</span><span class="count" id="setupCount" hidden></span></button>
+    <button role="tab" aria-selected="false" data-view="stories" title="Stories"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Stories</span></button>
+    <button role="tab" aria-selected="false" data-view="studio" title="Studio"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Studio</span></button>
+    <button role="tab" aria-selected="false" data-view="live" title="Live"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-live"/></svg><span class="t">Live</span></button>
+    <button role="tab" aria-selected="false" data-view="research" title="Research"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Research</span></button>
+    <button role="tab" aria-selected="false" data-view="desk" title="Today"><span class="desk-nav-mark" aria-hidden="true">05</span><span class="t">Today</span></button>
+    <button role="tab" aria-selected="false" data-view="growth" title="Growth"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-growth"/></svg><span class="t">Growth</span></button>
+    <button role="tab" aria-selected="false" data-view="system" title="System"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-system"/></svg><span class="t">System</span></button>
+    <button role="tab" aria-selected="false" data-view="settings" title="Settings"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings"/></svg><span class="t">Settings</span></button>
+    <button role="tab" aria-selected="false" data-view="setup" title="Setup"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-setup"/></svg><span class="t">Setup</span><span class="count" id="setupCount" hidden></span></button>
   </nav>
   <div class="rail-foot">
     <div class="status" role="button" tabindex="0" title="Open the System panel: what this means, events, issues, analytics">
@@ -817,6 +820,58 @@ nav button:hover .i3{transform:scale(1.08)}
   <div class="banner err" id="connBanner"><span>Lost contact with the Ashvane engine. Retrying…</span></div>
 
 <main id="workspace" tabindex="-1">
+  <section class="view stories-workspace" id="view-stories" role="tabpanel">
+    <div class="stories-intro"><p>Turn an original premise into a manuscript, a narrated scene sequence, and a finished video. Choose the visual treatment separately from the kind of story.</p><span class="stories-fiction">Original fictional stories</span></div>
+    <div class="stories-global-error" id="storiesGlobalError" role="alert" hidden><p id="storiesGlobalErrorText"></p><button class="btn" type="button" id="storiesReload">Try again</button></div>
+    <div class="stories-layout">
+      <aside class="stories-sidebar">
+        <section class="stories-panel"><div class="stories-panel-head"><h2>New story</h2><span>Start with a premise</span></div>
+          <form id="storiesCreateForm" class="stories-compose">
+            <div class="stories-field"><label for="storiesTopic">What happens?</label><textarea id="storiesTopic" name="story_topic" rows="4" maxlength="2000" placeholder="A place, a person, and something that should not be there…" required></textarea><p class="stories-help">Describe your own premise. Specific details give the story something to hold onto.</p></div>
+            <div class="stories-field"><label for="storiesGenre">Genre</label><select id="storiesGenre" name="story_genre" required><option value="">Loading genres…</option></select></div>
+            <fieldset class="stories-fieldset stories-field"><legend>Visual treatment</legend><div class="stories-format"><label><input type="radio" name="story_format" value="still" checked><span><b>Still illustrations</b><small>Original illustrated shadow theatre</small></span></label><label><input type="radio" name="story_format" value="animated"><span><b>Animated scenes</b><small>Original moving shadow theatre</small></span></label></div><p class="stories-help" id="storiesFormatNote">Checking visual providers…</p></fieldset>
+            <div class="stories-length"><div class="stories-field"><label for="storiesLength">Length</label><select id="storiesLength" name="story_length"><option value="short">Short</option><option value="episode">Episode</option></select></div><div class="stories-field"><label for="storiesDuration">Seconds</label><input type="number" id="storiesDuration" name="story_duration" value="60" min="30" max="1800" step="1" inputmode="numeric" required></div></div>
+            <div class="stories-field"><label for="storiesVoice">Narrator</label><select id="storiesVoice" name="story_voice"><option value="">Checking available voices…</option></select></div>
+            <div class="stories-readiness" id="storiesReadiness" aria-live="polite">Checking script, narration, and visual providers…</div>
+            <button class="btn primary" type="submit" id="storiesCreate" disabled>Create story draft</button>
+            <p class="stories-help" id="storiesCreateNote">A draft creates the manuscript and scene direction first.</p>
+            <p class="stories-error" id="storiesCreateError" role="alert" hidden></p>
+            <button class="btn ghost" type="button" id="storiesSettings">Story settings</button>
+          </form>
+        </section>
+        <section class="stories-panel"><div class="stories-panel-head"><h2>Story publishing</h2><span>Separate from Clips</span></div>
+          <form id="storiesPublishingForm" class="stories-publishing">
+            <p>Choose the connected accounts for original stories. Automatic publishing sends only videos that pass story review.</p>
+            <div class="stories-destinations" id="storiesDestinations"><p>Checking connected accounts…</p></div>
+            <label class="stories-publish-toggle"><input type="checkbox" id="storiesAutoPublish" name="story_auto_publish"><span>Automatically publish reviewed stories</span></label>
+            <div class="stories-field"><label for="storiesPrivacy">YouTube visibility</label><select id="storiesPrivacy" name="story_privacy"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></div>
+            <button class="btn" type="submit" id="storiesSavePublishing">Save story publishing</button>
+            <p class="stories-error" id="storiesPublishError" role="alert" hidden></p>
+            <button class="btn ghost" type="button" id="storiesAccounts">Connect an account</button>
+          </form>
+        </section>
+        <section class="stories-panel"><div class="stories-panel-head"><h2>Your stories</h2><span id="storiesLibraryCount">Loading…</span></div><div class="stories-library-tools"><input id="storiesLibrarySearch" type="search" name="story_search" autocomplete="off" placeholder="Find a story" aria-label="Find a story"></div><div class="stories-library" id="storiesLibrary"><p class="stories-library-empty">Loading saved projects…</p></div></section>
+      </aside>
+      <div class="stories-stage">
+        <section class="stories-panel stories-empty" id="storiesEmpty"><div class="story-empty-line" aria-hidden="true"></div><h2>Build a story worth listening to.</h2><p>Start with your premise on the left, or open a saved story. The manuscript and director’s scene notes stay editable before you render.</p><div class="stories-worksteps" aria-label="Story production stages"><span>Manuscript</span><span>Scene direction</span><span>Narration &amp; video</span></div></section>
+        <section class="stories-panel" id="storiesEditor" hidden aria-label="Story editor">
+          <div class="stories-editor-heading"><h2 id="storiesEditorHeading">Story draft</h2><span class="stories-status" id="storiesProjectStatus"></span></div>
+          <p class="stories-project-meta" id="storiesProjectMeta"></p>
+          <div class="stories-job" id="storiesJob" aria-live="polite" hidden><div class="stories-job-top"><strong id="storiesJobStage"></strong><span id="storiesJobPercent"></span></div><progress id="storiesJobProgress" max="100" value="0" aria-label="Story production progress"></progress><p id="storiesJobDetail"></p><p class="stories-error" id="storiesProjectError" hidden></p><div class="stories-job-actions"><button class="btn" type="button" id="storiesCancel" hidden>Cancel job</button><button class="btn" type="button" id="storiesRetry" hidden>Retry</button></div></div>
+          <div class="stories-editor-tabs" role="tablist" aria-label="Story editing"><button type="button" id="story-tab-manuscript" role="tab" aria-selected="true" aria-controls="story-pane-manuscript" data-story-pane="manuscript">Manuscript</button><button type="button" id="story-tab-scenes" role="tab" aria-selected="false" aria-controls="story-pane-scenes" data-story-pane="scenes">Scenes</button><button type="button" id="story-tab-public" role="tab" aria-selected="false" aria-controls="story-pane-public" data-story-pane="public">Title &amp; description</button></div>
+          <form id="storiesEditForm">
+            <div class="stories-editor-pane stories-manuscript" id="story-pane-manuscript" role="tabpanel" aria-labelledby="story-tab-manuscript"><div class="stories-field"><label for="storyTitle">Working title</label><input id="storyTitle" name="story_title" type="text" maxlength="200" required></div><div class="stories-field"><label for="storyScript">Manuscript</label><textarea id="storyScript" name="story_script" rows="12" class="story-manuscript" placeholder="The spoken story will appear here when the draft is ready."></textarea><p class="stories-help" id="storyManuscriptNote">Read the whole story, then refine its scene direction before rendering.</p></div></div>
+            <div class="stories-editor-pane" id="story-pane-scenes" role="tabpanel" aria-labelledby="story-tab-scenes" hidden><div class="stories-scene-toolbar"><p>Each scene pairs a narration take with a visual direction. Keep a clear opening, escalation, reveal, and ending.</p><button class="btn" type="button" id="storiesAddScene">Add scene</button></div><div id="storiesScenes"></div></div>
+            <div class="stories-editor-pane stories-public" id="story-pane-public" role="tabpanel" aria-labelledby="story-tab-public" hidden><p class="stories-help">These are the public video details. Private review notes stay in your workspace.</p><div class="stories-field"><label for="storyPublicTitle">Video title</label><input id="storyPublicTitle" name="story_public_title" type="text" maxlength="200"></div><div class="stories-field"><label for="storyPublicDescription">Description</label><textarea id="storyPublicDescription" name="story_public_description" rows="7"></textarea></div><div class="stories-public-tags"><div class="stories-field"><label for="storyPublicTags">Tags</label><input id="storyPublicTags" name="story_public_tags" type="text" placeholder="Comma separated"></div><div class="stories-field"><label for="storyPublicHashtags">Hashtags</label><input id="storyPublicHashtags" name="story_public_hashtags" type="text" placeholder="Comma separated"></div></div><div><button class="btn" type="button" id="storiesCopyPublic">Copy public details</button></div></div>
+            <div class="stories-savebar"><span class="stories-save-message" id="storiesSaveMessage" role="status" aria-live="polite">Saved on this PC</span><button class="btn" type="button" id="storiesDiscard" disabled>Discard changes</button><button class="btn" type="submit" id="storiesSave" disabled>Save changes</button><button class="btn" type="button" id="storiesReview">Review story</button><button class="btn primary" type="button" id="storiesRender" disabled>Render narrated video</button></div>
+            <p class="stories-render-reason" id="storiesRenderReason">Checking production readiness…</p>
+          </form>
+          <section class="stories-preview" id="storiesPreview" hidden aria-label="Rendered story preview"><video id="storiesVideo" controls playsinline preload="metadata"></video><div class="stories-preview-actions"><p>Rendered video from this saved project.</p><a class="btn" id="storiesDownload" href="#" download>Download video</a></div><div class="stories-publish-actions"><p id="storiesPublishStatus" aria-live="polite">Ready videos can be sent to your selected connected accounts.</p><button class="btn primary" type="button" id="storiesPublishNow" disabled>Publish story now</button></div></section>
+          <details class="stories-review"><summary>Private review &amp; project actions</summary><div id="storiesPrivateReview"></div><p class="stories-help">Review notes are never included when you copy public details.</p><button class="btn danger" type="button" id="storiesDelete">Delete story</button></details>
+        </section>
+      </div>
+    </div>
+  </section>
   <section class="view" id="view-desk" role="tabpanel">
     <div class="desk-focus"><div><p class="desk-date" id="deskDate">Today</p><h2 id="deskNextTitle">Connecting to your workspace</h2><p id="deskNextDetail">Your clips, research, and publishing connections will appear here.</p></div><button class="btn primary" id="deskNext" type="button" disabled>Connecting…</button></div>
     <div class="desk-counts" id="deskCounts" aria-label="Current content activity"><span class="dim">Waiting for the engine…</span></div>
@@ -995,6 +1050,7 @@ nav button:hover .i3{transform:scale(1.08)}
 </div>
 </div>
 
+
 <dialog id="preview" aria-label="Sample preview">
   <div class="phead"><h2 id="pvTitle">Sample</h2><button class="btn" id="pvStudio" type="button" style="margin-left:auto">Edit in Studio</button><button class="btn ghost" id="pvClose" type="button" aria-label="Close preview">Close</button></div>
   <div class="mbody">
@@ -1086,6 +1142,7 @@ function clock(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour: "2
 
 /* ---------------- tabs ---------------- */
 const PAGES = {
+  stories: ["Stories", "Original narrated stories, from manuscript to finished video."],
   desk: ["Today", "Capture, queue, and publishing at a glance."],
   research: ["Research & original posts", "Find an angle worth explaining, with sources you can check."],
   live: ["Live desk", "Watch the streams. Catch the moments worth keeping."],
@@ -2412,5 +2469,7 @@ window.startAshvane = function() {
 };
 </script>
 <script src="/static/desk.js"></script>
+<script src="/static/stories.js"></script>
+<script src="/static/cosmic.js"></script>
 </body>
 </html>

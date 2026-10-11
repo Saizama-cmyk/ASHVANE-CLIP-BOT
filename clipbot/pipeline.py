@@ -53,6 +53,9 @@ from .storage import clips_target
 from .safety import Filter
 from .trends import TrendScout
 from .research import ResearchStudio
+from .stories import StoryStudio
+from .story_render import StoryRenderer
+from .story_publishing import StoryPublishing
 from .review import review_final
 
 logger = logging.getLogger("clipbot.pipeline")
@@ -151,11 +154,17 @@ class Pipeline:
         self.chat = ChatHub(s, self._on_chat, self.discovery.kick_channel)
         gpu_lock = asyncio.Lock()          # vision model and judge never run at the same time
         self.research = ResearchStudio(s, self.http, self.paths, self.trends, gpu_lock)
+        self.stories = StoryStudio(s, self.http, self.paths, gpu_lock)
+        self.story_renderer = StoryRenderer(s, self.http, gpu_lock, self.paths.models)
+        self.story_renderer.progress = self.stories.report_progress
+        self.stories.renderer = self.story_renderer
         self.clipability = Clipability(s, self.http, gpu_lock)
         self.vision = Vision(s, self.http, gpu_lock)
         self.copywriter = Copywriter(s, self.http, gpu_lock)
         self.oauth = OAuthManager(s, self.http, self.tokens)
         self.publishers = build_publishers(s, self.http, self.tokens, self.oauth)
+        self.story_publishing = StoryPublishing(s, self.http, self.tokens, self.oauth,
+                                               self.stories, self.story_renderer)
         self.scheduler = Scheduler(s, self.store, self.publishers, self.paths)
         self.scheduler.quality_guard = self._review_final
         self.scheduler.media_locks = self._media_locks
@@ -169,6 +178,9 @@ class Pipeline:
         self.analytics.start()
         self.trends.start()
         self.research.start()
+        self.stories.start()
+        self._tasks.append(asyncio.create_task(self.story_renderer.initialize(), name="story-voices"))
+        self.story_publishing.start()
         self.model_setup = ModelSetup(s, self.http)
         self._tasks.append(asyncio.create_task(self._first_run_models(), name="model-setup"))
         loops = [(self._gpu_loop(), "gpu"), (self._housekeeping_loop(), "housekeeping"),
@@ -199,7 +211,8 @@ class Pipeline:
         self._tasks.clear()
         await asyncio.gather(self.captures.stop_all(), self.chat.stop(), self.scheduler.stop(),
                              self.analytics.stop(), self.importer.stop(), self.trends.stop(),
-                             self.research.stop(), return_exceptions=True)
+                             self.research.stop(), self.stories.stop(),
+                             self.story_publishing.stop(), self.story_renderer.stop(), return_exceptions=True)
         await terminate_all(grace)
         if self.http:
             await self.http.aclose()
@@ -223,6 +236,9 @@ class Pipeline:
         self.importer.apply(s)
         self.trends.apply(s)
         self.research.apply(s)
+        self.stories.apply(s)
+        self.story_renderer.apply(s)
+        self.story_publishing.apply(s)
         self.oauth.apply(s)
         self.scheduler.apply(s)
         loop = asyncio.get_running_loop()

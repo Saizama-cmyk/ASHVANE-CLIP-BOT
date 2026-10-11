@@ -115,6 +115,8 @@ def create_app(ctx) -> FastAPI:
     app = FastAPI(title="Ashvane", docs_url=None, redoc_url=None,
                   openapi_url=None)
     profiles = ProfileStore()
+    from ..story_api import install_story_routes
+    install_story_routes(app, ctx)
 
     def a_cfg():
         return ctx.settings.app

@@ -20,6 +20,7 @@ class PostText:
     title: str
     caption: str
     hashtags: list[str] = field(default_factory=list)
+    contains_synthetic_media: bool | None = None
 
 
 def _int(v) -> int:

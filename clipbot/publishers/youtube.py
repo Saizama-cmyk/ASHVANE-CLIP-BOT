@@ -22,10 +22,13 @@ AGE_RESTRICTION_HOLD = ("YouTube's upload API cannot set an 18+ age restriction.
 def upload_metadata(post: PostText, cfg) -> dict:
     """One representation for upload, privacy validation and the analytics snapshot."""
     suffix = cfg.shorts_suffix
-    return {"snippet": {"title": (post.title[:TITLE_MAX - len(suffix)] + suffix).strip(),
+    metadata = {"snippet": {"title": (post.title[:TITLE_MAX - len(suffix)] + suffix).strip(),
                         "description": post.caption[:DESCRIPTION_MAX],
                         "tags": post.hashtags, "categoryId": cfg.category_id},
             "status": {"privacyStatus": cfg.privacy, "selfDeclaredMadeForKids": False}}
+    if post.contains_synthetic_media is not None:
+        metadata["status"]["containsSyntheticMedia"] = post.contains_synthetic_media
+    return metadata
 
 
 class YouTubePublisher(Publisher):

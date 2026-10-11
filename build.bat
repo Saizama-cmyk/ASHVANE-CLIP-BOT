@@ -31,6 +31,7 @@ echo [2/3] Running PyInstaller...
   --add-data "%CD%\assets;assets" ^
   --collect-all streamlink --collect-all streamlink_cli ^
   --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime ^
+  --collect-all kokoro_onnx --collect-all espeakng_loader --collect-all phonemizer --collect-all _soundfile_data --copy-metadata kokoro-onnx ^
   --collect-all webview --collect-submodules uvicorn --collect-submodules clipbot ^
   --hidden-import pystray._win32 %NV% ^
   clipbot\__main__.py || goto :fail

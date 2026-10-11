@@ -274,3 +274,37 @@ def test_phone_model_mirror_only_serves_known_models(running_app):
     st = c.get("/api/assistant/models/gemma3-1b").json()
     assert st["ready"] is False and st["bytes"] > 0
     assert c.get("/api/assistant/models/gemma3-1b/file").status_code == 404
+
+
+def test_stories_live_contract_and_separate_posting_settings(running_app):
+    app, c = running_app
+    studio = c.get("/api/stories")
+    assert studio.status_code == 200
+    data = studio.json()
+    assert len(data["genres"]) == 9 and data["projects"] == []
+    assert set(data) >= {"projects", "busy", "job", "capabilities", "settings"}
+    before = app.settings.posting.model_dump()
+    response = c.put("/api/stories/publishing", headers=H, json={
+        "enabled": False, "destinations": ["youtube", "discord"], "privacy": "unlisted"})
+    assert response.status_code == 200
+    assert response.json()["config"] == {"enabled": False, "destinations": ["youtube", "discord"], "privacy": "unlisted"}
+    assert app.settings.posting.model_dump() == before
+    assert C.load_settings().stories.publish_privacy == "unlisted"
+    assert all(not d["ready"] and d["reason"] for d in response.json()["destinations"])
+
+
+def test_stories_auth_validation_and_media_boundaries(running_app):
+    app, c = running_app
+    with httpx.Client(base_url=str(c.base_url), timeout=10) as anonymous:
+        for route in ("/api/stories", "/api/stories/publishing", "/api/stories/projects/" + "a" * 32 + "/video"):
+            assert anonymous.get(route).status_code == 401
+    assert c.post("/api/stories/projects", json={"topic": "a story"}).status_code == 403
+    assert c.post("/api/stories/projects", headers=H, json={"topic": "a story", "format": "unknown"}).status_code == 422
+    assert c.post("/api/stories/projects", headers=H, json={"topic": "a story", "duration_s": True}).status_code == 422
+    assert c.put("/api/stories/publishing", headers=H, json={"enabled": "false"}).status_code == 422
+    assert c.put("/api/stories/publishing", headers=H, json={"destinations": ["unknown"]}).status_code == 422
+    assert c.get("/api/stories/projects/invalid/video").status_code == 422
+    assert c.get("/api/stories/projects/" + "a" * 32 + "/video").status_code == 404
+    app.settings.stories.request_max_bytes = 4096
+    assert c.post("/api/stories/projects", headers=H, content=b"x" * 4097).status_code == 413
+    assert app.pipeline.stories.projects == []

@@ -10,3 +10,7 @@ pywebview==6.2.1
 pystray==0.19.5
 pillow==12.3.0
 pyinstaller==6.22.3
+kokoro-onnx==0.6.1
+soundfile==0.13.1
+espeakng-loader==0.2.4
+phonemizer==3.4.0

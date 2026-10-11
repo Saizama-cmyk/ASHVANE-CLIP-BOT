@@ -6,7 +6,7 @@ A free, local, open-source (AGPL-3.0) Windows app. It watches Twitch and Kick st
 - **Full installer:** `dist\Ashvane-Setup-1.0.0.exe` (about 1 GB, includes everything). Run it, accept the terms, and it offers to install Ollama.
 - **Web installer:** a small file that downloads the latest full installer from GitHub Releases. Built by `installer\publish_release.bat` once the GitHub repo exists.
 - **Updates:** set Settings → Updates → repo (`owner/name`) and the app checks on start. "Update now" installs silently, keeps your data and restarts.
-- **Your data** lives in `%LOCALAPPDATA%\ClipBot` (legacy folder name, kept on purpose so existing data carries over).
+- **Your data** lives in `%LOCALAPPDATA%\Ashvane`; older ClipBot data migrates automatically.
 
 ## First run
 1. **Profile.** Unique name (case-insensitive) and a password. Passwords are stored only as salted PBKDF2 hashes (600k rounds), never in plain text. Each profile has its own data folder.
@@ -35,6 +35,11 @@ A free, local, open-source (AGPL-3.0) Windows app. It watches Twitch and Kick st
 
 ## App tour
 - **Live desk:** stream slots with chat sparklines. Click one to watch it full screen ~6 s behind live.
+- **Stories:** a separate studio for original narrated horror. Choose a premise, genre,
+  still illustrations or animated shadow theatre, and a target length. A local director,
+  writer and independent jury create and review the manuscript; a failed story stays held
+  for revision. Accepted stories can render and publish automatically to the destinations
+  selected inside Stories. Clip posting switches and templates do not control this queue.
 - **Clips:** everything it cut. Clips still working show what stage they are in.
 - **Studio:** quick settings plus an Advanced drop-down; six themes (Sterling, Ember, Loud, Clean, Night Shift, Cinema). "Use for all new clips" saves the look.
 - **Status card** (click it): system log with events, issues and analytics.
@@ -43,7 +48,35 @@ A free, local, open-source (AGPL-3.0) Windows app. It watches Twitch and Kick st
   - Because a see-through window gets no mouse messages from Windows, Ashvane tracks the cursor itself: hover opens the card, drag moves the pet, double-click opens the app, and the card's buttons work.
   - Hover card floats above the pet with stats, the hottest stream and graphs.
 - **Tray:** closing the window keeps it running. Start with Windows is optional and starts it quietly.
-- **Look:** sterling chrome hardware on black, engraved labels, machined bevels, one ember lamp that only ever means ON AIR. All art is original (Blender scripts in `art/`).
+- **Look:** an original dark observatory interface, amber instruments and a central black-hole transition between Stories and the live desk. Reduced-motion preferences use a brief fade. The phone has the same sections and visual language.
+
+## Stories production and publishing
+
+Open Stories, enter an original premise and choose a format. Short projects render vertically;
+targets above three minutes render as landscape episodes. Length is a narration estimate:
+the finished duration is measured from the actual voice recording. Animated shadow theatre
+moves illustrated characters and atmosphere; it does not generate cinematic character footage.
+An optional local image server can supply backgrounds.
+
+The default narrator uses installed Windows voices. For natural local narration, run
+`.venv\Scripts\python scripts\setup_story_voice.py`, then select **kokoro_local** as the narrator
+and a voice in Stories settings. The model download is about 142 MB and subsequent narration
+runs on this PC without a paid API. Subtitle timings are estimated within each scene reading.
+
+The manuscript, scene visuals and public title/description can be edited before rendering.
+Edits invalidate the previous review and video. Review explanations and internal agent notes
+never become narration, captions or published metadata. Stories are labelled original fiction;
+YouTube's synthetic-media disclosure is enabled by default.
+
+Stories shows the actual connected destination account. Connect or renew accounts under
+Settings → Accounts before publishing. Automatic publishing requires a current passing review,
+a completed video and a verified account, and observes its own daily cap and gap. Long landscape
+episodes use YouTube or Discord. An interrupted or ambiguous upload is held for account checking
+instead of being retried automatically and risking a duplicate post.
+
+Research methods, the sampled horror videos and policy sources are documented in
+[`docs/HORROR-STORY-RESEARCH.md`](docs/HORROR-STORY-RESEARCH.md). The study is a bounded sample,
+not a claim of global trend coverage or guaranteed revenue.
 
 ## Settings worth knowing
 | Setting | Why |
@@ -53,7 +86,7 @@ A free, local, open-source (AGPL-3.0) Windows app. It watches Twitch and Kick st
 | AI → Judge profile | Auto picks by VRAM; force one if you want speed or strictness. |
 | Edit → Cut the dead air | Turn off if you want the raw timing. |
 | Edit → Stage height / position | How much of the frame the stream fills. |
-| Posting → YouTube → 18+ | On by default: uploads are marked age-restricted. |
+| Posting → YouTube → 18+ | The upload API cannot apply an age restriction; this setting holds affected clips instead of claiming to restrict them. |
 | Pets → Animation speed / walk speed / mouse polling | Feel of the desktop pet. |
 
 ## Legal

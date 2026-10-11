@@ -105,6 +105,13 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["--streamlink"]:
         return run_streamlink(argv[1:])
+    if argv[:1] == ["--story-voice"]:
+        _ensure_std_streams()
+        from clipbot.story_voice import narrate
+        if len(argv) != 2:
+            raise ValueError("A local narration plan is required")
+        narrate(Path(argv[1]))
+        return 0
 
     args = parse_args(argv)
     windowed = args.window or (is_frozen() and not (args.headless or args.console
