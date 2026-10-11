@@ -28,6 +28,10 @@ AI watch it and decide whether it is actually worth posting, then renders a vert
 word-by-word captions and a hook, writes a title that makes people stop scrolling, and posts it to
 YouTube Shorts, TikTok, Instagram Reels, Facebook Reels and Discord on your schedule.
 
+The local revamp adds a **Today** desk, evidence-linked **Research**, detailed viewer assessments
+and a separate review of the finished video before upload, with the same workflow on the phone.
+See [Start here](docs/START-HERE-REVAMP.md) for the updated launch and daily workflow.
+
 No subscription, no cloud, no API bill. The AI runs on your graphics card through
 [Ollama](https://ollama.com), ffmpeg does the editing, and your keys never leave the PC.
 

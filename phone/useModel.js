@@ -16,7 +16,7 @@ const CHAT_TIMEOUT_MS = 180000;
 const PC_POLL_MS = 1500;           // how often the PC is asked how its copy is coming along
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-export function useModel({ host, token }) {
+export function useModel({ host, token, enabled = true }) {
   const linked = !!(host && token);
   const [profile] = useState(() => deviceProfile());
   const [model, setModel] = useState(null);
@@ -30,22 +30,26 @@ export function useModel({ host, token }) {
   const context = useRef(null);
 
   useEffect(() => {
+    if (!enabled || checked) return;
     let alive = true;
     (async () => {
-      const best = pickModel(profile, await freeBytes(), await downloadedIds());
-      if (!alive) return;
-      setModel(best);
-      if (best) setResumeAt(await pendingProgress(best));
-      if (best && await isDownloaded(best)) {
-        try {
+      try {
+        const best = pickModel(profile, await freeBytes(), await downloadedIds());
+        if (!alive) return;
+        setModel(best);
+        if (best) setResumeAt(await pendingProgress(best));
+        if (best && await isDownloaded(best)) {
           context.current = await load(best);
           if (alive) setReady(true);
-        } catch (e) { if (alive) setProblem(`Could not load ${best.name}: ${e.message}`); }
+        }
+      } catch (e) {
+        if (alive) setProblem(`Could not prepare the phone model: ${e.message}`);
+      } finally {
+        if (alive) setChecked(true);
       }
-      if (alive) setChecked(true);
     })();
     return () => { alive = false; };
-  }, [profile]);
+  }, [profile, enabled, checked]);
 
   /** Ask the PC for its copy: it fetches the model once, then the phone copies it over Wi-Fi. */
   const viaPc = async () => {

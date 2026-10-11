@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 
 import httpx
@@ -120,9 +121,13 @@ def parse_verdict(text: str, duration: float, settings: Settings,
         score = float(data.get("score"))
     except (TypeError, ValueError) as exc:
         raise BadModelOutput(f"score is not a number: {data.get('score')!r}") from exc
+    if not math.isfinite(score):
+        raise BadModelOutput("score must be finite")
     score = min(SCORE_MAX, max(0.0, score))
-    title = " ".join(str(data.get("title", "")).split())[:ai.title_max]
-    caption = str(data.get("caption", "")).strip()[:ai.caption_max]
+    if any(not isinstance(data.get(key, ""), str) for key in ("title", "caption", "reason")):
+        raise BadModelOutput("title, caption and reason must be text")
+    title = " ".join(data.get("title", "").split())[:ai.title_max]
+    caption = data.get("caption", "").strip()[:ai.caption_max]
     raw_tags = data.get("hashtags", [])
     if isinstance(raw_tags, str):
         raw_tags = raw_tags.replace(",", " ").split()
@@ -139,19 +144,87 @@ def parse_verdict(text: str, duration: float, settings: Settings,
         t_end = float(data.get("trim_end", duration))
     except (TypeError, ValueError) as exc:
         raise BadModelOutput("trim_start/trim_end must be numbers") from exc
+    if not all(math.isfinite(v) for v in (t_start, t_end)):
+        raise BadModelOutput("trim_start/trim_end must be finite")
     t_start, t_end = clamp_trims(t_start, t_end, duration, clip)
     try:                                     # optional: where the edit punches in
         peak = float(data.get("peak_at", ev_peak_default(t_start, t_end)))
     except (TypeError, ValueError):
         peak = ev_peak_default(t_start, t_end)
+    if not math.isfinite(peak):
+        raise BadModelOutput("peak_at must be finite")
     peak = min(max(t_start, peak), t_end)
     passed = verdict == "pass" and score >= (ai.min_score if min_score is None else min_score)
     if passed and not title:
         raise BadModelOutput("passing verdict without a title")
-    return {"verdict": verdict, "category": category, "score": round(score, 1),
+    result = {"verdict": verdict, "category": category, "score": round(score, 1),
             "peak_at": round(peak, 2),
             "reason": str(data.get("reason", "")).strip(), "title": title, "caption": caption,
             "hashtags": tags, "trim_start": t_start, "trim_end": t_end, "passed": passed}
+    if "viewer_review" in data:
+        result["viewer_review"] = normalise_viewer_review(data["viewer_review"], t_start, t_end)
+    return result
+
+
+def normalise_viewer_review(data: dict, start: float, end: float) -> dict:
+    if not isinstance(data, dict):
+        raise BadModelOutput("viewer_review must be an object")
+    out = {}
+    for key in ("hook", "context", "payoff", "pacing", "confidence"):
+        try:
+            val = float(data[key])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BadModelOutput(f"viewer_review.{key} must be a number") from exc
+        upper = 1 if key == "confidence" else SCORE_MAX
+        if not math.isfinite(val) or not 0 <= val <= upper:
+            raise BadModelOutput(f"viewer_review.{key} outside its scale")
+        out[key] = val
+    for key in ("why_watch", "why_skip"):
+        value = data.get(key, "")
+        if not isinstance(value, str):
+            raise BadModelOutput(f"viewer_review.{key} must be text")
+        out[key] = value.strip()
+    flags, evidence = data.get("flags", []), data.get("evidence", [])
+    if not isinstance(flags, list) or not isinstance(evidence, list):
+        raise BadModelOutput("viewer_review.flags/evidence must be lists")
+    out["flags"] = [str(flag).strip() for flag in flags if str(flag).strip()]
+    out["evidence"] = []
+    for item in evidence:
+        try:
+            at = float(item["at"])
+            detail = item["detail"]
+        except (TypeError, KeyError, ValueError) as exc:
+            raise BadModelOutput("invalid timestamped viewer evidence") from exc
+        if not isinstance(detail, str) or not detail.strip() or not math.isfinite(at) or not start <= at <= end:
+            raise BadModelOutput("viewer evidence must be inside the proposed cut")
+        out["evidence"].append({"at": at, "detail": detail.strip()})
+    return out
+
+
+def enforce_viewer_review(verdict: dict, settings: Settings) -> dict:
+    """A high global score cannot hide a missing payoff or unsupported decision."""
+    if not settings.review.enabled or not verdict.get("passed"):
+        return verdict
+    review = verdict.get("viewer_review")
+    reasons = []
+    if not review:
+        reasons.append("the judge did not supply a viewer review")
+    else:
+        for key, threshold in (("hook", settings.review.min_hook),
+                               ("context", settings.review.min_context),
+                               ("payoff", settings.review.min_payoff),
+                               ("pacing", settings.review.min_pacing),
+                               ("confidence", settings.review.min_confidence)):
+            if review[key] < threshold:
+                reasons.append(f"{key} {review[key]:g} below {threshold:g}")
+        if not review["evidence"] or not review["why_watch"]:
+            reasons.append("no concrete evidence explaining why to watch")
+        if review["flags"]:
+            reasons.append("; ".join(review["flags"]))
+    if reasons:
+        return {**verdict, "passed": False, "verdict": "reject",
+                "reason": "viewer review: " + "; ".join(reasons)}
+    return verdict
 
 
 class Clipability:
@@ -196,6 +269,8 @@ class Clipability:
                 "keep_alive": ai.keep_alive,
                 # same num_ctx as the vision calls: a different context size makes Ollama reload
                 "options": {"temperature": ai.temperature, "num_ctx": ai.vision_num_ctx if one else ai.num_ctx}}
+        if self.settings.review.enabled:
+            body["options"]["num_predict"] = self.settings.review.max_tokens
         if one:          # qwen3-vl returns an EMPTY reply under format=json; it answers JSON anyway
             body.pop("format")
             if ai.vision_disable_thinking:
@@ -218,16 +293,23 @@ class Clipability:
             raise BadModelOutput(f"unexpected Ollama response: {r.text[:ERR_SNIPPET]}") from exc
 
     async def judge(self, c: Candidate, duration: float | None = None,
-                    min_score: float | None = None) -> dict:
+                    min_score: float | None = None, images: list[str] | None = None,
+                    require_review: bool = False) -> dict:
         """Return a normalised verdict dict. Raises AIUnavailable when Ollama is down."""
         s = self.settings
         duration = duration if duration is not None else max(0.0, c.end_wall - c.start_wall)
         p = self.plan()
         prompt = system_prompt(s.ai) + (f"\n\n{p.extra_rules}" if p.extra_rules else "")
+        if s.review.enabled:
+            prompt += "\n\n" + s.review.viewer_prompt
         if p.score_bonus:
             min_score = (s.ai.min_score if min_score is None else min_score) + p.score_bonus
         messages = [{"role": "system", "content": prompt},
                     {"role": "user", "content": build_user_message(c, s.ai)}]
+        if images and s.review.direct_frames and p.one_model:
+            messages[-1]["images"] = images
+            messages[-1]["content"] += "\nActual ordered frames: " + ", ".join(
+                f"frame {i + 1} = {at:.2f}s" for i, at in enumerate(c.frame_times[:len(images)]))
         async with self._lock:
             self.busy = True
             try:
@@ -239,11 +321,18 @@ class Clipability:
                         patience = (s.ai.first_try_timeout_s if attempt == 0 else s.ai.timeout_s)
                         text = await self._chat(messages, patience)
                         verdict = parse_verdict(text, duration, s, min_score)
+                        if require_review and s.review.enabled and not verdict.get("viewer_review"):
+                            raise BadModelOutput("Required viewer_review object was omitted")
+                        if require_review:
+                            verdict = enforce_viewer_review(verdict, s)
                         self.last_error = ""
                         return verdict
                     except BadModelOutput as exc:
                         last_err = str(exc)
                         logger.warning("clipability attempt %d for %s: %s", attempt + 1, c.id, exc)
+                        if attempt < s.ai.retries:
+                            messages.append({"role": "user", "content": "Validation failed: " + last_err
+                                             + "\n" + (s.review.viewer_prompt if require_review else system_prompt(s.ai))})
                 self.last_error = last_err
                 return {"verdict": "reject", "category": "model_error", "score": 0.0,
                         "reason": f"model_error: {last_err}", "title": "", "caption": "",

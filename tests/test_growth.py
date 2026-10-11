@@ -4,6 +4,7 @@ import json
 import time
 
 import httpx
+import pytest
 
 from clipbot.analytics import Analytics, compute_insights
 from clipbot.clip_import import candidate_from_clip, pick_clips
@@ -12,6 +13,7 @@ from clipbot.copywriter import Copywriter, normalize_copy
 from clipbot.db import Store
 from clipbot.models import Candidate, Platform, SpikeEvent, Stage, StreamTarget
 from clipbot.scheduler import compose_post
+from clipbot.public_copy import UnsafePublicCopy
 
 
 def cand(login="xqc", category="GTA V", kind="chat", post_copy=None, source=None):
@@ -57,17 +59,18 @@ def test_copywriter_calls_model_with_rules():
 
 def test_compose_uses_platform_copy():
     s = Settings()
-    c = cand(post_copy=normalize_copy(COPY, s))
+    c = cand(post_copy={**normalize_copy(COPY, s), '_source':'video'})
     yt = compose_post(c, s, "youtube")
     assert yt.title == "xQc loses it" and yt.caption.startswith("Story.") and "gta" in yt.hashtags
     tt = compose_post(c, s, "tiktok")
     assert tt.title == "wait for it" and "#fyp" in tt.caption
-    plain = compose_post(cand(), s, "youtube")
-    assert plain.title == "T"                                            # falls back to verdict
+    with pytest.raises(UnsafePublicCopy):
+        compose_post(cand(), s, "youtube")  # no private verdict fallback
 
 
 def test_import_credit_names_clipper():
-    c = cand(source={"type": "twitch_clip", "clipper": "viewer42"})
+    c = cand(source={"type": "twitch_clip", "clipper": "viewer42"},
+             post_copy={'_source':'video', 'youtube':{'title':'A surprise in GTA'}})
     assert "clip by viewer42" in compose_post(c, Settings(), "youtube").caption
 
 

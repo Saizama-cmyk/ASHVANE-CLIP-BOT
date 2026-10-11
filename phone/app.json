@@ -19,7 +19,13 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "10.0.0.0/8": { "NSExceptionAllowsInsecureHTTPLoads": true },
+            "172.16.0.0/12": { "NSExceptionAllowsInsecureHTTPLoads": true },
+            "192.168.0.0/16": { "NSExceptionAllowsInsecureHTTPLoads": true },
+            "100.64.0.0/10": { "NSExceptionAllowsInsecureHTTPLoads": true }
+          }
         },
         "NSLocalNetworkUsageDescription": "Ashvane talks to the Ashvane app running on your PC over your local network.",
         "UIBackgroundModes": []

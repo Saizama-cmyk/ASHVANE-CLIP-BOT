@@ -39,6 +39,7 @@ from ..media import (frames_dir, ollama_models_dir, poster_for, remux_segment, s
                      storage_report, stream_thumb)
 from ..storage import KINDS, current_folder, queue_move
 from ..editor import RenderError
+from ..research import ResearchBusy
 from ..util import ERR_SNIPPET, CmdTimeout
 
 logger = logging.getLogger("clipbot.server")
@@ -250,6 +251,59 @@ def create_app(ctx) -> FastAPI:
         return FileResponse(ico)
 
     # ------------------------------------------------------------------ state
+    # ------------------------------------------------------------------ research studio
+    def research_studio():
+        studio = getattr(ctx.pipeline, "research", None)
+        if studio is None:
+            raise HTTPException(503, "Research is still starting")
+        return studio
+
+    @app.get("/api/research")
+    async def research_state():
+        return research_studio().snapshot()
+
+    @app.post("/api/research/refresh")
+    async def research_refresh():
+        try:
+            return research_studio().request_refresh()
+        except ResearchBusy as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/research/draft")
+    async def research_draft(request: Request):
+        payload = bytearray()
+        async for chunk in request.stream():
+            payload.extend(chunk)
+            if len(payload) > ctx.settings.research.request_max_bytes:
+                raise HTTPException(413, "Research request is too large")
+        try:
+            body = json.loads(payload)
+        except (ValueError, UnicodeError) as exc:
+            raise HTTPException(422, "Send a JSON object with a topic and optional source_ids") from exc
+        if not isinstance(body, dict) or set(body) - {"topic", "source_ids"}:
+            raise HTTPException(422, "Use only topic and optional source_ids")
+        try:
+            return research_studio().request_draft(body.get("topic"), body.get("source_ids"))
+        except ResearchBusy as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, "Could not save the research draft") from exc
+
+    @app.delete("/api/research/ideas/{idea_id}")
+    async def research_delete(idea_id: str):
+        if not _ID_RE.fullmatch(idea_id):
+            raise HTTPException(400, "Invalid draft ID")
+        try:
+            if not research_studio().delete_idea(idea_id):
+                raise HTTPException(404, "Research draft not found")
+        except ResearchBusy as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, "Could not delete the research draft") from exc
+        return {"ok": True}
+
     # ------------------------------------------------------------------ desktop pet
     place = PetPlace(ctx.paths.data / "pet.json")
 
@@ -740,6 +794,19 @@ def create_app(ctx) -> FastAPI:
         return {"clips": await asyncio.to_thread(ctx.pipeline.store.recent_candidates, d.samples_limit),
                 "posts": await asyncio.to_thread(ctx.pipeline.store.recent_posts, d.posts_limit)}
 
+    @app.get("/api/publishing/batch")
+    async def publishing_batch():
+        counts = await asyncio.to_thread(ctx.pipeline.store.stage_counts, 0)
+        return {**ctx.pipeline.publishing_batch_snapshot(),
+                "scheduled_count": counts.get("scheduled", 0)}
+
+    @app.post("/api/publishing/batch")
+    async def start_publishing_batch():
+        result = await ctx.pipeline.start_publishing_batch()
+        if not result["ok"]:
+            return JSONResponse(result, status_code=400)
+        return result
+
     @app.post("/api/clips/{cid}/publish")
     async def publish_now(cid: str, request: Request):
         if not _ID_RE.match(cid):
@@ -774,7 +841,10 @@ def create_app(ctx) -> FastAPI:
             raise HTTPException(400, "kind and dest required")
         src = current_folder(ctx.pipeline.paths, kind)
         if b.get("move", True) and src is not None and src.exists():
-            await asyncio.to_thread(queue_move, kind, src, Path(dest))
+            try:
+                await asyncio.to_thread(queue_move, kind, src, Path(dest))
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
         return await _save(merge_incoming(ctx.settings, {"app": {KINDS[kind]: dest}}))
 
     @app.post("/api/system/scan")

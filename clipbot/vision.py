@@ -51,18 +51,36 @@ async def extract_frames(video: Path, times: list[float], settings: Settings) ->
     if not ffmpeg:
         raise RuntimeError("ffmpeg not found (Settings → Paths)")
     ai = settings.ai
+    workers = asyncio.Semaphore(settings.review.frame_workers)
 
     async def grab(t: float) -> bytes:
         res = await run_cmd([ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin",
                              "-ss", f"{t:.2f}", "-i", str(video), "-frames:v", "1",
-                             "-vf", f"scale={ai.vision_frame_width}:-2",
+                             "-vf", f"scale={ai.vision_frame_width}:-2,format=yuvj420p",
                              "-q:v", str(ai.vision_jpeg_quality), "-f", "image2pipe",
                              "-vcodec", "mjpeg", "-"], settings.capture.probe_timeout_s)
         if res.returncode != 0 or not res.stdout:
             raise RuntimeError(f"frame at {t:.1f}s: {res.err_text.strip()[:ERR_SNIPPET]}")
         return res.stdout
 
-    return list(await asyncio.gather(*(grab(t) for t in times)))
+    async def bounded(t: float) -> bytes:
+        async with workers:
+            return await grab(t)
+    return list(await asyncio.gather(*(bounded(t) for t in times)))
+
+
+def sequence_times(duration: float, count: int, spike_at: float | None = None,
+                   tail_margin_s: float = 0) -> list[float]:
+    """Inspect the opening and ending as well as the moment; preserve chronological order."""
+    if count < 2:
+        return frame_times(duration, count, spike_at)
+    # Keep the last sample within the final frame rather than seeking beyond the file.
+    last = max(0, duration - max(tail_margin_s, duration / (count * 100)))
+    times = [round(i * last / (count - 1), 2) for i in range(count)]
+    if spike_at is not None and 0 <= spike_at <= last and count > 2:
+        nearest = min(range(1, count - 1), key=lambda i: abs(times[i] - spike_at))
+        times[nearest] = round(spike_at, 2)
+    return sorted(set(times))
 
 
 def _save_frames(folder: Path, frames: list[bytes]) -> None:
@@ -118,6 +136,8 @@ class Vision:
         body = {"model": ai.vision_model, "stream": False, "keep_alive": ai.vision_keep_alive,
                 "messages": [{"role": "user", "content": prompt, "images": images}],
                 "options": {"temperature": ai.vision_temperature, "num_ctx": ai.vision_num_ctx}}
+        if self.settings.review.enabled:
+            body["options"]["num_predict"] = self.settings.review.max_tokens
         if ai.vision_disable_thinking and self._think_supported:
             body["think"] = False
         r = await self._post(body)
@@ -150,13 +170,26 @@ class Vision:
             finally:
                 self.busy = False
 
+    async def prepare(self, video: Path, duration: float, spike_at: float | None,
+                      save_dir: Path) -> VisionResult:
+        """Save actual timed frames for a multimodal judge without a redundant AI description."""
+        ai = self.settings.ai
+        times = sequence_times(duration, ai.vision_frames, spike_at,
+                               self.settings.review.frame_end_margin_s)
+        frames = await extract_frames(video, times, self.settings)
+        await asyncio.to_thread(_save_frames, save_dir, frames)
+        self.last_error = ""
+        return VisionResult("", len(frames), times=times)
+
     async def describe(self, video: Path, duration: float, spike_at: float | None,
                        streamer: str, category: str, save_dir: Path | None = None,
                        frames: int | None = None) -> VisionResult:
         ai = self.settings.ai
         if not ai.vision_enabled:
             return VisionResult("", 0)
-        times = frame_times(duration, frames or ai.vision_frames, spike_at)
+        times = (sequence_times(duration, frames or ai.vision_frames, spike_at,
+                                self.settings.review.frame_end_margin_s)
+                 if self.settings.review.enabled else frame_times(duration, frames or ai.vision_frames, spike_at))
         try:
             frames = await extract_frames(video, times, self.settings)
             if save_dir is not None:          # keep what the AI saw, for the dashboard

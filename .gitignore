@@ -11,6 +11,7 @@ installer/version_info.txt
 installer/version.txt
 *.log
 .pytest_cache/
+artifacts/
 
 # phone app build junk
 phone/node_modules/
@@ -28,5 +29,3 @@ tokens.json
 release_config.local.json
 *.crt
 *.ts.net.*
-
-phone/package-lock.json

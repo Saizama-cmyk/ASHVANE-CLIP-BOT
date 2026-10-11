@@ -12,6 +12,9 @@ captures pause and new spikes are ignored; at ≤ ``resume_at`` captures resume 
 from __future__ import annotations
 
 import asyncio
+import base64
+import copy
+import hashlib
 import json
 import logging
 import shutil
@@ -31,13 +34,14 @@ from .db import Store
 from .detector import Detector
 from .discovery import Discovery
 from .editor import RenderError, probe_media, render
-from .models import Candidate, SpikeEvent, Stage, StreamTarget
+from .models import Candidate, SpikeEvent, Stage, StreamTarget, new_id
 from .publishers import OAuthManager, TokenStore, build_publishers
 from .scheduler import Scheduler
 from .transcribe import Transcriber
 from .util import CmdTimeout, child_count, run_cmd, terminate_all
 from .vision import Vision, find_facecam
 from .copywriter import Copywriter
+from .public_copy import check_public_text, UnsafePublicCopy
 from .analytics import Analytics
 from .clip_import import ClipImporter
 from .media import safe_name, delete_candidate_media, frames_dir, free_bytes
@@ -47,6 +51,9 @@ from .ollama_setup import ModelSetup
 from .sweeper import sweep
 from .storage import clips_target
 from .safety import Filter
+from .trends import TrendScout
+from .research import ResearchStudio
+from .review import review_final
 
 logger = logging.getLogger("clipbot.pipeline")
 RAW_SUFFIX = ".mp4"       # the source cut; everything else in work/ is scratch
@@ -112,6 +119,14 @@ class Pipeline:
         self._audio_seen: dict[str, str] = {}
         self._discovery_wake = asyncio.Event()
         self._pause_lock = asyncio.Lock()
+        self._review_locks: dict[str, asyncio.Lock] = {}
+        self._media_locks: dict[str, asyncio.Lock] = {}
+        self._publish_batch_lock = asyncio.Lock()
+        self._publish_batch_task: asyncio.Task | None = None
+        self._publish_batch = {"status": "idle", "total": 0, "completed": 0, "posted": 0,
+                               "held": 0, "failed": 0, "current_id": None, "platforms": [],
+                               "results": [], "job_id": "", "started_at": None,
+                               "finished_at": None, "interrupted": False, "error": ""}
         self._running = False
         self.blocked = ""
         # created in start() (need the HTTP client / running loop)
@@ -131,15 +146,19 @@ class Pipeline:
         self.http = httpx.AsyncClient(follow_redirects=True,
                                       timeout=s.discovery.http_timeout_s)
         self.discovery = Discovery(s, self.http)
+        self.trends = TrendScout(s, self.http, self.discovery, self.paths)
         self.captures = CaptureManager(s, self.paths.buffer, self.discovery.kick_channel)
         self.chat = ChatHub(s, self._on_chat, self.discovery.kick_channel)
         gpu_lock = asyncio.Lock()          # vision model and judge never run at the same time
+        self.research = ResearchStudio(s, self.http, self.paths, self.trends, gpu_lock)
         self.clipability = Clipability(s, self.http, gpu_lock)
         self.vision = Vision(s, self.http, gpu_lock)
         self.copywriter = Copywriter(s, self.http, gpu_lock)
         self.oauth = OAuthManager(s, self.http, self.tokens)
         self.publishers = build_publishers(s, self.http, self.tokens, self.oauth)
         self.scheduler = Scheduler(s, self.store, self.publishers, self.paths)
+        self.scheduler.quality_guard = self._review_final
+        self.scheduler.media_locks = self._media_locks
         self.analytics = Analytics(s, self.store, self.publishers, self.paths)
         self.scheduler.analytics = self.analytics
         self.importer = ClipImporter(s, self.store, self.discovery, self.paths, self._launch,
@@ -148,9 +167,12 @@ class Pipeline:
         await self._recover()
         self.scheduler.start()
         self.analytics.start()
+        self.trends.start()
+        self.research.start()
         self.model_setup = ModelSetup(s, self.http)
         self._tasks.append(asyncio.create_task(self._first_run_models(), name="model-setup"))
-        loops = [(self._gpu_loop(), "gpu"), (self._housekeeping_loop(), "housekeeping")]
+        loops = [(self._gpu_loop(), "gpu"), (self._housekeeping_loop(), "housekeeping"),
+                 (self._sweep_loop(), "sweeper")]
         missing = [n for n, exe in (("ffmpeg", ffmpeg_exe(s)), ("ffprobe", ffprobe_exe(s))) if not exe]
         if s.app.check_ffmpeg_on_start and missing:
             self.blocked = (f"{' and '.join(missing)} not found — captures are off until you install "
@@ -165,6 +187,7 @@ class Pipeline:
         logger.info("pipeline started (data: %s)", self.paths.data)
 
     async def stop(self) -> None:
+        await self._stop_publish_batch()
         if not self._running:
             return
         self._running = False
@@ -175,7 +198,8 @@ class Pipeline:
         await asyncio.gather(*self._tasks, *self._inflight.values(), return_exceptions=True)
         self._tasks.clear()
         await asyncio.gather(self.captures.stop_all(), self.chat.stop(), self.scheduler.stop(),
-                             self.analytics.stop(), self.importer.stop(), return_exceptions=True)
+                             self.analytics.stop(), self.importer.stop(), self.trends.stop(),
+                             self.research.stop(), return_exceptions=True)
         await terminate_all(grace)
         if self.http:
             await self.http.aclose()
@@ -197,6 +221,8 @@ class Pipeline:
         self.copywriter.apply(s)
         self.analytics.apply(s)
         self.importer.apply(s)
+        self.trends.apply(s)
+        self.research.apply(s)
         self.oauth.apply(s)
         self.scheduler.apply(s)
         loop = asyncio.get_running_loop()
@@ -207,7 +233,6 @@ class Pipeline:
             self._discovery_wake.set()
         loop.create_task(self._abandon_stale())
         loop.create_task(self._refresh_failsafe())
-        self._tasks.append(loop.create_task(self._sweep_loop(), name="sweeper"))
 
     @property
     def running(self) -> bool:
@@ -301,8 +326,9 @@ class Pipeline:
     async def _discovery_loop(self) -> None:
         while True:
             try:
-                self.discovery.boosted = {p: self.analytics.boosted_streamers(p)
-                                          for p in ("twitch", "kick")}
+                self.discovery.boosted = {p: list(dict.fromkeys(
+                    self.analytics.boosted_streamers(p) + self.trends.boosted_streamers(p)))
+                    for p in ("twitch", "kick")}
                 targets = await self.discovery.refresh()
                 if self.slot_relief:      # behind: watch the strongest few, not everything
                     keep = max(self.settings.backlog.relief_floor, len(targets) - self.slot_relief)
@@ -386,6 +412,7 @@ class Pipeline:
                     self.gpu = {key: (val if key == "name" else float(val))
                                 for (_, key), val in zip(_GPU_FIELDS, parts)}
                     self.clipability.vram_gb = self.copywriter.vram_gb = vram_gb(self.gpu)
+                    self.research.vram_gb = vram_gb(self.gpu)
                 except (OSError, CmdTimeout, IndexError, ValueError) as exc:
                     logger.debug("nvidia-smi failed: %s", exc)
                     self.gpu = None
@@ -557,6 +584,7 @@ class Pipeline:
             out = clips_target(self.settings, self.paths) / f"{c.event.target.login}_{c.id}.mp4"
             facecam = await self._auto_facecam(c)
             verdict = c.verdict or {}
+            check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
             async with self._edit_limit:
                 await render(Path(c.raw_path), out, verdict["trim_start"], verdict["trim_end"],
                              c.words, c.event.target.login, self.settings, self.paths.work,
@@ -564,6 +592,8 @@ class Pipeline:
                              spike_at=verdict.get("peak_at", c.event.t_wall - c.start_wall),
                              facecam_auto=facecam)
             c.final_path = str(out)
+            if not await self._review_final(c):
+                return
             await self._save(c, Stage.SCHEDULED)
             await self._discard_raw(c)
             await self._clear_work(c)
@@ -593,14 +623,24 @@ class Pipeline:
         s = self.settings
         await self._save(c, Stage.CLIPABILITY)
         while True:
-            if s.ai.vision_enabled and not c.visual:
-                seen = await self.vision.describe(
-                    Path(c.raw_path), duration, c.event.t_wall - c.start_wall,
-                    c.event.target.display_name, c.event.target.category,
-                    save_dir=frames_dir(self.paths, c.id))
+            direct = (s.ai.vision_enabled and s.review.enabled and s.review.direct_frames
+                      and self.clipability.one_model())
+            if s.ai.vision_enabled and not (c.visual or (direct and c.frame_times)):
+                if direct:
+                    seen = await self.vision.prepare(Path(c.raw_path), duration,
+                        c.event.t_wall - c.start_wall, frames_dir(self.paths, c.id))
+                else:
+                    seen = await self.vision.describe(
+                        Path(c.raw_path), duration, c.event.t_wall - c.start_wall,
+                        c.event.target.display_name, c.event.target.category,
+                        save_dir=frames_dir(self.paths, c.id))
                 c.visual, c.frame_times = seen.text, seen.times or []
+            if s.review.enabled and s.review.require_vision and not (c.visual or (direct and c.frame_times)):
+                await self._finish(c, Stage.FAILED, "viewer review unavailable: no visual evidence; "
+                                   + (self.vision.last_error or "enable video inspection in Settings → AI"))
+                return
             imported = c.source.get("type") == "twitch_clip"
-            if imported and not s.clip_import.judge:
+            if imported and not s.clip_import.judge and not s.review.enabled:
                 verdict = {"verdict": "pass", "category": "moment", "score": SCORE_MAX,
                            "reason": "popular Twitch clip (judging off for imports)",
                            "title": c.event.target.title, "caption": "", "hashtags": [],
@@ -608,7 +648,8 @@ class Pipeline:
                 break
             try:
                 verdict = await self.clipability.judge(
-                    c, duration, s.clip_import.min_score if imported else None)
+                    c, duration, s.clip_import.min_score if imported else None,
+                    images=await self._judge_images(c), require_review=s.review.enabled)
                 break
             except AIUnavailable as exc:
                 c.error = f"waiting for Ollama: {exc}"
@@ -616,11 +657,67 @@ class Pipeline:
                 await asyncio.sleep(self.settings.ai.unavailable_retry_s)
         verdict = await self._second_look(c, verdict, duration)
         c.verdict, c.error = verdict, ""
+        if not c.visual and verdict.get("viewer_review"):
+            c.visual = "Viewer observations from video frames:\n" + "\n".join(
+                f"[{item['at']:.2f}s] {item['detail']}" for item in verdict["viewer_review"].get("evidence", []))
         if not verdict["passed"]:
             await self._finish(c, Stage.REJECTED, f"{verdict['category']}: {verdict['reason']}")
             return
 
-        c.post_copy = await self.copywriter.write(c, self.analytics.notes(), Path(c.raw_path))
+        notes = "\n\n".join(n for n in (
+            self.analytics.notes(), self.trends.brief(c.event.target.category, c.event.target.login)) if n)
+        c.post_copy = await self.copywriter.write(c, notes, Path(c.raw_path))
+        if not c.post_copy:
+            raise RuntimeError('Public copy could not be written; publication is held instead of using internal review notes.')
+        check_public_text(c, c.post_copy, s)
+
+    async def _judge_images(self, c: Candidate) -> list[str]:
+        if not (self.settings.review.direct_frames and self.clipability.one_model()):
+            return []
+        folder = frames_dir(self.paths, c.id)
+        def read() -> list[str]:
+            if self.settings.review.enabled and self.settings.review.require_vision and not c.frame_times:
+                raise OSError("Viewer review unavailable: no timestamped video frames")
+            return [base64.b64encode((folder / f"{i}.jpg").read_bytes()).decode("ascii")
+                    for i in range(len(c.frame_times))]
+        return await asyncio.to_thread(read)
+
+    async def _review_final(self, c: Candidate) -> bool:
+        try:
+            check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
+        except UnsafePublicCopy as exc:
+            c.error = str(exc)
+            await self._save(c)
+            return False
+        if not self.settings.review.final_review:
+            c.verdict["final_review"] = {"passed": None, "status": "disabled", "reason": "Final review disabled in Settings."}
+            return True
+        lock = self._review_locks.setdefault(c.id, asyncio.Lock())
+        async with lock:
+            try:
+                stat = await asyncio.to_thread(Path(c.final_path).stat)
+            except OSError as exc:
+                reason = f"Final video unavailable: {exc}"
+                c.verdict["final_review"] = {"passed": False, "status": "unavailable", "reason": reason}
+                await self._finish(c, Stage.FAILED, "final review: " + reason)
+                return False
+            policy = json.dumps({"review": self.settings.review.model_dump(),
+                                 "model": self.settings.ai.vision_model,
+                                 "hook": c.post_copy.get("hook", "")}, sort_keys=True)
+            stamp = f"{stat.st_size}:{stat.st_mtime_ns}:" + hashlib.sha256(policy.encode()).hexdigest()
+            previous = c.verdict.get("final_review", {})
+            if previous.get("passed") is True and previous.get("file_stamp") == stamp:
+                return True
+            async with self._ai_limit:
+                result = await review_final(c, self.settings, self.vision)
+            result["file_stamp"] = stamp
+        c.verdict["final_review"] = result
+        if not result["passed"]:
+            stage = Stage.FAILED if result["status"] == "unavailable" else Stage.REJECTED
+            await self._finish(c, stage, "final review: " + result["reason"])
+            return False
+        await self._save(c)
+        return True
 
     async def _second_look(self, c, verdict: dict, duration: float) -> dict:
         """A near-miss is worth a second opinion: look at more frames and judge once more.
@@ -642,7 +739,8 @@ class Pipeline:
             if not seen.text:
                 return verdict
             c.visual, c.frame_times = seen.text, seen.times or []
-            second = await self.clipability.judge(c, duration)
+            second = await self.clipability.judge(c, duration, images=await self._judge_images(c),
+                                                  require_review=s.review.enabled)
         except (AIUnavailable, OSError) as exc:
             logger.debug("second look on %s skipped: %s", c.id, exc)
             return verdict
@@ -753,25 +851,40 @@ class Pipeline:
             "copywriter": {"busy": self.copywriter.busy, "error": self.copywriter.last_error},
             "analytics": self.analytics.snapshot(),
             "clip_import": self.importer.snapshot(),
+            "trends": {"status": self.trends.status, "updated": self.trends.updated,
+                       "shorts": len(self.trends.items), "clips": len(self.trends.clips),
+                       "errors": self.trends.errors},
             "children": child_count(),
             "oauth": {p: self.oauth.connected(p) for p in ("youtube", "tiktok")},
             "model_setup": self.model_setup.status if hasattr(self, "model_setup") else {},
             "clips_dir": str(self.paths.clips),
         }
 
-    async def publish_now(self, cid: str, platforms: list[str]) -> dict:
+    async def publish_now(self, cid: str, platforms: list[str], *, scheduled_only: bool = False) -> dict:
         """Render the clip if it never was (e.g. a rejected one), then post it immediately."""
+        lock = self._media_locks.setdefault(cid, asyncio.Lock())
+        async with lock:
+            return await self._publish_now_locked(cid, platforms, scheduled_only=scheduled_only)
+
+    async def _publish_now_locked(self, cid: str, platforms: list[str], *, scheduled_only: bool = False) -> dict:
         c = await asyncio.to_thread(self.store.get_candidate, cid)
         if c is None:
             return {"ok": False, "error": "clip not found"}
+        if scheduled_only and c.stage not in (Stage.SCHEDULED, Stage.POSTED):
+            return {"ok": False, "held": c.stage == Stage.REJECTED,
+                    "error": c.error or "Clip is no longer scheduled."}
+        if platforms and all(c.posted_to.get(p) == "ok" for p in platforms):
+            results = await self.scheduler._publish_now_locked(cid, platforms)
+            return {"ok": any(r["ok"] for r in results.values()), "results": results}
         if not (c.final_path and Path(c.final_path).exists()):
             if not (c.raw_path and Path(c.raw_path).exists()):
-                return {"ok": False, "error": "this clip's video was already cleaned up"}
+                return {"ok": False, "error": "Finished video and source video are missing. Restore the video file or make a new clip before posting."}
             info = await probe_media(Path(c.raw_path), self.settings)
             v = c.verdict or {}
             start = float(v.get("trim_start", 0.0) or 0.0)
             end = float(v.get("trim_end", 0.0) or 0.0) or info.duration
             out = self.paths.clips / f"{c.event.target.login}_{c.id}.mp4"
+            check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
             async with self._edit_limit:
                 await render(Path(c.raw_path), out, start, min(end, info.duration), c.words,
                              c.event.target.login, self.settings, self.paths.work,
@@ -783,8 +896,78 @@ class Pipeline:
             if c.stage in (Stage.REJECTED, Stage.FAILED):
                 c.stage = Stage.SCHEDULED
             await self._save(c)
-        results = await self.scheduler.publish_now(cid, platforms)
+        if self.settings.review.final_review:
+            if not await self._review_final(c):
+                return {"ok": False, "error": c.error, "held": True}
+        results = await self.scheduler._publish_now_locked(cid, platforms)
         return {"ok": any(r["ok"] for r in results.values()), "results": results}
+
+    def publishing_batch_snapshot(self) -> dict:
+        return copy.deepcopy(self._publish_batch)
+
+    async def start_publishing_batch(self) -> dict:
+        """Snapshot this click's queue once; new arrivals belong to a later request."""
+        async with self._publish_batch_lock:
+            if self._publish_batch_task and not self._publish_batch_task.done():
+                return {"ok": True, **self.publishing_batch_snapshot()}
+            platforms = self.scheduler.active_platforms()
+            if not platforms:
+                return {"ok": False, **self.publishing_batch_snapshot(),
+                        "error": "No enabled, connected publishing platforms are ready."}
+            candidates = await asyncio.to_thread(self.store.candidates_in_stage, Stage.SCHEDULED)
+            ids = [c.id for c in sorted(candidates, key=lambda c: c.created_at)]
+            self._publish_batch = {"status": "running", "total": len(ids), "completed": 0,
+                                   "posted": 0, "held": 0, "failed": 0, "current_id": None,
+                                   "platforms": list(platforms), "results": [], "job_id": new_id(),
+                                   "started_at": time.time(), "finished_at": None,
+                                   "interrupted": False, "error": ""}
+            self._publish_batch_task = asyncio.create_task(
+                self._run_publishing_batch(ids, list(platforms)), name="publish-scheduled-batch")
+            return {"ok": True, **self.publishing_batch_snapshot()}
+
+    async def _run_publishing_batch(self, ids: list[str], platforms: list[str]) -> None:
+        try:
+            for cid in ids:
+                self._publish_batch["current_id"] = cid
+                try:
+                    current = await asyncio.to_thread(self.store.get_candidate, cid)
+                    if current is None:
+                        result = {"ok": False, "error": "clip not found"}
+                    elif current.stage not in (Stage.SCHEDULED, Stage.POSTED):
+                        result = {"ok": False, "held": current.stage == Stage.REJECTED,
+                                  "error": current.error or "Clip is no longer scheduled."}
+                    else:
+                        result = await self.publish_now(cid, platforms, scheduled_only=True)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.exception("batch publish failed for %s", cid)
+                    result = {"ok": False, "error": str(exc) or type(exc).__name__}
+                self._publish_batch["results"].append({"clip_id": cid,
+                                                       "results": result.get("results", {}),
+                                                       "error": result.get("error", "")})
+                key = "posted" if result.get("ok") else "held" if result.get("held") else "failed"
+                self._publish_batch[key] += 1
+                self._publish_batch["completed"] += 1
+            self._publish_batch["status"] = "complete"
+        except asyncio.CancelledError:
+            self._publish_batch.update(status="idle", interrupted=True,
+                                       error="Publishing was interrupted; unfinished clips remain available to retry.")
+            raise
+        finally:
+            self._publish_batch["current_id"] = None
+            self._publish_batch["finished_at"] = time.time()
+
+    async def _stop_publish_batch(self) -> None:
+        task = self._publish_batch_task
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            # Cancellation before the task's first turn cannot execute its own cleanup.
+            if self._publish_batch["status"] == "running":
+                self._publish_batch.update(status="idle", interrupted=True, current_id=None,
+                                           finished_at=time.time(),
+                                           error="Publishing was interrupted; unfinished clips remain available to retry.")
 
     # ------------------------------------------------------------------ studio
     def studio_preview_path(self, cid: str) -> Path:
@@ -813,6 +996,7 @@ class Pipeline:
         c = await asyncio.to_thread(self.store.get_candidate, cid)
         if c is None:
             return {"ok": False, "error": "clip not found"}
+        check_public_text(c, {'hook': hook}, self.settings)
         if not (c.raw_path and Path(c.raw_path).exists()):
             return {"ok": False, "error": "this clip's source cut is gone, so it can't be restyled. "
                                           "Turn on 'Keep source cuts' and new clips will be editable."}
@@ -834,13 +1018,21 @@ class Pipeline:
                          settings, self.paths.work, self.settings.brand.watermark, hook=hook,
                          spike_at=c.event.t_wall - c.start_wall)
         if apply:
-            await asyncio.to_thread(tmp.replace, out)
-            c.final_path = str(out)
-            c.verdict = {**(c.verdict or {}), "trim_start": round(start, 2), "trim_end": round(end, 2)}
-            c.post_copy = {**c.post_copy, "hook": hook, "style": clean_style(style)}
-            if c.stage in (Stage.REJECTED, Stage.FAILED):
-                c.stage = Stage.SCHEDULED
-            await self._save(c)
+            lock = self._media_locks.setdefault(cid, asyncio.Lock())
+            async with lock:
+                # Reload after any upload in progress has finished, retaining its results.
+                c = await asyncio.to_thread(self.store.get_candidate, cid)
+                if c is None:
+                    return {"ok": False, "error": "clip was removed while rendering"}
+                await asyncio.to_thread(tmp.replace, out)
+                c.final_path = str(out)
+                c.verdict = {**(c.verdict or {}), "trim_start": round(start, 2), "trim_end": round(end, 2)}
+                c.post_copy = {**c.post_copy, "hook": hook, "style": clean_style(style)}
+                if not await self._review_final(c):
+                    return {"ok": False, "error": c.error, "url": f"/media/{cid}"}
+                if c.stage in (Stage.REJECTED, Stage.FAILED):
+                    c.stage = Stage.SCHEDULED
+                await self._save(c)
         stamp = int(time.time())
         return {"ok": True, "url": f"/media/{cid}?t={stamp}" if apply else f"/media/studio/{cid}.mp4?t={stamp}"}
 

@@ -125,6 +125,9 @@ def test_a_passed_clip_reaches_render_with_its_trim(pipeline, monkeypatch, tmp_p
     async def nothing(*_a, **_kw):
         return None
 
+    async def reviewed(*_a, **_kw):
+        return True
+
     monkeypatch.setattr(mod, "assemble", cut)
     monkeypatch.setattr(mod, "quality_check", qc)
     monkeypatch.setattr(mod, "render", render)
@@ -132,6 +135,7 @@ def test_a_passed_clip_reaches_render_with_its_trim(pipeline, monkeypatch, tmp_p
     monkeypatch.setattr(pipeline.transcriber, "transcribe", transcribe)
     monkeypatch.setattr(pipeline, "_think", think)
     monkeypatch.setattr(pipeline, "_auto_facecam", nothing)
+    monkeypatch.setattr(pipeline, "_review_final", reviewed)
     asyncio.run(pipeline._run_candidate(c))
     assert c.error == "" and c.stage is Stage.SCHEDULED
     assert rendered == {"start": 2.0, "end": 14.0, "spike": 6.0}

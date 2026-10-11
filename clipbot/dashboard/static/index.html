@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ashvane</title>
 <link rel="icon" href="/favicon.ico">
-<link rel="preload" href="/static/art/bg.jpg" as="image">
 <style>
 /* =====================================================================================
    Ashvane — Ashvane control room
@@ -746,7 +745,8 @@ nav button:hover .i3{transform:scale(1.08)}
 .guide.start{margin:0 0 24px;border-color:rgba(255,255,255,.3)}
 .guide.start>summary{font:400 24px/1 var(--head);color:var(--text);padding:14px 16px}
 </style>
-<!-- workspace.css held a competing orange flat theme; the house style lives in this file -->
+<!-- Existing component layout is retained above; the daily desk theme is authoritative. -->
+<link rel="stylesheet" href="/static/desk.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -767,9 +767,6 @@ nav button:hover .i3{transform:scale(1.08)}
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
 </svg>
-<div id="splash" aria-hidden="true"><div class="logo">
-  <video id="splashVid" muted autoplay playsinline preload="auto" poster="/static/art/splash-end.png" width="240" height="240"><source src="/static/art/splash.webm" type="video/webm"></video>
-  <h1>Ashvane</h1><p>Find the moment. Make the cut.</p><div class="boot"><i></i></div></div></div></div>
 <div id="lock" role="dialog" aria-modal="true" aria-labelledby="lockTitle"><form id="lockForm">
   <img class="lockmark" src="/static/art/mark.png" alt="">
   <h2 id="lockTitle">Ashvane</h2><div class="small dim" id="lockHint">Your clips. Your PC. Your workspace.</div>
@@ -783,11 +780,13 @@ nav button:hover .i3{transform:scale(1.08)}
   <button class="btn primary" type="submit" id="lockBtn">Unlock</button></form></div>
 <div class="shell">
 <aside class="rail">
-  <div class="brand"><img src="/static/art/mark-96.png" alt="" width="42" height="42"><div><b>Ashvane</b><span>Your local clip studio</span></div></div>
+  <div class="brand"><img src="/static/art/mark-96.png" alt="" width="42" height="42"><div><b>Ashvane</b><span>Capture / cut / publish</span></div></div>
   <nav role="tablist" aria-orientation="vertical" aria-label="Sections">
-    <button role="tab" aria-selected="true" data-view="live" title="Live"><i class="ico i3" style="--i:url(/static/ui/chrome/live.png);--ia:url(/static/ui/ember/live.png)" aria-hidden="true"></i><span class="t">Live</span></button>
-    <button role="tab" aria-selected="false" data-view="clips" title="Clips"><i class="ico i3" style="--i:url(/static/ui/chrome/clips.png);--ia:url(/static/ui/ember/clips.png)" aria-hidden="true"></i><span class="t">Clips</span></button>
-    <button role="tab" aria-selected="false" data-view="studio" title="Studio"><i class="ico i3" style="--i:url(/static/ui/chrome/studio.png);--ia:url(/static/ui/ember/studio.png)" aria-hidden="true"></i><span class="t">Studio</span></button>
+    <button role="tab" aria-selected="true" data-view="clips" title="Clips"><span class="desk-nav-mark" aria-hidden="true">01</span><span class="t">Clips</span></button>
+    <button role="tab" aria-selected="false" data-view="studio" title="Studio"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Studio</span></button>
+    <button role="tab" aria-selected="false" data-view="live" title="Live"><i class="ico i3" style="--i:url(/static/ui/chrome/live.png);--ia:url(/static/ui/ember/live.png)" aria-hidden="true"></i><span class="t">Live</span></button>
+    <button role="tab" aria-selected="false" data-view="research" title="Research"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Research</span></button>
+    <button role="tab" aria-selected="false" data-view="desk" title="Today"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Today</span></button>
     <button role="tab" aria-selected="false" data-view="growth" title="Growth"><i class="ico i3" style="--i:url(/static/ui/chrome/growth.png);--ia:url(/static/ui/ember/growth.png)" aria-hidden="true"></i><span class="t">Growth</span></button>
     <button role="tab" aria-selected="false" data-view="system" title="System"><i class="ico i3" style="--i:url(/static/ui/chrome/system.png);--ia:url(/static/ui/ember/system.png)" aria-hidden="true"></i><span class="t">System</span></button>
     <button role="tab" aria-selected="false" data-view="settings" title="Settings"><i class="ico i3" style="--i:url(/static/ui/chrome/settings.png);--ia:url(/static/ui/ember/settings.png)" aria-hidden="true"></i><span class="t">Settings</span></button>
@@ -811,15 +810,41 @@ nav button:hover .i3{transform:scale(1.08)}
   </div>
 </aside>
 <div class="content">
-  <div class="topbar"><div class="grow"><h1 id="pageTitle">Live desk</h1><p id="pageSub">Watch the streams. Catch the moments worth keeping.</p></div><div class="top-tools"><button class="btn ghost" type="button" id="phoneBtn" hidden>Phone remote</button></div></div>
+  <div class="topbar"><div class="grow"><h1 id="pageTitle">Clip workspace</h1><p id="pageSub">Watch the cut. Check the moment. Publish when it’s ready.</p></div><div class="top-tools"><button class="btn ghost" type="button" id="phoneBtn" hidden>Phone remote</button></div></div>
   <div class="banner" id="restartBanner"><span>Some changes need a restart: <b id="restartList"></b></span>
     <button class="btn primary" id="restartBtn" type="button">Restart Ashvane</button></div>
   <div class="banner" id="updBanner"><span id="updText"></span><button class="btn primary" id="updBtn" type="button">Update now</button></div>
   <div class="banner err" id="connBanner"><span>Lost contact with the Ashvane engine. Retrying…</span></div>
 
 <main id="workspace" tabindex="-1">
+  <section class="view" id="view-desk" role="tabpanel">
+    <div class="desk-focus"><div><p class="desk-date" id="deskDate">Today</p><h2 id="deskNextTitle">Connecting to your workspace</h2><p id="deskNextDetail">Your clips, research, and publishing connections will appear here.</p></div><button class="btn primary" id="deskNext" type="button" disabled>Connecting…</button></div>
+    <div class="desk-counts" id="deskCounts" aria-label="Current content activity"><span class="dim">Waiting for the engine…</span></div>
+    <div class="desk-grid">
+      <div class="desk-primary">
+        <section class="panel"><div class="phead"><h2>Daily cut list</h2><span class="sub" id="deskCutsSub">Review before sharing</span><button class="btn ghost" type="button" data-desk-go="clips">All clips</button></div><div class="desk-cut-list" id="deskCuts"><div class="empty"><strong>Your clips will appear here</strong>Connecting to the engine…</div></div></section>
+        <details class="panel desk-activity"><summary>Original content &amp; research</summary><div id="deskIdeas"><div class="desk-note">Loading your saved ideas…</div></div><button class="btn ghost" type="button" data-desk-go="research">Open research</button></details>
+        <details class="panel desk-activity"><summary>Recent posting activity</summary><div id="deskPosts" class="desk-posts"></div></details>
+      </div>
+      <aside class="desk-secondary">
+        <section class="panel"><div class="phead"><h2>Publishing</h2><button class="btn ghost" type="button" data-desk-field="accounts">Connect</button></div><div id="deskPlatforms" class="desk-platforms"><div class="desk-note">Checking connections…</div></div><p class="desk-footnote">Scheduling follows your daily limits and posting window.</p></section>
+        <section class="panel"><div class="phead"><h2>Production queue</h2></div><div id="deskQueue" class="desk-queue"></div><button class="btn ghost block" type="button" data-desk-go="live">See streams and pipeline</button></section>
+        <details class="panel desk-activity"><summary>Workspace check</summary><div id="deskSetup" class="desk-note">Checking requirements…</div><button class="btn ghost block" type="button" data-desk-go="setup">Open setup checklist</button></details>
+      </aside>
+    </div>
+  </section>
+  <section class="view" id="view-research" role="tabpanel">
+    <div class="research-toolbar"><div><span id="researchStatus" role="status" aria-live="polite">Loading research…</span><p class="dim small" id="researchUpdated">Sources and drafts are kept on this PC.</p></div><button class="btn" type="button" id="researchSettings">Research settings</button><button class="btn primary" type="button" id="researchRefresh">Refresh sources</button></div>
+    <div id="researchErrors" class="research-errors" role="alert" hidden></div>
+    <div class="agent-track" id="researchAgents" aria-label="Research agent status"></div>
+    <div class="research-grid">
+      <section class="panel research-source-panel"><div class="phead"><h2>Source notebook</h2><span class="sub" id="researchSourceCount"></span></div><div class="research-find"><label for="researchSearch">Find a source</label><input type="search" id="researchSearch" name="source_search" placeholder="Title, topic, or publisher" autocomplete="off"></div><div id="researchSources" class="research-sources"></div></section>
+      <div><section class="panel"><div class="phead"><h2>Build an original idea</h2></div><form id="researchDraftForm" class="research-compose"><label for="researchTopic">What should the post explain?</label><textarea id="researchTopic" name="topic" rows="3" maxlength="500" placeholder="A clear question, topic, or angle" required></textarea><p class="dim small" id="researchSelection">Select sources from the notebook, or use the latest research.</p><div class="research-submit"><button class="btn primary" id="researchDraft" type="submit">Draft script &amp; posts</button><span class="small dim">A draft stays here for your review.</span></div><p id="researchFormError" class="research-inline-error" role="alert" hidden></p></form></section>
+      <section class="panel"><div class="phead"><h2>Saved drafts</h2><span class="sub" id="researchIdeaCount"></span></div><div id="researchIdeas" class="research-ideas"></div></section></div>
+    </div>
+  </section>
   <!-- LIVE -->
-  <section class="view active" id="view-live" role="tabpanel">
+  <section class="view" id="view-live" role="tabpanel">
     <div class="panel">
       <div class="phead"><h2>On the radar</h2><span class="sub" id="monSub"></span></div>
       <div class="monitor-tools"><input id="monitorSearch" type="search" placeholder="Find a stream…" aria-label="Find a stream"><button class="btn ghost" id="monitorMore" type="button" hidden>Show all streams</button></div><div id="monitors" class="monitors" aria-live="off"></div>
@@ -852,14 +877,38 @@ nav button:hover .i3{transform:scale(1.08)}
   </section>
 
   <!-- CLIPS -->
-  <section class="view" id="view-clips" role="tabpanel">
-    <div class="panel">
-      <div class="phead"><h2>Clips</h2>
-        <div class="filters" id="clipFilters" style="margin-left:auto">
-          <button data-f="all" class="on">All</button><button data-f="scheduled">Ready</button>
-          <button data-f="posted">Posted</button><button data-f="rejected">Rejected</button>
-          <button data-f="working">Working</button></div></div>
-      <div class="gallery" id="gallery"></div>
+  <section class="view active" id="view-clips" role="tabpanel">
+    <div class="clip-workspace">
+      <div class="publish-toolbar">
+        <div><p id="publishBatchHint">Checking the scheduled queue…</p><p class="small dim">Connected platforms · quality checks on · schedule waits and daily limits skipped</p></div>
+        <button class="btn primary" type="button" id="publishBatchStart" disabled>Publish all scheduled now</button>
+      </div>
+      <div id="publishBatchPanel" class="publish-batch" hidden>
+        <p id="publishBatchStatus" role="status" aria-live="polite"></p>
+        <progress id="publishBatchProgress" aria-label="Scheduled publishing progress" max="1" value="0" hidden></progress>
+        <p id="publishBatchError" class="research-inline-error" role="alert" hidden></p>
+        <details id="publishBatchDetails" hidden><summary>Results for each clip</summary><div id="publishBatchResults"></div></details>
+      </div>
+      <div class="clip-editor">
+        <section class="source-bin" aria-labelledby="sourceBinTitle">
+          <div class="bin-heading"><h2 id="sourceBinTitle">Source bin</h2><span id="libraryCount" class="small dim">Loading clips…</span></div>
+          <div class="filters" id="clipFilters" aria-label="Filter clips">
+            <button data-f="all" class="on">All</button><button data-f="scheduled">Scheduled</button>
+            <button data-f="posted">Posted</button><button data-f="rejected">Rejected</button>
+            <button data-f="working">Working</button></div>
+          <div class="gallery" id="gallery"></div>
+        </section>
+        <aside class="program-monitor" aria-label="Selected clip preview">
+          <div class="monitor-heading"><h2>Program monitor</h2><span class="monitor-format">FINAL CUT</span></div>
+          <div class="program-screen">
+            <video id="libraryVideo" controls preload="metadata" playsinline hidden aria-label="Selected clip video"></video>
+            <div id="libraryEmpty" class="monitor-empty"><span aria-hidden="true">▶</span><strong>Select a clip</strong><p>Your cut, review notes, and editing controls appear here.</p></div>
+          </div>
+          <p id="libraryMediaError" class="monitor-error" role="alert" hidden></p>
+          <div class="program-caption"><div class="program-meta"><span id="librarySource">No clip selected</span><span id="libraryStage"></span></div><h3 id="libraryTitle">The next good moment starts here.</h3><p id="libraryReason">Select a clip from the source bin to watch it and inspect the review.</p></div>
+          <div class="program-tools"><button class="btn" type="button" id="libraryDetails" disabled>Review &amp; publish</button><button class="btn ghost" type="button" id="libraryStudio" disabled>Edit in Studio <span aria-hidden="true">↗</span></button></div>
+        </aside>
+      </div>
     </div>
   </section>
 
@@ -947,10 +996,11 @@ nav button:hover .i3{transform:scale(1.08)}
 </div>
 
 <dialog id="preview" aria-label="Sample preview">
-  <div class="phead"><h2 id="pvTitle">Sample</h2><button class="btn ghost" id="pvClose" type="button" style="margin-left:auto" aria-label="Close preview">Close</button></div>
+  <div class="phead"><h2 id="pvTitle">Sample</h2><button class="btn" id="pvStudio" type="button" style="margin-left:auto">Edit in Studio</button><button class="btn ghost" id="pvClose" type="button" aria-label="Close preview">Close</button></div>
   <div class="mbody">
     <video id="pvVideo" controls preload="metadata" playsinline></video>
     <div>
+      <section id="pvReview" class="viewer-review" aria-label="Viewer judgement"></section>
       <dl class="kv" id="pvKv"></dl>
       <div class="copyrow" id="pvCopy"></div>
       <div class="publish"><div class="label" style="margin-bottom:10px">Publish now — skips caps, gaps and the posting window</div><div class="copyrow" id="pvPublish"></div></div>
@@ -1036,8 +1086,10 @@ function clock(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour: "2
 
 /* ---------------- tabs ---------------- */
 const PAGES = {
+  desk: ["Today", "Capture, queue, and publishing at a glance."],
+  research: ["Research & original posts", "Find an angle worth explaining, with sources you can check."],
   live: ["Live desk", "Watch the streams. Catch the moments worth keeping."],
-  clips: ["Clips", "Everything it cut: ready to post, posted, and the ones the judge turned down."],
+  clips: ["Clip workspace", "Watch the cut. Check the moment. Publish when it’s ready."],
   growth: ["Growth", "How posts are doing, and what the scheduler is leaning toward because of it."],
   system: ["System", "Tune Ashvane to this PC and choose where its files live."],
   studio: ["Studio", "Restyle any clip in seconds: pick a theme, tweak captions, trim, and apply."],
@@ -1045,7 +1097,7 @@ const PAGES = {
   setup: ["Setup", "A few things Ashvane needs before it can run on its own."],
 };
 function show(view) {
-  view = PAGES[view] ? view : "live";
+  view = PAGES[view] ? view : "clips";
   const pg = PAGES[view];
   $("#pageTitle").textContent = pg[0]; $("#pageSub").textContent = pg[1];
   document.title = `${pg[0]} · Ashvane`;
@@ -1054,6 +1106,8 @@ function show(view) {
   if (view === "live" && state) { renderMonitors(state); renderFlow(state); renderSamples(state); renderPosts(state); }
   if (view === "settings") ensureSettings();
   if (view === "setup") loadSetup();
+  if (view === "desk" && typeof renderDesk === "function") renderDesk();
+  if (view === "research" && typeof loadResearch === "function") loadResearch();
   history.replaceState(null, "", "#" + view);
 }
 $$("nav button").forEach(b => b.addEventListener("click", () => { sfx("click"); show(b.dataset.view); }));
@@ -1194,6 +1248,7 @@ async function poll() {
     pollFails = 0;
     $("#connBanner").classList.remove("show");
     renderHeader(state); phoneChip(state);
+    if (typeof renderDesk === "function") renderDesk();
     if ($("#view-live").classList.contains("active")) { renderMonitors(state); renderFlow(state); renderSamples(state); renderPosts(state); }
     refreshMs = state.refresh_ms || refreshMs;
   } catch (e) {
@@ -1356,6 +1411,7 @@ const SETTING_GROUPS = [
   ["Sources", ["twitch", "kick", "discovery", "capture", "chat"]],
   ["Detection", ["detector", "clip", "backlog"]],
   ["AI", ["ai", "whisper", "copywriter"]],
+  ["Original content", ["research"]],
   ["Editing", ["edit", "brand", "studio"]],
   ["Publishing", ["accounts", "posting", "safety"]],
   ["Growth", ["analytics", "clip_import"]],
@@ -1415,6 +1471,20 @@ document.addEventListener("click", e => {
   const b = e.target.closest && e.target.closest("#remoteTestBtn");
   if (b) remoteTest(document.getElementById(b.dataset.out || "remoteTestOut"), b);
 });
+/* phone remote: show the address to type on the phone, straight from the running server */
+function phoneChip(state) {
+  const b = $("#phoneBtn"); if (!b) return;
+  const url = state && state.remote_url;
+  b.hidden = !url;
+  if (url) b.onclick = () => ask({
+    title: "Phone remote",
+    body: `On a phone on the same Wi-Fi, open:\n\n${url}\n\nSign in with your profile password. In Safari, tap Share, then Add to Home Screen. For a connection test, open Settings → Dashboard.`,
+    ok: "Copy address", cancel: "Close"}).then(async yes => {
+      if (!yes) return;
+      try { await navigator.clipboard.writeText(url); toast("Phone address copied"); }
+      catch (_) { toast("Clipboard access is unavailable. Copy the address shown in Phone remote."); }
+    });
+}
 function renderForm() {
   const top = schema.properties;
   const placed = new Set(SETTING_GROUPS.flatMap(g => g[1]));
@@ -1423,20 +1493,6 @@ function renderForm() {
     const have = keys.filter(k => top[k]);
     return have.length ? `<div class="grp">${name}</div>` + have.map(k => `<a href="#sec-${k}" data-sec="${k}">${esc(top[k].title || k)}</a>`).join("") : "";
   }).join("");
-
-/* phone remote: show the address to type on the phone, straight from the running server */
-function phoneChip(state) {
-  const b = $("#phoneBtn"); if (!b) return;
-  const url = state && state.remote_url;
-  b.hidden = !url;
-  if (url) b.onclick = () => ask({
-    title: "Phone remote",
-    body: `<p>On a phone on the same Wi-Fi, open:</p><p style="font:600 17px/1.4 var(--mono);word-break:break-all">${esc(url)}</p>
-      <p class="dim small">Sign in with your profile password. In Safari, tap Share then <b>Add to Home Screen</b> and it behaves like an app.</p>
-      <div class="rtest"><button class="btn" type="button" id="remoteTestBtn" data-out="remoteTestDlg">Test connection</button>
-      <div id="remoteTestDlg" class="small"></div></div>`,
-    ok: "Copy address", cancel: "Close"}).then(yes => { if (yes) navigator.clipboard?.writeText(url); });
-}
   $("#sections").innerHTML = Object.entries(top).map(([k, raw]) => {
     const node = deref(raw);
     return `<fieldset id="sec-${k}"><legend>${esc(raw.title || k)}</legend>
@@ -1620,6 +1676,8 @@ async function loadSetup(auto) {
   const r = await api("/api/setup");
   if (!r.ok) return;
   const s = r.body, missing = s.items.filter(i => i.required && !i.ok).length;
+  window.deskSetupState = s;
+  if (typeof renderDesk === "function") renderDesk();
   const c = $("#setupCount"); c.hidden = !missing; c.textContent = missing;
   $("#checks").innerHTML = s.items.map(i => {
     const cls = i.ok ? "ok" : i.required ? "no" : "opt";
@@ -1627,8 +1685,7 @@ async function loadSetup(auto) {
       <div><b>${esc(i.label)}</b>${i.required ? "" : ' <span class="small dim">(optional)</span>'}<div class="d">${esc(i.detail)}</div></div>
       ${i.ok ? "" : `<button class="btn ${i.required ? "primary" : "ghost"}" type="button" data-goto="${esc(i.field)}">Fix in Settings</button>`}</li>`;
   }).join("");
-  // first run only: open the checklist unless the page was opened on a specific section
-  if (auto && !s.ok && !setupShownOnce && !requestedView) { setupShownOnce = true; show("setup"); }
+  // Today shows the next missing requirement; the full checklist remains one click away.
 }
 $("#checks").addEventListener("click", e => { const b = e.target.closest("[data-goto]"); if (b) focusField(b.dataset.goto); });
 $("#recheck").addEventListener("click", () => loadSetup());
@@ -1696,26 +1753,6 @@ setInterval(async () => {
     await _api0("/api/auth/logout", {method: "POST"}); showLock();
   }
 }, 15000);
-(function splash() {
-  const sp = $("#splash"), v = $("#splashVid");
-  const STILL_MS = 1200, AFTER_MS = 350, CAP_MS = 6000;   // the cap never holds the app hostage
-  let gone = false, started = false;
-  const hide = () => { if (!gone) { gone = true; sp.classList.add("gone"); } };
-  v.removeAttribute("autoplay"); v.pause();
-  // Every launch plays it where you can see it: a window that opens in the tray waits until shown.
-  const start = () => {
-    if (started || document.visibilityState !== "visible") return;
-    started = true;
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { setTimeout(hide, STILL_MS); return; }
-    v.addEventListener("ended", () => setTimeout(hide, AFTER_MS));
-    v.addEventListener("error", () => setTimeout(hide, STILL_MS), true);
-    v.currentTime = 0;
-    v.play().catch(() => setTimeout(hide, STILL_MS));
-    setTimeout(hide, CAP_MS);
-  };
-  document.addEventListener("visibilitychange", start);
-  start();
-})();
 (async () => { const r = await _api0("/api/auth/status"); authInfo = r.body; if (!authInfo.signed_in) showLock(); })();
 
 /* live thumbnails on monitor cards */
@@ -1757,10 +1794,12 @@ function renderGallery() {
 $("#clipFilters").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; clipFilter = b.dataset.f; $$("#clipFilters button").forEach(x => x.classList.toggle("on", x === b)); renderGallery(); });
 ["click", "keydown"].forEach(ev => $("#gallery").addEventListener(ev, e => {
   const card = e.target.closest(".card"); if (!card) return;
-  if (e.type === "keydown" && e.key !== "Enter") return;
+  if (e.type === "keydown" && !["Enter", " "].includes(e.key)) return;
+  if (e.type === "keydown") e.preventDefault();
   if (!state) state = {samples: []};
   if (!(state.samples || []).some(x => x.id === card.dataset.id)) state.samples = [...(state.samples || []), ...clipsCache.filter(x => x.id === card.dataset.id)];
-  openPreview(card.dataset.id);
+  if (typeof selectLibraryClip === "function") selectLibraryClip(card.dataset.id);
+  else openPreview(card.dataset.id);
 }));
 
 /* preview: frames + per-platform copy buttons */
@@ -1859,7 +1898,7 @@ $("#storageBox").addEventListener("click", async e => {
   toast(r.ok ? "Saved — restart Ashvane to move the files" : "Move failed"); loadStorage(); poll();
 });
 const _show = show;
-show = function(view) { _show(view); if (view === "clips") loadClips(); if (view === "growth") loadGrowth(); if (view === "system") loadStorage(); if (view === "studio") loadStudio(); };
+show = function(view) { _show(view); if (view === "clips") loadClips(); if (view === "growth") loadGrowth(); if (view === "system") loadStorage(); if (view === "studio") return loadStudio(); };
 setInterval(() => { if ($("#view-clips").classList.contains("active")) loadClips(); }, 10000);
 
 
@@ -2357,19 +2396,21 @@ $$("nav button").forEach((b, i, tabs) => {
   b.id = "tab-" + b.dataset.view; b.setAttribute("aria-controls", "view-" + b.dataset.view);
   $("#view-" + b.dataset.view).setAttribute("aria-labelledby", b.id);
   b.addEventListener("keydown", e => {
-    const delta = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    const horizontal = matchMedia("(max-width:640px)").matches;
+    const delta = e.key === (horizontal ? "ArrowRight" : "ArrowDown") ? 1 : e.key === (horizontal ? "ArrowLeft" : "ArrowUp") ? -1 : 0;
     if (delta) { e.preventDefault(); const next = tabs[(i + delta + tabs.length) % tabs.length]; next.focus(); next.click(); }
   });
 });
 /* ---------------- boot ---------------- */
-(function boot() {
+window.startAshvane = function() {
   const h = location.hash.slice(1);
   if (h.startsWith("field=")) focusField(decodeURIComponent(h.slice(6)));
-  else if (["live", "clips", "growth", "system", "studio", "settings", "setup"].includes(h)) show(h);
+  else show(PAGES[h] ? h : "clips");
   poll();
   loadSetup(true);
   setTimeout(() => { if (state && state.updates_on_start) checkUpdates(true); }, 4000);
-})();
+};
 </script>
+<script src="/static/desk.js"></script>
 </body>
 </html>

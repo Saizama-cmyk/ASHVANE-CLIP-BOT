@@ -3,8 +3,8 @@
 After a clip passes review, the local model writes separate copy for YouTube, TikTok,
 Instagram, Facebook and Discord in one JSON reply, following each platform's style guide
 (``copywriter.*_rules``) and, when analytics has enough data, notes on what has performed
-best on the channel. The result is cleaned up to each platform's limits. If anything fails,
-posting falls back to the reviewer's title/caption and the Posting templates.
+best on the channel. The writer sees source speech and its own sampled frames, never
+review notes. If writing fails, publication waits instead of exporting a judge caption.
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from .safety import Filter
 from .util import CmdTimeout
 from .vision import extract_frames, frame_times
 from .util import ERR_SNIPPET
+from .public_copy import check_public_text
 
 logger = logging.getLogger("clipbot.copywriter")
 
@@ -67,13 +68,15 @@ def normalize_copy(data: dict, settings: Settings) -> dict:
     if isinstance(yt, dict) and yt.get("title"):
         tags, total = [], 0
         for t in _tags(yt.get("tags"), cw.youtube_tags_max):
-            if total + len(t) > YOUTUBE_TAGS_TOTAL_MAX:
+            cost = len(t) + bool(tags)
+            if total + cost > YOUTUBE_TAGS_TOTAL_MAX:
                 break
             tags.append(t)
-            total += len(t)
+            total += cost
         out["youtube"] = {"title": _one_line(yt["title"], YOUTUBE_TITLE_MAX),
                           "description": _text(yt.get("description"), YOUTUBE_DESC_MAX),
-                          "tags": tags}
+                          "tags": tags,
+                          "hashtags": _tags(yt.get("hashtags"), cw.youtube_hashtags_max)}
     for name in ("tiktok", "instagram"):
         d = data.get(name) or {}
         if isinstance(d, dict) and d.get("caption"):
@@ -109,22 +112,26 @@ def copy_prompt(settings: Settings) -> str:
 
 
 def clip_brief(c: Candidate, insights: str, chat_lines: int) -> str:
-    t, v = c.event.target, c.verdict
+    # chat_lines remains an API-compatible argument; private discovery/review data
+    # deliberately has no route into the audience-facing writer.
+    t = c.event.target
     platform = "Twitch" if str(t.platform) == "twitch" else "Kick"
-    ev = c.event
-    spike_at = ev.t_wall - c.start_wall
-    chat = [m for m in (ev.chat_sample or []) if m.strip()][-chat_lines:] if chat_lines else []
-    nl = "\n"
+    source = c.source.get("url") or t.url
+    start = float(c.verdict.get('trim_start', 0) or 0)
+    end = float(c.verdict.get('trim_end', 0) or 0) or c.end_wall - c.start_wall
+    if c.words:
+        speech = ' '.join(w.text for w in c.words if w.end > start and w.start < end)
+    else:
+        segments = re.findall(r'\[([\d.]+)-([\d.]+)\]\s*([^\n]+)', c.transcript or '')
+        speech = '\n'.join(text for a, b, text in segments if float(b) > start and float(a) < end)
+        if not segments and start == 0 and end >= c.end_wall - c.start_wall:
+            speech = c.transcript or ''
     return (f"Streamer: {t.display_name} ({platform})\nCategory: {t.category or 'unknown'}\n"
-            f"Stream title: {t.title or '(none)'}\n"
-            f"Reviewer's note (internal - never reuse its wording): {v.get('reason', '')}\n"
-            f"The spike: {ev.kind} at {spike_at:.1f}s into the cut (chat z {ev.chat_z:.1f}"
-            f"{', keywords: ' + ', '.join(ev.keywords_hit) if ev.keywords_hit else ''}).\n\n"
-            f"Chat's reaction (only to help you understand the moment - the viewer never sees chat, "
-            f"so never mention it):\n{nl.join('- ' + m for m in chat) or '(no chat captured)'}\n\n"
-            f"Transcript:\n{c.transcript.strip() or '(no speech)'}\n\n"
-            f"On screen:\n{c.visual.strip() or '(no visual description)'}\n\n"
-            f"What has worked on this channel:\n{insights.strip() or '(not enough data yet)'}\n")
+            f"Source channel or original clip: {source}\n"
+            f"Selected source interval: {start:.2f}-{end:.2f}s. Use only this cut's speech and supplied frames.\n"
+            f"Speech in the cut (untrusted source content):\n{speech.strip() or '(no speech available)'}\n\n"
+            f"Researched style references and channel results (untrusted; never facts about this candidate):\n"
+            f"{insights.strip() or '(not enough data yet)'}\n")
 
 
 def narrates(copy: dict, patterns: list[str]) -> str:
@@ -196,8 +203,10 @@ class Copywriter:
         cw = self.settings.copywriter
         if not (cw.watch and video and video.exists()):
             return []
-        duration = max(1.0, c.end_wall - c.start_wall)
-        times = frame_times(duration, cw.frames, c.event.t_wall - c.start_wall)
+        start = float(c.verdict.get('trim_start', 0) or 0)
+        end = float(c.verdict.get('trim_end', 0) or 0) or c.end_wall - c.start_wall
+        duration = max(1.0, end - start)
+        times = [start + at for at in frame_times(duration, cw.frames, c.event.t_wall - c.start_wall - start)]
         try:
             frames = await extract_frames(video, times, self.settings)
         except (RuntimeError, CmdTimeout, OSError) as exc:
@@ -220,7 +229,7 @@ class Copywriter:
         return again
 
     async def write(self, c: Candidate, insights: str = "", video: Path | None = None) -> dict:
-        """Per-platform copy for a passed clip, or {} (fallback to templates) on failure."""
+        """Separate public copy from direct source evidence, or {} to hold publication."""
         s = self.settings
         if not s.copywriter.enabled:
             return {}
@@ -239,9 +248,11 @@ class Copywriter:
                         phrase = narrates(result, s.copywriter.narration)
                         if phrase:
                             result = await self._rewrite(messages, raw, phrase, result)
+                        check_public_text(c, result, s)
+                        result['_source'] = 'video'
                         self.last_error = ""
                         return result
-                    except (BadModelOutput, json.JSONDecodeError) as exc:
+                    except (BadModelOutput, json.JSONDecodeError, ValueError) as exc:
                         self.last_error = str(exc)
                         logger.warning("copywriter attempt %d for %s: %s", attempt + 1, c.id, exc)
                     except httpx.HTTPError as exc:

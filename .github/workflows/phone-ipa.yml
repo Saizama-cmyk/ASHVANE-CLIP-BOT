@@ -11,9 +11,18 @@ name: Phone app (.ipa + .apk)
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - "phone/**"
       - ".github/workflows/phone-ipa.yml"
+      - "installer/phone_manifest.py"
+      - "installer/verify_phone_package.py"
+      - "installer/altstore_source.py"
+
+# Serialize publication so an older build cannot replace the newest download/feed.
+concurrency:
+  group: phone-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write          # publish the builds as a release and commit the sideload feed
@@ -39,6 +48,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Stamp the version
         run: |
@@ -56,7 +68,7 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Generate the native iOS project
         run: npx expo prebuild --platform ios --clean --no-install
@@ -93,10 +105,22 @@ jobs:
           zip -qry Ashvane.ipa Payload
           ls -lh Ashvane.ipa
 
+      - name: Verify iPhone installation package
+        run: |
+          python3 installer/verify_phone_package.py phone/ios/Ashvane.ipa --version "$VERSION" --build-number "$RUN_NUMBER" --report phone/ios/package-report.json
+          python3 installer/phone_manifest.py --ipa phone/ios/Ashvane.ipa --report phone/ios/permissions-report.json
+        working-directory: .
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: Ashvane-ipa
-          path: phone/ios/Ashvane.ipa
+          path: |
+            phone/ios/Ashvane.ipa
+            phone/ios/package-report.json
+            phone/ios/permissions-report.json
           if-no-files-found: error
 
   android:
@@ -131,7 +155,7 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Generate the native Android project
         run: npx expo prebuild --platform android --clean --no-install
@@ -168,6 +192,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/download-artifact@v4
         with:
           path: builds
@@ -177,21 +204,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          PREVIOUS=$(gh release view phone-latest --json name --jq .name --repo "$GITHUB_REPOSITORY" 2>/dev/null | sed -n 's/^Ashvane \([0-9][0-9.]*\)$/\1/p' || true)
+          if [ -n "$PREVIOUS" ] && [ "$PREVIOUS" != "$VERSION" ] && [ "$(printf '%s\n' "$PREVIOUS" "$VERSION" | sort -V | tail -1)" = "$PREVIOUS" ]; then
+            echo "A newer phone version ($PREVIOUS) is already published; keeping it."
+            exit 0
+          fi
           IPA=$(find builds -name "*.ipa" | head -1)
           APK=$(find builds -name "*.apk" | head -1)      # missing if Android failed
           test -n "$IPA" || { echo "no .ipa to publish"; exit 1; }
-          NOTES="iPhone: unsigned on purpose - your sideloader signs it with your own Apple ID (AltStore, SideStore, Feather, Sideloadly, ESign, TrollStore). Android: install the .apk directly."
-          for TAG in "phone-v$VERSION" "phone-latest"; do
-            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-            # prerelease: the desktop updater reads /releases/latest and needs the installer there
-            gh release create "$TAG" "$IPA" $APK --prerelease \
-              --title "Ashvane $VERSION" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
-          done
           SIZE=$(stat -c%s "$IPA")
-          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/phone-latest/Ashvane.ipa"
-          python3 installer/altstore_source.py "$GITHUB_REPOSITORY" "phone-v$VERSION" "$URL" "$SIZE"
+          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/phone-v$VERSION/Ashvane.ipa"
+          python3 installer/altstore_source.py "$GITHUB_REPOSITORY" "phone-v$VERSION" "$URL" "$SIZE" --ipa "$IPA"
+          ASSETS=("$IPA" "builds/Ashvane-ipa/package-report.json" "builds/Ashvane-ipa/permissions-report.json" "docs/sideload.json" "docs/altstore.json")
+          if [ -n "$APK" ]; then ASSETS+=("$APK"); fi
+          sha256sum "${ASSETS[@]}" | sed 's|  .*/|  |' > builds/SHA256SUMS.txt
+          ASSETS+=("builds/SHA256SUMS.txt")
+          NOTES="Source: $GITHUB_SHA. iPhone: unsigned package; install using your existing sideloader and Apple ID. Android: install the APK directly. Package metadata, permissions and SHA256SUMS are attached."
+          if [ -z "$APK" ]; then NOTES="$NOTES Android failed in this run; no new APK is attached."; fi
+          for TAG in "phone-v$VERSION" "phone-latest"; do
+            # Preserve numbered releases; only the documented latest alias moves.
+            if [ "$TAG" = "phone-latest" ]; then
+              gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+            fi
+            # prerelease: the desktop updater needs its installer in /releases/latest.
+            if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            else
+              gh release create "$TAG" "${ASSETS[@]}" --prerelease --target "$GITHUB_SHA" \
+                --title "Ashvane $VERSION" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/
-          git commit -m "phone: sideload feed for $VERSION" || exit 0
-          git push
+          git add docs/sideload.json docs/altstore.json
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "phone: sideload feed for $VERSION"
+          git pull --rebase origin main
+          git push origin HEAD:main

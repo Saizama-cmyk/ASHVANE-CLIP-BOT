@@ -243,3 +243,120 @@ def test_rejected_kick_keys_are_asked_once_not_every_cycle():
             await d.refresh()
             assert calls["token"] == 2            # new keys: it tries again
     asyncio.run(go())
+
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("Example_Channel", "example_channel"),
+    (" @Example_Channel ", "example_channel"),
+    ("https://www.twitch.tv/Example_Channel/videos?filter=all", "example_channel"),
+    ("twitch.tv/Example_Channel", "example_channel"),
+    ("https://m.twitch.tv/Example_Channel/", "example_channel"),
+    ("https://www.twitch.tv/%45xample_Channel", "example_channel"),
+    ("\u6e38\u620f\u73a9\u5bb6", None),
+    ("bad/name", None),
+    ("bad-name", None),
+    ("https://twitch.tv.attacker.example/example", None),
+    ("https://person@twitch.tv/example", None),
+    ("@@example", None),
+    ("", None),
+    (None, None),
+])
+def test_twitch_channel_input_is_canonical_login(value, expected):
+    assert Discovery._twitch_login(value) == expected
+
+
+def test_unicode_boost_does_not_poison_valid_forced_or_category_requests(caplog):
+    """Helix clips have international display names, not necessarily usable logins."""
+    s = merge_incoming(Settings(), {"twitch": {"client_id": "cid", "client_secret": "sec",
+                                               "forced_streamers": ["@Forced", "https://twitch.tv/Forced"]},
+                                    "kick": {"enabled": False},
+                                    "discovery": {"top_categories": 1}})
+    stream_queries = []
+    def handler(request):
+        if request.url.host == "id.twitch.tv":
+            return httpx.Response(200, json={"access_token": "mock-token", "expires_in": 3600})
+        if request.url.path.endswith("/games/top"):
+            return httpx.Response(200, json={"data": [{"id": "1"}]})
+        if request.url.path.endswith("/streams"):
+            logins = request.url.params.get_list("user_login")
+            stream_queries.append(logins)
+            if any(not name.isascii() or "/" in name for name in logins):
+                return httpx.Response(400, json={"error": "Bad Request", "status": 400,
+                                                 "message": "Malformed query params."})
+            names = logins or ["top_channel"]
+            return httpx.Response(200, json={"data": [{"user_login": name, "viewer_count": 1000} for name in names]})
+        return httpx.Response(404)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            engine = Discovery(s, http)
+            engine.boosted = {"twitch": ["valid_boost", "\u6e38\u620f\u73a9\u5bb6", "bad/name"]}
+            result = await engine.refresh()
+            assert {target.login for target in result} == {"forced", "valid_boost", "top_channel"}
+            assert stream_queries[0] == ["forced", "valid_boost"]
+            assert "ignored 2 invalid channel entries" in engine.messages["twitch"]
+            await engine.refresh()
+            warnings = [record for record in caplog.records if "Ignored 2 Twitch streamer entries" in record.message]
+            assert len(warnings) == 1
+            engine.boosted = {"twitch": ["valid_boost"]}
+            await engine.refresh()
+            assert "invalid channel" not in engine.messages["twitch"]
+    asyncio.run(run())
+
+
+def test_twitch_users_resolves_ids_in_bounded_deduplicated_chunks():
+    s = merge_incoming(Settings(), {"twitch": {"client_id": "cid", "client_secret": "sec"},
+                                    "discovery": {"fetch_limit": 100}})
+    chunks = []
+    def handler(request):
+        if request.url.host == "id.twitch.tv":
+            return httpx.Response(200, json={"access_token": "mock-token", "expires_in": 3600})
+        assert request.url.path == "/helix/users"
+        assert set(request.url.params) == {"id"}
+        ids = request.url.params.get_list("id")
+        chunks.append(ids)
+        return httpx.Response(200, json={"data": [{"id": value, "login": f"channel_{value}",
+                                                 "display_name": "\u6e38\u620f\u73a9\u5bb6"} for value in ids]})
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            engine = Discovery(s, http)
+            ids = [str(value) for value in range(1, 202)] + ["1", " 2 ", "bad/name", "\u6e38\u620f"]
+            users = await engine.twitch_users(ids)
+            assert [len(chunk) for chunk in chunks] == [100, 100, 1]
+            assert len(users) == 201
+            assert users[0]["login"] == "channel_1"
+            assert users[-1]["id"] == "201"
+    asyncio.run(run())
+
+
+def test_twitch_users_respects_configured_smaller_page_size():
+    s = merge_incoming(Settings(), {"twitch": {"client_id": "cid", "client_secret": "sec"},
+                                    "discovery": {"fetch_limit": 2}})
+    chunks = []
+    def handler(request):
+        if request.url.host == "id.twitch.tv":
+            return httpx.Response(200, json={"access_token": "mock-token", "expires_in": 3600})
+        chunks.append(request.url.params.get_list("id"))
+        return httpx.Response(200, json={"data": []})
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            engine = Discovery(s, http)
+            await engine.twitch_users(["1", "2", "3"])
+            assert chunks == [["1", "2"], ["3"]]
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("enabled,credentials,ids", [(False, True, ["1"]), (True, False, ["1"]),
+                                                    (True, True, ["not-an-id"])])
+def test_twitch_users_skips_unavailable_or_empty_work(enabled, credentials, ids):
+    s = Settings()
+    s.twitch.enabled = enabled
+    if credentials:
+        s.twitch.client_id, s.twitch.client_secret = "cid", "sec"
+    def handler(request):
+        raise AssertionError("No request should be made")
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            assert await Discovery(s, http).twitch_users(ids) == []
+    asyncio.run(run())

@@ -117,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
                       "Fix or delete the file and start Ashvane again.", windowed)
 
     from clipbot.app import ClipBotApp, setup_logging
+    from clipbot.storage import StorageMoveIncomplete
 
     log_file = setup_logging(settings, console=not windowed)
     logger.info("Ashvane starting (%s mode, settings %s, log %s)",
@@ -135,11 +136,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if windowed:
-        desktop = Desktop(settings, start_hidden=autostart_hidden(args, settings))
+        try:
+            desktop = Desktop(settings, start_hidden=autostart_hidden(args, settings))
+        except StorageMoveIncomplete as exc:
+            if lock:
+                lock.release()
+            return _fatal(str(exc), windowed)
         code = desktop.run()
         restart = desktop.app.restart_requested
     else:
-        app = ClipBotApp(settings, dashboard=not args.no_dashboard)
+        try:
+            app = ClipBotApp(settings, dashboard=not args.no_dashboard)
+        except StorageMoveIncomplete as exc:
+            if lock:
+                lock.release()
+            return _fatal(str(exc), windowed)
         if settings.dashboard.open_browser and not args.headless and not args.no_dashboard:
             def _open() -> None:
                 app.ready.wait()

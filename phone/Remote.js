@@ -3,16 +3,19 @@
  * and the log - plus the connection test.
  */
 import React, { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { Button, C, Card, Empty, Field, Icon, ListRow, MONO, Pill, Section, t } from "./theme";
 import { baseUrl, call, testConnection } from "./api";
 import * as secure from "./secure";
 import { KEY_HOST, KEY_TOKEN } from "./api";
 
 const CLIP_LIMIT = 30, MON_LIMIT = 15;
+const PUBLISH_TIMEOUT_MS = 180000;
 
 function ago(iso) {
-  const sec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const timestamp = new Date(typeof iso === "number" ? iso * 1000 : iso).getTime();
+  if (!Number.isFinite(timestamp)) return "Time unavailable";
+  const sec = Math.max(0, (Date.now() - timestamp) / 1000);
   if (sec < 60) return `${Math.round(sec)}s ago`;
   if (sec < 3600) return `${Math.round(sec / 60)}m ago`;
   if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
@@ -153,45 +156,15 @@ export function SignIn({ onDone }) {
     </ScrollView>);
 }
 
-/* ------------------------------------------------------------------ the pet */
-const PET_FPS = 12, PET_BOX = 84, PET_IDLE = "idle", PET_CHEER = "cheer", PET_SLEEP = "sleep";
-
-function Pet({ host, state }) {
-  const [manifest, setManifest] = useState(null);
-  const [frame, setFrame] = useState(0);
-  const species = "blip";
-  useEffect(() => {
-    let alive = true;
-    fetch(`${host}/static/pets/manifest.json`).then(r => r.json())
-      .then(m => { if (alive) setManifest(m[species] || null); }).catch(() => {});
-    return () => { alive = false; };
-  }, [host]);
-  const action = state.manual_paused ? PET_SLEEP
-    : (state.counts && state.counts.clips && state.status === "running") ? PET_CHEER : PET_IDLE;
-  const count = manifest && manifest.actions ? (manifest.actions[action] || 1) : 1;
-  useEffect(() => {
-    const id = setInterval(() => setFrame(f => (f + 1) % Math.max(1, count)), 1000 / PET_FPS);
-    return () => clearInterval(id);
-  }, [count]);
-  if (!manifest) return null;
-  const scale = PET_BOX / manifest.frame;
-  return (
-    <View style={{ width: PET_BOX, height: PET_BOX, overflow: "hidden" }} accessibilityLabel={`Blip is ${action}`}>
-      <Image source={{ uri: `${host}/static/pets/${species}/${action}.png` }}
-        style={{ width: manifest.frame * count * scale, height: PET_BOX, transform: [{ translateX: -frame * manifest.frame * scale }] }}
-        resizeMode="stretch" />
-    </View>);
-}
-
 /* ------------------------------------------------------------------ live */
 export function Live({ state, onPause, busy, host, token }) {
-  const counts = state.counts || {};
+  const counts = state.stages?.counts || {};
   const backlog = state.backlog || {};
   const paused = !!state.manual_paused;
   const pressure = Math.min(100, Math.round((backlog.pressure || 0) * 100));
-  const streams = (state.streams || []).slice(0, MON_LIMIT);
+  const streams = (state.monitors || []).slice(0, MON_LIMIT);
   const [testing, setTesting] = useState(false);
-  const status = paused ? ["Paused", "plain"] : backlog.failsafe ? ["Catching up", "bad"]
+  const status = paused ? ["Paused", "plain"] : state.failsafe ? ["Catching up", "bad"]
     : state.status === "running" ? ["Live", "live"] : [state.status || "Starting", "plain"];
 
   return (
@@ -204,13 +177,12 @@ export function Live({ state, onPause, busy, host, token }) {
         </View>
         <View style={{ flexDirection: "row", alignItems: "flex-end", marginTop: 16 }}>
           <View style={{ flex: 1, flexDirection: "row" }}>
-            {[[counts.clips, "clips"], [counts.posted, "posted"], [counts.watching, "watching"]].map(([v, l]) => (
+            {[[state.samples?.length, "recent cuts"], [counts.posted, "posted"], [state.monitors?.length, "watching"]].map(([v, l]) => (
               <View key={l} style={{ flex: 1 }}>
                 <Text style={t.num}>{v ?? "—"}</Text>
                 <Text style={t.faint}>{l}</Text>
               </View>))}
           </View>
-          {!!host && <Pet host={host} state={state} />}
         </View>
         <View style={{ marginTop: 14 }}>
           <View style={{ flexDirection: "row", marginBottom: 6 }}>
@@ -233,10 +205,10 @@ export function Live({ state, onPause, busy, host, token }) {
           {streams.length === 0 ? <Empty icon="radio-outline" title="Nothing live yet" body="Streams show up here as soon as they are picked." />
             : streams.map((m, i) => (
               <ListRow key={m.key || i} first={i === 0} icon={m.platform === "kick" ? "flash-outline" : "videocam-outline"}
-                title={m.name} sub={`${m.category || "—"} · ${Number(m.viewers || 0).toLocaleString()} watching`}
+                title={m.display_name || m.login} sub={`${m.platform} · ${m.category || "—"} · ${Number(m.viewers || 0).toLocaleString()} viewers`}
                 right={<View style={{ alignItems: "flex-end" }}>
-                  <Text style={[t.mono, { fontSize: 12.5 }]}>{m.rate}/s</Text>
-                  <Text style={[t.faint, { fontFamily: MONO }]}>{m.warm ? `z ${m.z}` : "warming"}</Text>
+                  <Text style={[t.mono, { fontSize: 12.5 }]}>{m.chat?.rate ?? "—"}/s</Text>
+                  <Text style={[t.faint, { fontFamily: MONO }]}>{m.no_chat ? "no chat" : m.chat?.warm ? `z ${m.chat.z}` : "warming"}</Text>
                 </View>} />))}
         </Card>
       </Section>
@@ -244,26 +216,67 @@ export function Live({ state, onPause, busy, host, token }) {
 }
 
 /* ------------------------------------------------------------------ clips */
-export function Clips({ host, token, onError }) {
+function ReviewEvidence({ items }) {
+  return (Array.isArray(items) ? items : []).map((item, i) => <Text selectable key={i} style={t.muted}>{typeof item === "string" ? item : `${item.at != null ? `${item.at}s · ` : ""}${item.detail || JSON.stringify(item)}`}</Text>);
+}
+function ViewerReview({ review }) {
+  return <Card tone={2} style={{ gap: 8 }}>
+    <Text style={t.h2}>Would a viewer keep watching?</Text>
+    {[["hook", "Opening hook"], ["context", "Easy to follow"], ["payoff", "Payoff"], ["pacing", "Pacing"], ["confidence", "Confidence"]].filter(([key]) => review[key] != null).map(([key, label]) => <View key={key} style={{ flexDirection: "row", gap: 10 }}><Text style={[t.muted, { flex: 1 }]}>{label}</Text><Text style={t.mono}>{String(review[key])}</Text></View>)}
+    {!!review.why_watch && <Text style={t.body}>{review.why_watch}</Text>}
+    {!!review.why_skip && <Text style={t.muted}>Why someone might skip: {review.why_skip}</Text>}
+    {!!review.flags?.length && <Text style={t.error}>{review.flags.join(" · ")}</Text>}
+    {!!review.evidence?.length && <><Text style={t.label}>Observed evidence</Text><ReviewEvidence items={review.evidence} /></>}
+  </Card>;
+}
+function FinalReview({ review }) {
+  const label = review.passed === true ? "Passed" : review.status === "disabled" ? "Disabled" : review.status === "unavailable" ? "Unavailable" : "Held";
+  return <Card tone={2} style={{ gap: 8 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><Text style={[t.h2, { flex: 1 }]}>Final video check</Text><Pill label={label} tone={review.status === "disabled" ? "plain" : review.passed ? "good" : "bad"} /></View>
+    {!!review.reason && <Text style={t.body}>{review.reason}</Text>}
+    {!!review.issues?.length && <Text style={t.error}>{review.issues.join(" · ")}</Text>}
+    {!!review.evidence?.length && <ReviewEvidence items={review.evidence} />}
+    {!!review.model && <Text style={t.faint}>Reviewed by {review.model}</Text>}
+  </Card>;
+}
+export function Clips({ host, token, onError, state, toast, refreshVersion }) {
   const [clips, setClips] = useState(null);
   const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState("");
+  const [selected, setSelected] = useState([]);
+  const platforms = Object.entries(state?.scheduler?.platforms || {}).filter(([, p]) => p.enabled && p.configured);
   const load = useCallback(async () => {
     try {
       const r = await call(host, "/api/clips", { token });
-      if (r.ok) setClips(((r.data.clips || r.data) || []).slice(0, CLIP_LIMIT));
-    } catch (e) { onError(); }
+      if (!r.ok) throw new Error(r.data.error || `Could not load clips (${r.status}).`);
+      setClips((r.data.clips || []).slice(0, CLIP_LIMIT)); setError("");
+    } catch (e) { setError(e.message || "Could not load clips."); onError(); }
   }, [host, token, onError]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshVersion]);
   const publish = async (id) => {
     setBusyId(id);
-    try { await call(host, `/api/clips/${id}/publish`, { token, method: "POST" }); await load(); }
-    catch (e) { onError(); }
+    let answered = false;
+    try {
+      const r = await call(host, `/api/clips/${encodeURIComponent(id)}/publish`, { token, method: "POST", timeout: PUBLISH_TIMEOUT_MS, body: { platforms: selected.filter(p => platforms.some(([name]) => name === p)) } });
+      answered = true;
+      if (!r.ok || r.data.ok === false) throw new Error(r.data.error || Object.entries(r.data.results || {}).map(([name, result]) => `${name}: ${result.error || "failed"}`).join(" · ") || `Posting failed (${r.status}).`);
+      const failed = Object.entries(r.data.results || r.data.platforms || {}).filter(([, result]) => result.ok === false);
+      toast(failed.length ? `Some platforms failed: ${failed.map(([name]) => name).join(", ")}` : "Publishing request completed. Check post results on Today.");
+      await load();
+      if (failed.length) setError(failed.map(([name, result]) => `${name}: ${result.error || "Publishing failed."}`).join(" · "));
+    } catch (e) {
+      if (answered) await load();
+      setError(e.name === "AbortError" ? "The PC has not returned a posting result yet. Check Today’s post results before retrying; the upload may still finish." : e.message || "Publishing failed.");
+      if (!answered) onError();
+    }
     setBusyId("");
   };
-  if (clips === null) return <ActivityIndicator color={C.ink2} style={{ marginTop: 30 }} />;
+  if (clips === null) return error ? <Card><Text style={t.error}>{error}</Text><Button label="Retry clips" onPress={load} style={{ marginTop: 12 }} /></Card> : <ActivityIndicator color={C.ink2} style={{ marginTop: 30 }} />;
   const tone = { posted: "good", rejected: "bad", scheduled: "live" };
   return (
     <Section title="Latest clips">
+      {!!error && <Card style={{ marginBottom: 16 }}><Text accessibilityRole="alert" style={t.error}>{error}</Text><Button label="Reload clips" onPress={load} style={{ marginTop: 10 }} /></Card>}
       <Card pad={false}>
         {clips.length === 0 ? <Empty icon="film-outline" title="No clips yet" body="They appear here as soon as one is cut." />
           : clips.map((c, i) => {
@@ -275,9 +288,26 @@ export function Clips({ host, token, onError }) {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Pill label={c.stage} tone={tone[c.stage] || "plain"} />
                   <Text style={[t.faint, { flex: 1 }]} numberOfLines={1}>{target.display_name || ""} · {ago(c.created_at)}</Text>
-                  {c.stage === "scheduled" && (
-                    <Button label="Post now" icon="send" small kind="primary" busy={busyId === c.id} onPress={() => publish(c.id)} />)}
                 </View>
+                {!!v.reason && <Text style={t.muted}>{v.reason}</Text>}
+                <Button label={expanded === c.id ? "Close review" : "Review decision"} small onPress={() => { setExpanded(expanded === c.id ? "" : c.id); setSelected([]); }} />
+                {expanded === c.id && <View style={{ gap: 12, marginTop: 6 }}>
+                  <Text style={t.label}>Judge’s decision</Text>
+                  <Text style={t.body}>{v.verdict || "No verdict yet"}{v.score != null ? ` · ${v.score} / 10` : ""}{v.category ? ` · ${v.category}` : ""}</Text>
+                  {!v.reason && <Text style={t.muted}>The judge has not supplied a reason yet.</Text>}
+                  {!!v.viewer_review && <ViewerReview review={v.viewer_review} />}
+                  {!!v.final_review && <FinalReview review={v.final_review} />}
+                  {Object.entries(v).filter(([key, value]) => value && /evidence|hook|payoff|audience|risk|confidence|jury|director|edit_plan|quality_gate|must_fix|watchability|replay|setup/.test(key)).map(([key, value]) => <View key={key}><Text style={t.label}>{key.replace(/_/g, " ")}</Text><Text selectable style={[t.muted, { marginTop: 4 }]}>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</Text></View>)}
+                  {!!c.visual && <View><Text style={t.label}>Observed visuals</Text><Text style={t.muted}>{c.visual}</Text></View>}
+                  {!!c.transcript && <View><Text style={t.label}>Transcript</Text><Text selectable style={t.body}>{c.transcript}</Text></View>}
+                  {!!c.error && <Text style={t.error}>{c.error}</Text>}
+                  {!!c.post_copy?.hook && <View><Text style={t.label}>Opening hook</Text><Text style={t.body}>{c.post_copy.hook}</Text></View>}
+                  {c.stage === "scheduled" && <>
+                    <Text style={t.label}>Post to connected platforms</Text>
+                    {!platforms.length ? <Text style={t.muted}>Enable and connect a publishing account in Settings first.</Text> : <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>{platforms.map(([name]) => <Button key={name} small label={`${selected.includes(name) ? "✓ " : ""}${name}`} onPress={() => setSelected(p => p.includes(name) ? p.filter(x => x !== name) : [...p, name])} />)}</View>}
+                    <Button label="Post selected platforms now" icon="send-outline" kind="primary" busy={busyId === c.id} disabled={!!busyId || !selected.some(p => platforms.some(([name]) => name === p))} onPress={() => Alert.alert("Publish this clip now?", `This uploads the clip to ${selected.join(", ")}.`, [{ text: "Cancel", style: "cancel" }, { text: "Publish", onPress: () => publish(c.id) }])} />
+                  </>}
+                </View>}
               </View>);
           })}
       </Card>
@@ -287,10 +317,11 @@ export function Clips({ host, token, onError }) {
 /* ------------------------------------------------------------------ studio */
 export function Studio({ host, token, onError, toast }) {
   const [info, setInfo] = useState(null);
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const load = useCallback(async () => {
-    try { const r = await call(host, "/api/studio", { token }); if (r.ok) setInfo(r.data); }
-    catch (e) { onError(); }
+    try { const r = await call(host, "/api/studio", { token }); if (!r.ok) throw new Error(`Studio did not answer (${r.status}).`); setInfo(r.data); setError(""); }
+    catch (e) { setError(e.message || "Studio could not load."); onError(); }
   }, [host, token, onError]);
   useEffect(() => { load(); }, [load]);
   const use = async (name, style) => {
@@ -298,11 +329,13 @@ export function Studio({ host, token, onError, toast }) {
     try {
       const r = await call(host, "/api/studio/default", { token, method: "POST", body: { style } });
       toast(r.ok ? `${name} is now the look for new clips` : "Could not apply that look");
+      if (!r.ok) onError();
       await load();
     } catch (e) { onError(); }
     setBusy("");
   };
-  const themes = Object.entries(info?.themes || {});
+  const themes = Object.entries({ ...(info?.themes?.builtin || {}), ...(info?.themes?.mine || {}) });
+  if (error && !info) return <Card><Text style={t.error}>{error}</Text><Button label="Retry Studio" onPress={load} style={{ marginTop: 12 }} /></Card>;
   return (
     <>
       {!!info?.current && (
@@ -314,7 +347,7 @@ export function Studio({ host, token, onError, toast }) {
         </Section>)}
       <Section title="Looks for new clips">
         <Card pad={false}>
-          {themes.length === 0 ? <ActivityIndicator color={C.ink2} style={{ margin: 24 }} />
+          {themes.length === 0 ? info ? <Empty title="No looks available" body="Check Studio settings on your PC." /> : <ActivityIndicator color={C.ink2} style={{ margin: 24 }} />
             : themes.map(([name, style], i) => (
               <View key={name} style={[{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14 }, i > 0 && { borderTopWidth: 1, borderTopColor: C.line }]}>
                 <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: style.highlight_color || C.ink, borderWidth: 1, borderColor: C.line2 }} />
@@ -330,17 +363,25 @@ export function Studio({ host, token, onError, toast }) {
 }
 
 /* ------------------------------------------------------------------ settings */
+function LinesSetting({ value, onSave, busy }) {
+  const [text, setText] = useState((value || []).join("\n"));
+  return <View style={{ marginTop: 10 }}>
+    <Field multiline value={text} onChangeText={setText} autoCapitalize="none" autoCorrect={false} accessibilityLabel="Settings list, one item per line" placeholder="One item per line" />
+    <Button label="Save list" small busy={busy} onPress={() => onSave(text.split(/\r?\n/).map(item => item.trim()).filter(Boolean))} style={{ marginTop: 10 }} />
+  </View>;
+}
 export function SettingsTab({ host, token, onError, toast }) {
   const [schema, setSchema] = useState(null);
   const [values, setValues] = useState(null);
   const [section, setSection] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const load = useCallback(async () => {
     try {
       const [sc, va] = await Promise.all([call(host, "/api/settings/schema", { token }), call(host, "/api/settings", { token })]);
-      if (sc.ok) setSchema(sc.data);
-      if (va.ok) setValues(va.data);
-    } catch (e) { onError(); }
+      if (!sc.ok || !va.ok) throw new Error(`Settings did not answer (${!sc.ok ? sc.status : va.status}).`);
+      setSchema(sc.data); setValues(va.data); setError("");
+    } catch (e) { setError(e.message || "Settings could not load."); onError(); }
   }, [host, token, onError]);
   useEffect(() => { load(); }, [load]);
   const save = async (key, field, value) => {
@@ -348,13 +389,14 @@ export function SettingsTab({ host, token, onError, toast }) {
     try {
       const r = await call(host, "/api/settings", { token, method: "POST", body: { [key]: { [field]: value } } });
       toast(r.ok ? "Saved" : (r.data.errors?.[0]?.msg || "Could not save that"));
+      if (!r.ok) onError();
       if (r.ok) setValues(v => ({ ...v, [key]: { ...(v?.[key] || {}), [field]: value } }));
     } catch (e) { onError(); }
     setBusy(false);
   };
   const props = schema?.properties || {};
   const deref = (raw) => (raw?.$ref ? schema.$defs?.[raw.$ref.split("/").pop()] : raw) || {};
-  if (!schema) return <ActivityIndicator color={C.ink2} style={{ marginTop: 30 }} />;
+  if (!schema) return error ? <Card><Text style={t.error}>{error}</Text><Button label="Retry settings" onPress={load} style={{ marginTop: 12 }} /></Card> : <ActivityIndicator color={C.ink2} style={{ marginTop: 30 }} />;
   if (!section) {
     return (
       <Section title="Settings on the PC">
@@ -369,7 +411,7 @@ export function SettingsTab({ host, token, onError, toast }) {
   const current = values?.[section] || {};
   return (
     <>
-      <Pressable onPress={() => setSection("")} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 8, marginBottom: 6 }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to all settings" onPress={() => setSection("")} style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 44, paddingVertical: 8, marginBottom: 6 }}>
         <Icon name="chevron-back" size={18} color={C.ink2} /><Text style={t.muted}>All settings</Text>
       </Pressable>
       <Section title={props[section]?.title || section}>
@@ -378,7 +420,8 @@ export function SettingsTab({ host, token, onError, toast }) {
             const f = deref(raw);
             const value = current[key];
             const kind = raw.type || f.type || (raw.anyOf || [])[0]?.type;
-            if (value !== null && typeof value === "object") return null;
+            const lineList = kind === "array" && (f.items?.type === "string" || raw.items?.type === "string" || (Array.isArray(value) && value.every(v => typeof v === "string")));
+            if (value !== null && typeof value === "object" && !lineList) return null;
             return (
               <View key={key} style={[{ padding: 16 }, i > 0 && { borderTopWidth: 1, borderTopColor: C.line }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -388,11 +431,12 @@ export function SettingsTab({ host, token, onError, toast }) {
                       onValueChange={v => save(section, key, v)} />)}
                 </View>
                 {!!(raw.description || f.description) && <Text style={[t.faint, { marginTop: 4 }]}>{raw.description || f.description}</Text>}
-                {kind !== "boolean" && (
+                {lineList && <LinesSetting value={value} busy={busy} onSave={items => save(section, key, items)} />}
+                {kind !== "boolean" && !lineList && (
                   <TextInput defaultValue={value === null || value === undefined ? "" : String(value)}
                     style={{ marginTop: 10, minHeight: 44, borderRadius: 10, paddingHorizontal: 12, backgroundColor: C.s2, color: C.ink,
                       fontSize: 15, borderWidth: 1, borderColor: C.line }}
-                    placeholderTextColor={C.ink3} autoCapitalize="none" returnKeyType="done"
+                    placeholderTextColor={C.ink3} autoCapitalize="none" returnKeyType="done" accessibilityLabel={raw.title || f.title || key} editable={!busy}
                     keyboardType={kind === "number" || kind === "integer" ? "numbers-and-punctuation" : "default"}
                     onSubmitEditing={e => save(section, key, (kind === "number" || kind === "integer") ? Number(e.nativeEvent.text) : e.nativeEvent.text)} />)}
               </View>);
@@ -404,26 +448,30 @@ export function SettingsTab({ host, token, onError, toast }) {
 
 /* ------------------------------------------------------------------ log */
 export function Log({ host, token, state, onError }) {
-  const [lines, setLines] = useState([]);
+  const [panel, setPanel] = useState(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     let alive = true;
     call(host, "/api/system/panel", { token })
-      .then(r => { if (alive && r.ok) setLines((r.data.events || []).slice(-60).reverse()); })
-      .catch(() => onError());
+      .then(r => { if (!r.ok) throw new Error(`Log did not answer (${r.status}).`); if (alive) setPanel(r.data); })
+      .catch(e => { if (alive) { setError(e.message || "Could not load the log."); onError(); } });
     return () => { alive = false; };
   }, [host, token, onError]);
-  const trouble = state.trouble || [];
+  const lines = (panel?.events || []).slice(0, 60);
+  const trouble = (panel?.issues || []).slice(0, 30);
+  if (error) return <Card><Text style={t.error}>{error}</Text><Text style={[t.muted, { marginTop: 10 }]}>Pull down to retry the log.</Text></Card>;
+  if (!panel) return <ActivityIndicator color={C.ink2} style={{ marginTop: 30 }} />;
   return (
     <>
       <Section title="Trouble">
         <Card>
           {trouble.length === 0 ? (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <Icon name="checkmark-circle" size={18} color={C.good} /><Text style={t.body}>Nothing wrong.</Text>
+              <Icon name="checkmark-circle" size={18} color={C.good} /><Text style={t.body}>No recent warnings in the log.</Text>
             </View>)
             : trouble.map((x, i) => (
               <View key={i} style={{ flexDirection: "row", gap: 10, paddingVertical: 4 }}>
-                <Icon name="alert-circle" size={17} color={C.bad} /><Text style={[t.body, { flex: 1 }]}>{x}</Text>
+                <Icon name="alert-circle" size={17} color={C.bad} /><Text style={[t.body, { flex: 1 }]}>{x.msg || "Warning"}</Text>
               </View>))}
         </Card>
       </Section>
@@ -432,7 +480,7 @@ export function Log({ host, token, state, onError }) {
           {lines.length === 0 ? <Text style={t.faint}>Nothing logged yet.</Text>
             : lines.map((e, i) => (
               <Text key={i} style={{ fontFamily: MONO, fontSize: 12, lineHeight: 19, color: C.ink2 }}>
-                <Text style={{ color: C.ink3 }}>{e.time || ""} </Text>{e.text || e.msg || ""}
+                <Text style={{ color: C.ink3 }}>{e.t || ""} </Text>{e.msg || ""}
               </Text>))}
         </Card>
       </Section>

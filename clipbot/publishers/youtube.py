@@ -8,13 +8,15 @@ from ..util import ERR_SNIPPET
 from .base import PostText, Publisher, PublishError, PublishResult, http_error, read_bytes, stats
 from .oauth import OAuthManager
 
-AGE_RESTRICTED = "ytAgeRestricted"    # YouTube's 18+ rating
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 IDS_PER_CALL = 50        # API limit
 TITLE_MAX = 100          # API limit
 DESCRIPTION_MAX = 5000   # API limit
+AGE_RESTRICTION_HOLD = ("YouTube's upload API cannot set an 18+ age restriction. Automatic uploads "
+                        "are held. Upload and add the restriction manually in YouTube Studio, or "
+                        "turn off the manual 18+ hold in Settings → Posting for ordinary uploads.")
 
 
 class YouTubePublisher(Publisher):
@@ -30,30 +32,32 @@ class YouTubePublisher(Publisher):
             return False, "YouTube OAuth client ID/secret missing (Settings → Accounts)"
         if not self.oauth.connected("youtube"):
             return False, "YouTube account not connected (Settings → Accounts → Connect)"
+        if self.settings.posting.youtube.age_restrict:
+            return False, AGE_RESTRICTION_HOLD
         return True, ""
 
     async def _publish(self, video: Path, post: PostText) -> PublishResult:
         cfg = self.settings.posting.youtube
+        if cfg.age_restrict:
+            raise PublishError(AGE_RESTRICTION_HOLD)
         token = await self.oauth.access_token("youtube")
         suffix = cfg.shorts_suffix
         title = (post.title[:TITLE_MAX - len(suffix)] + suffix).strip()
         meta = {"snippet": {"title": title, "description": post.caption[:DESCRIPTION_MAX],
                             "tags": post.hashtags, "categoryId": cfg.category_id},
                 "status": {"privacyStatus": cfg.privacy, "selfDeclaredMadeForKids": False}}
-        parts = "snippet,status"
-        if cfg.age_restrict:                      # 18+: keeps clips out of kids' feeds
-            meta["contentDetails"] = {"contentRating": {"ytRating": AGE_RESTRICTED}}
-            parts += ",contentDetails"
         data = await read_bytes(video)
         r = await self.http.post(
-            UPLOAD_URL, params={"uploadType": "resumable", "part": parts},
+            UPLOAD_URL, params={"uploadType": "resumable", "part": "snippet,status"},
             headers={"Authorization": f"Bearer {token}",
                      "Content-Type": "application/json; charset=UTF-8",
                      "X-Upload-Content-Type": "video/mp4",
                      "X-Upload-Content-Length": str(len(data))},
             content=json.dumps(meta), timeout=self.timeout)
-        if r.status_code != 200 or "location" not in r.headers:
+        if r.status_code != 200:
             raise http_error(r, "YouTube upload init", ERR_SNIPPET)
+        if not r.headers.get("location"):
+            raise PublishError("YouTube upload initialization returned no resumable upload URL")
         up = await self.http.put(r.headers["location"], content=data, timeout=self.timeout,
                                  headers={"Authorization": f"Bearer {token}",
                                           "Content-Type": "video/mp4"})

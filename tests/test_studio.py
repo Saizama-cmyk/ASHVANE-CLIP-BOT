@@ -35,10 +35,14 @@ def test_theme_store(tmp_path):
 
 
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not on PATH")
-def test_studio_render_preview_and_apply(running_app, tmp_path):
+def test_studio_render_preview_and_apply(running_app, tmp_path, monkeypatch):
     from clipbot.models import Candidate, Platform, SpikeEvent, Stage, StreamTarget, Word
     from tests.test_server import H
     app, c = running_app
+    async def reviewed(_candidate):
+        return True
+    # This is a real ffmpeg render test. Viewer judgement has separate negative controls.
+    monkeypatch.setattr(app.pipeline, "_review_final", reviewed)
     raw = tmp_path / "raw.mp4"
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
                     "testsrc2=size=1280x720:rate=30:duration=6", "-f", "lavfi", "-i",

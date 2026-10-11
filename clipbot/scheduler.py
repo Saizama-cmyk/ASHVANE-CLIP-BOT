@@ -23,6 +23,8 @@ from .db import Store
 from .models import Candidate, Platform, Stage
 from .safety import Filter
 from .publishers import PLATFORMS, PostText, Publisher
+from .publishers.base import PublishResult
+from .public_copy import check_public_text, require_public_copy, UnsafePublicCopy
 
 logger = logging.getLogger("clipbot.scheduler")
 
@@ -43,12 +45,11 @@ def brand_handle(settings: Settings, target: str) -> str:
 
 def compose_post(c: Candidate, settings: Settings, target: str = "") -> PostText:
     p = settings.posting
-    v = c.verdict
-    tags = [t for t in v.get("hashtags", []) if t]
-    title_text, caption_text = v.get("title", ""), v.get("caption", "")
-    pc = (c.post_copy or {}).get(target) or {}
+    pc = require_public_copy(c, settings, target)
+    tags = []
+    title_text, caption_text = "", ""
     if target == "youtube" and pc:
-        title_text, caption_text, tags = pc["title"], pc.get("description", ""), pc.get("tags", tags)
+        title_text, caption_text, tags = pc["title"], pc.get("description", ""), pc.get("tags", [])
     elif target in ("tiktok", "instagram") and pc:
         # these publishers post title + caption as one text: the story caption goes first
         title_text, caption_text, tags = pc["caption"], "", pc.get("hashtags", tags)
@@ -60,7 +61,7 @@ def compose_post(c: Candidate, settings: Settings, target: str = "") -> PostText
     values = {"title": title_text, "caption": caption_text,
               "streamer": c.event.target.display_name or c.event.target.login,
               "platform": platform, "category": c.event.target.category,
-              "hashtags": " ".join(f"#{t}" for t in tags), "brand": settings.brand.name,
+              "hashtags": " ".join(f"#{t}" for t in (pc.get('hashtags', []) if target == 'youtube' else tags)), "brand": settings.brand.name,
               "handle": brand_handle(settings, target)}
     values["clipper"] = str(c.source.get("clipper", ""))
     credit_tpl = (settings.clip_import.credit_template if c.source.get("type") == "twitch_clip"
@@ -70,7 +71,9 @@ def compose_post(c: Candidate, settings: Settings, target: str = "") -> PostText
     caption = render_template(p.caption_template, values)
     caption = re.sub(r"\n{3,}", "\n\n", caption)
     flt = Filter(settings)
-    return PostText(title=flt.mask(title), caption=flt.mask(caption), hashtags=flt.clean(tags))
+    post = PostText(title=flt.mask(title), caption=flt.mask(caption), hashtags=flt.clean(tags))
+    check_public_text(c, {'title': post.title, 'description': post.caption, 'tags': post.hashtags}, settings)
+    return post
 
 
 def in_posting_window(settings: Settings, now: datetime) -> bool:
@@ -103,6 +106,8 @@ class Scheduler:
         self._task: asyncio.Task | None = None
         self._cand_lock = asyncio.Lock()
         self.analytics = None        # set by the pipeline: steers picks and caps flooding
+        self.quality_guard = None    # pipeline's final-cut gate, including older scheduled clips
+        self.media_locks: dict[str, asyncio.Lock] = {}
 
     def apply(self, settings: Settings) -> None:
         self.settings = settings
@@ -193,22 +198,52 @@ class Scheduler:
         cands = await asyncio.to_thread(self.store.candidates_in_stage, Stage.SCHEDULED)
         out = []
         for c in cands:
-            if c.posted_to.get(name) in ("ok", "failed"):
-                continue
-            if not c.final_path or not Path(c.final_path).exists():
-                continue
-            out.append(c)
+            lock = self.media_locks.setdefault(c.id, asyncio.Lock())
+            async with lock:
+                # A manual batch may be restoring this render or posting it while this tick waits.
+                fresh = await asyncio.to_thread(self.store.get_candidate, c.id)
+                if fresh is None or fresh.stage != Stage.SCHEDULED or fresh.posted_to.get(name) in ("ok", "failed"):
+                    continue
+                if not fresh.final_path or not Path(fresh.final_path).exists():
+                    fresh.stage = Stage.FAILED
+                    fresh.error = "Finished video is missing from its saved path. Restore the file or make a new clip before posting."
+                    await asyncio.to_thread(self.store.upsert_candidate, fresh)
+                    self.last_error[name] = fresh.error
+                    logger.warning("scheduled clip %s cannot post: finished video is missing", fresh.id)
+                    continue
+                out.append(fresh)
         return out
 
     async def _post(self, name: str, cand_id: str):
+        # Share this lock with Studio: the bytes reviewed must be the bytes uploaded.
+        lock = self.media_locks.setdefault(cand_id, asyncio.Lock())
+        async with lock:
+            return await self._post_checked(name, cand_id)
+
+    async def _post_checked(self, name: str, cand_id: str):
         c = await asyncio.to_thread(self.store.get_candidate, cand_id)
         if c is None:
             return None
-        post = compose_post(c, self.settings, name)
+        # Recheck under the media lock: a manual or automatic upload may have finished while waiting.
+        if c.posted_to.get(name) == "ok":
+            posts = await asyncio.to_thread(self.store.posts_for_candidate, cand_id)
+            previous = next((p for p in reversed(posts) if p["platform"] == name and p["status"] == "ok"), {})
+            return PublishResult(True, remote_id=previous.get("remote_id", ""), url=previous.get("url", ""))
+        try:
+            if self.quality_guard and not await self.quality_guard(c):
+                self.last_error[name] = c.error or "Final-cut review did not pass"
+                return PublishResult(False, error=self.last_error[name])
+            post = compose_post(c, self.settings, name)
+        except UnsafePublicCopy as exc:
+            c.error = self.last_error[name] = str(exc)
+            await asyncio.to_thread(self.store.upsert_candidate, c)
+            return PublishResult(False, error=str(exc))
         logger.info("posting %s to %s: %s", c.id, name, post.title)
         result = await self.publishers[name].publish(Path(c.final_path), post)
         await asyncio.to_thread(self.store.record_post, c.id, name, result.remote_id, result.url,
-                                "ok" if result.ok else "failed", result.error)
+                                "ok" if result.ok else "failed", result.error,
+                                public_text={'title': post.title, 'description': post.caption,
+                                             'tags': post.hashtags})
         attempts = sum(1 for p in await asyncio.to_thread(self.store.posts_for_candidate, c.id)
                        if p["platform"] == name)
         async with self._cand_lock:
@@ -231,6 +266,12 @@ class Scheduler:
     async def publish_now(self, cand_id: str, platforms: list[str]) -> dict[str, dict]:
         """Post one clip right away, ignoring caps, gaps and the posting window (testing /
         pushing a specific video). Each platform's result is recorded like a scheduled post."""
+        lock = self.media_locks.setdefault(cand_id, asyncio.Lock())
+        async with lock:
+            return await self._publish_now_locked(cand_id, platforms)
+
+    async def _publish_now_locked(self, cand_id: str, platforms: list[str]) -> dict[str, dict]:
+        """The caller holds the clip's media lock through render, review and every upload."""
         out: dict[str, dict] = {}
         for name in platforms:
             pub = self.publishers.get(name)
@@ -241,9 +282,13 @@ class Scheduler:
             if not ready:
                 out[name] = {"ok": False, "error": reason}
                 continue
-            res = await self._post(name, cand_id)
+            current = await asyncio.to_thread(self.store.get_candidate, cand_id)
+            already_posted = bool(current and current.posted_to.get(name) == "ok")
+            res = await self._post_checked(name, cand_id)
             out[name] = ({"ok": res.ok, "url": res.url, "error": res.error} if res is not None
                          else {"ok": False, "error": "clip not found"})
+            if already_posted:
+                out[name]["already_posted"] = True
         return out
 
     def _maybe_finish(self, c: Candidate) -> None:

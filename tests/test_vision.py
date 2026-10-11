@@ -3,6 +3,7 @@ import base64
 import json
 
 import httpx
+import pytest
 
 from clipbot.clipability import build_user_message
 from clipbot.config import Settings, merge_incoming
@@ -20,6 +21,21 @@ def test_extract_frames_real(lavfi_clip):
     s = merge_incoming(Settings(), {"ai": {"vision_frame_width": 320}})
     frames = asyncio.run(extract_frames(lavfi_clip, [1.0, 4.0], s))
     assert len(frames) == 2 and all(f[:2] == b"\xff\xd8" for f in frames)   # JPEG magic
+
+
+def test_prepare_saves_complete_chronological_frames_without_an_ai_request(lavfi_clip, tmp_path):
+    settings = Settings()
+    def forbidden(_request):
+        raise AssertionError("Preparing direct review frames must not call a model")
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(forbidden)) as http:
+            return await Vision(settings, http).prepare(lavfi_clip, 8, 5, tmp_path / "frames")
+    result = asyncio.run(run())
+    assert result.text == "" and result.times == sorted(result.times)
+    assert result.times[0] == 0 and result.times[-1] < 8
+    assert len(result.times) == settings.ai.vision_frames
+    assert all((tmp_path / "frames" / f"{index}.jpg").read_bytes()[:2] == b"\xff\xd8"
+               for index in range(result.frames))
 
 
 def test_vision_prompt_placeholders():
@@ -47,6 +63,7 @@ def test_describe_sends_images_to_vision_model(lavfi_clip):
     res = run_vision(lavfi_clip, handler)
     msg = seen["messages"][0]
     assert seen["model"] == Settings().ai.vision_model and seen["think"] is False
+    assert seen["options"]["num_predict"] == Settings().review.max_tokens
     assert len(msg["images"]) == 3
     assert base64.b64decode(msg["images"][0])[:2] == b"\xff\xd8"
     assert res.text.startswith("5.0s: headshot") and res.frames == 3 and not res.error
@@ -109,3 +126,46 @@ def test_vision_retries_transient_ollama_failures():
         async with _h.AsyncClient(transport=_h.MockTransport(handler)) as http:
             return await Vision(s, http)._chat("p", [])
     assert _a.run(go()) == "a streamer screams" and len(calls) == 3
+
+
+def test_cancelled_look_releases_gpu_lock_and_allows_the_next_request():
+    async def run():
+        entered, interrupted = asyncio.Event(), asyncio.Event()
+        requests = []
+        async def handler(request):
+            requests.append(request)
+            if len(requests) == 1:
+                entered.set()
+                try:
+                    await asyncio.Future()
+                except asyncio.CancelledError:
+                    interrupted.set()
+                    raise
+            return httpx.Response(200, json={"message": {"content": "The next review completed"}})
+        lock = asyncio.Lock()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            vision = Vision(Settings(), http, lock)
+            pending = asyncio.create_task(vision.look("First review", ["image"]))
+            await entered.wait()
+            assert vision.busy and lock.locked()
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert interrupted.is_set() and not vision.busy and not lock.locked()
+            assert await vision.look("Next review", ["image"]) == "The next review completed"
+            assert len(requests) == 2 and not vision.busy and not lock.locked()
+    asyncio.run(asyncio.wait_for(run(), 2))
+
+
+def test_vision_response_tokens_follow_configured_limit():
+    calls = []
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": "A bounded answer"}})
+    async def run():
+        settings = Settings()
+        settings.review.max_tokens = 768
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            assert await Vision(settings, http).look("Inspect supplied frames", ["image"]) == "A bounded answer"
+        assert calls[0]["options"]["num_predict"] == settings.review.max_tokens
+    asyncio.run(run())

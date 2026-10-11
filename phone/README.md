@@ -1,14 +1,18 @@
-# Ashvane (iPhone)
+# Ashvane (phone)
 
-A native app that runs your Ashvane desk from your phone: status, streams, clips, post-now,
-pause and the log. It talks to Ashvane on your PC over your own Wi-Fi — nothing goes through the
-internet, and there is no account.
+A native app that runs your Ashvane content desk from your phone: today's production and post results,
+source research, scripts and platform copy, streams, clip reviews, manual posting, settings and the log.
+It talks to Ashvane on your PC over your own Wi-Fi or configured Tailscale connection using your profile sign-in.
 
 ## Get the file
 
 Every build is published as a release, and one URL always points at the newest one:
 
-**https://github.com/Saizama-cmyk/Ashvane/releases/download/phone-latest/Ashvane.ipa**
+**https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/download/phone-latest/Ashvane.ipa**
+
+Android: **https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/download/phone-latest/Ashvane.apk**.
+Each release also includes `SHA256SUMS.txt`, the iPhone package and permissions reports, and the
+sideload source. Check the release notes for the built source commit and any Android build failure.
 
 It is unsigned on purpose — your sideloader signs it with your own Apple ID, which is what makes
 sideloading work without a paid developer account.
@@ -33,7 +37,7 @@ Apple's rule, not this app's.
 Add this **source** once and new builds appear as updates in the app list:
 
 ```
-https://raw.githubusercontent.com/Saizama-cmyk/Ashvane/main/docs/sideload.json
+https://raw.githubusercontent.com/Saizama-cmyk/ASHVANE-CLIP-BOT/main/docs/sideload.json
 ```
 
 Works in AltStore, SideStore, Feather and anything else that reads the standard source format.
@@ -58,16 +62,19 @@ always serves the newest build.
 ## Building it yourself
 
 Apple's toolchain only runs on macOS, so the repo builds it on a free GitHub macOS runner:
-Actions → **Phone app (.ipa)** → Run workflow. The finished `.ipa` is attached to the run and to
-the `phone-latest` release.
+Actions → **Phone app (.ipa + .apk)** → Run workflow. This existing workflow builds both platforms and
+publishes installation files to the `phone-latest` release. An Expo export alone is not an installation file.
 
 Locally:
 
 ```bash
 cd phone
-npm install
-npx expo start        # Expo Go on the phone, same Wi-Fi
+npm ci
+npx expo run:android  # requires Android SDK, a full JDK and an emulator or connected device
 ```
 
-The whole app is `App.js`. It uses the same API as the web dashboard and authenticates with a
-bearer token from `/api/auth/login`.
+`App.js` handles the primary Desk, Research and Tools navigation. `Desk.js`, `Research.js` and `Remote.js`
+provide the content desk screens. The app uses the web dashboard API and authenticates with a bearer
+token from `/api/auth/login`. The local AI tools use a custom native module, so a native development
+build is required instead of the standard Expo Go app. See [phone revamp verification](../docs/PHONE-REVAMP.md)
+for bundle checks and the remaining device checks.

@@ -6,12 +6,12 @@
  */
 import React from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
 export const C = {
   bg: "#0B0B0C", s1: "#151517", s2: "#1D1E21", s3: "#27282C", s4: "#323338",
   line: "rgba(255,255,255,0.07)", line2: "rgba(255,255,255,0.14)",
-  ink: "#F3F0E9", ink2: "#B9B4AB", ink3: "#77736C",
+  ink: "#F3F0E9", ink2: "#B9B4AB", ink3: "#A49F97",
   ember: "#F06834", emberSoft: "rgba(240,104,52,0.14)", emberLine: "rgba(240,104,52,0.45)",
   good: "#5FCB8E", goodSoft: "rgba(95,203,142,0.13)",
   bad: "#EC5B52", badSoft: "rgba(236,91,82,0.13)",
@@ -54,16 +54,17 @@ export function Icon({ name, size = 20, color = C.ink2, style }) {
 }
 
 /** kind: primary (ember), plain (tonal), ghost (text only), danger. */
-export function Button({ label, icon, onPress, kind = "plain", busy, disabled, small, style, grow }) {
+export function Button({ label, icon, onPress, kind = "plain", busy, disabled, small, style, grow, accessibilityState }) {
   const k = BTN[kind] || BTN.plain;
+  const ink = disabled || busy ? C.ink2 : k.ink;
   return (
     <Pressable onPress={onPress} disabled={disabled || busy} accessibilityRole="button" accessibilityLabel={label}
-      style={({ pressed }) => [st.btn, small && st.btnSmall, { backgroundColor: k.bg, borderColor: k.border },
-        grow && { flex: 1 }, (disabled || busy) && { opacity: 0.45 }, pressed && { opacity: 0.78, transform: [{ scale: 0.985 }] }, style]}>
-      {busy ? <ActivityIndicator color={k.ink} size="small" /> : (
+      accessibilityState={{ ...accessibilityState, disabled: !!(disabled || busy), busy: !!busy }} style={({ pressed }) => [st.btn, small && st.btnSmall, { backgroundColor: k.bg, borderColor: k.border },
+        grow && { flex: 1 }, (disabled || busy) && { backgroundColor: C.s2, borderColor: C.line2 }, pressed && { opacity: 0.78 }, style]}>
+      {busy ? <ActivityIndicator color={ink} size="small" /> : (
         <>
-          {!!icon && <Icon name={icon} size={small ? 16 : 18} color={k.ink} />}
-          {!!label && <Text style={[st.btnText, small && { fontSize: 13.5 }, { color: k.ink }]}>{label}</Text>}
+          {!!icon && <Icon name={icon} size={small ? 16 : 18} color={ink} />}
+          {!!label && <Text style={[st.btnText, small && { fontSize: 13.5 }, { color: ink }]}>{label}</Text>}
         </>)}
     </Pressable>);
 }
@@ -76,7 +77,7 @@ const BTN = {
 
 export function IconButton({ icon, onPress, label, color = C.ink2, size = 20, style, disabled }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={10} accessibilityRole="button" accessibilityLabel={label}
+    <Pressable onPress={onPress} disabled={disabled} hitSlop={10} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [st.iconBtn, pressed && { backgroundColor: C.s3 }, disabled && { opacity: 0.35 }, style]}>
       <Icon name={icon} size={size} color={color} />
     </Pressable>);
@@ -147,7 +148,7 @@ export function ListRow({ icon, title, sub, right, onPress, onLongPress, first, 
       {right}
     </View>);
   if (!onPress && !onLongPress) return body;
-  return <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => pressed && { backgroundColor: C.s2 }}>{body}</Pressable>;
+  return <Pressable onPress={onPress} onLongPress={onLongPress} accessibilityRole="button" accessibilityLabel={title} style={({ pressed }) => pressed && { backgroundColor: C.s2 }}>{body}</Pressable>;
 }
 
 /** The shared style keys the chat pieces (Chat.js) were written against. */
@@ -169,11 +170,11 @@ const st = StyleSheet.create({
   sectionHead: { flexDirection: "row", alignItems: "center", marginBottom: 8, paddingHorizontal: 4, minHeight: 22 },
   btn: { minHeight: 48, borderRadius: 12, paddingHorizontal: 18, flexDirection: "row", gap: 8,
     alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  btnSmall: { minHeight: 36, paddingHorizontal: 12, borderRadius: 10 },
+  btnSmall: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10 },
   btnText: { fontSize: 15.5, fontWeight: "600" },
-  iconBtn: { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  iconBtn: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   seg: { flexDirection: "row", backgroundColor: C.s1, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: C.line },
-  segItem: { flex: 1, minHeight: 34, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  segItem: { flex: 1, minHeight: 44, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   segOn: { backgroundColor: C.s3 },
   segText: { color: C.ink3, fontSize: 13.5, fontWeight: "600" },
   pill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, height: 26, borderRadius: 13, borderWidth: 1 },

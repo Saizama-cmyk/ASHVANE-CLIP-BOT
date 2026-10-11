@@ -3,6 +3,8 @@ rem Build dist\Ashvane\Ashvane.exe (PyInstaller one-folder, windowed).
 setlocal
 cd /d "%~dp0"
 set PY=.venv\Scripts\python.exe
+set BUILD_DIST=dist
+if not "%~1"=="" set "BUILD_DIST=%~1"
 if not exist "%PY%" (
   echo .venv not found. Create it: py -3.12 -m venv .venv ^&^& .venv\Scripts\pip install -r requirements.txt
   exit /b 1
@@ -23,7 +25,7 @@ if exist "%CD%\installer\version_info.txt" set VERSIONFILE=--version-file "%CD%\
 echo [2/3] Running PyInstaller...
 "%PY%" -m PyInstaller --noconfirm --clean --onedir --windowed ^
   --name Ashvane --icon "%CD%\assets\clipbot.ico" %VERSIONFILE% ^
-  --distpath dist --workpath build --specpath build ^
+  --distpath "%BUILD_DIST%" --workpath build --specpath build ^
   --paths "%CD%" ^
   --add-data "%CD%\clipbot\dashboard\static;clipbot\dashboard\static" ^
   --add-data "%CD%\assets;assets" ^
@@ -34,8 +36,8 @@ echo [2/3] Running PyInstaller...
   clipbot\__main__.py || goto :fail
 
 echo [3/3] Checking output...
-if not exist dist\Ashvane\Ashvane.exe goto :fail
-echo BUILD OK: dist\Ashvane\Ashvane.exe
+if not exist "%BUILD_DIST%\Ashvane\Ashvane.exe" goto :fail
+echo BUILD OK: %BUILD_DIST%\Ashvane\Ashvane.exe
 exit /b 0
 
 :fail

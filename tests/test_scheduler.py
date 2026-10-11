@@ -18,7 +18,10 @@ def cand(tmp_path: Path, score=7.0, created=None, stage=Stage.SCHEDULED) -> Cand
     f.write_bytes(b"\x00" * 16)
     c = Candidate(id=ev.id, event=ev, raw_path="", start_wall=0, end_wall=1, stage=stage,
                   final_path=str(f), verdict={"score": score, "title": "Big W", "caption": "wow",
-                                              "hashtags": ["xqc", "clips"]})
+                                              "hashtags": ["xqc", "clips"]},
+                  post_copy={'_source':'video', 'youtube':{'title':'Big W','description':'wow','tags':['xqc','clips']},
+                             'tiktok':{'caption':'Big W','hashtags':['xqc','clips']},
+                             'discord':{'message':'Big W'}})
     if created is not None:
         c.created_at = created
     return c
@@ -58,6 +61,24 @@ def enabled(**discord):
     return merge_incoming(Settings(), {"posting": {"discord": {"enabled": True, **discord}}})
 
 
+def test_missing_scheduled_video_becomes_visible_failure_without_upload(tmp_path):
+    async def run():
+        settings = enabled()
+        store = Store(tmp_path / 'clips.db')
+        candidate = cand(tmp_path)
+        store.upsert_candidate(candidate)
+        Path(candidate.final_path).unlink()
+        publisher = FakePub(settings)
+        scheduler = Scheduler(settings, store, pubs(settings, publisher))
+        assert await scheduler._pending_for('discord') == []
+        saved = store.get_candidate(candidate.id)
+        assert saved.stage == Stage.FAILED and 'missing' in saved.error.lower()
+        assert scheduler.last_error['discord'] == saved.error
+        assert not publisher.calls and not store.posts_for_candidate(candidate.id)
+        store.close()
+    asyncio.run(run())
+
+
 def test_templates():
     assert render_template("{title} by {streamer} {nope} {", {"title": "T", "streamer": "S"}) == \
         "T by S {nope} {"
@@ -71,7 +92,7 @@ def test_compose_post(tmp_path):
     assert "🎥 xQc on Twitch" in p.caption and "#xqc #clips" in p.caption
     s2 = merge_incoming(s, {"posting": {"credit_line": False, "caption_template": "{caption} {handle}"}})
     p2 = compose_post(cand(tmp_path), s2, "tiktok")
-    assert p2.caption == "wow @cs"
+    assert p2.caption == "@cs"  # TikTok caption is already the public title text.
 
 
 def test_posting_window():

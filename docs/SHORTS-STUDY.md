@@ -1,0 +1,19 @@
+# Streamer Shorts study and resulting changes
+
+Four public Shorts were downloaded on October 4, 2026 and examined using chronological frames and native English captions. On October 11, a fresh feed scan returned twelve recent Shorts across three channels with no source errors; its highest ranked item was also downloaded and examined. This is a small qualitative sample, not a global trending chart or a retention study. Public view counts are observations at download time and are not continuously current counts.
+
+| Primary video | What the sample shows | Editorial implication |
+| --- | --- | --- |
+| [Kickz: solo theft story](https://www.youtube.com/shorts/mpIjJbh_RUU) | A 180-second gameplay story with a theft, escape and return. | Preserve necessary setup and a real outcome; do not require every payoff in the first half. |
+| [Rayfist: Marlon/Lacy compilation](https://www.youtube.com/shorts/6WhS3aQnsaM) | A 39-second narrated compilation of social exchanges and reactions. | Clear context and visible reactions matter. A continuous candidate cannot invent the compilation's missing scenes. |
+| [Kai: cake misunderstanding](https://www.youtube.com/shorts/4xJ7I6GqVCc) | A 15-second everyday misunderstanding and shared laugh; 5,661,120 public views in the snapshot. | Low stakes alone should not cause rejection. Speech, expressions and a clear turn can carry the moment. This single-video count does not establish causation. |
+| [Kai: friendship with Speed](https://www.youtube.com/shorts/kX7AlqnLIhs) | A 20-second personal statement, close framing and speech captions. | Commentary and sincere moments need not be loud. Preserve the actual statement and avoid invented conflict. |
+| [Kai: James family shoutout](https://www.youtube.com/shorts/ZEzX-t7Gng4) | A 13-second spoken anecdote over a montage of event footage. The October 11 feed snapshot recorded 405,052 views, about 17,824 lifetime views per hour of age, the highest estimate among the twelve sampled items. | A named, specific anecdote can carry a short clip. The separate montage is an editing reference, not footage the current single-candidate editor may fabricate. The rate is an estimate, not measured growth. |
+
+The descriptions vary from empty to a repeated title and tags to channel social links. That evidence does not identify a winning formula. Ashvane now asks for an original, concise context sentence grounded in the candidate, relevant tags, and configured source credit appended once. Forced capitals, emoji, vague hype and engagement bait are no longer required. This is an editorial choice informed by the sample, not a proven growth guarantee.
+
+The initial judge and final viewer rubric recognize comedy, social exchanges, gaming stories and personal commentary. Quality thresholds remain unchanged. The writer receives the clip's source URL and timestamped viewer observations; researched metadata supplies style references, never evidence that an event happened in the candidate. Optional regex rejection remains configurable, with an empty default to avoid rejecting factual conversational titles or triggering unnecessary rewrites.
+
+The trend scout refreshes public feeds from configured channels, retains linked descriptions and prioritizes recent view growth when it has two observations. Its first observation uses explicitly labeled lifetime views divided by age. The channel comparison is the median of the current sampled feed, not historical channel performance. Failed refreshes preserve old observation dates; stale examples are excluded from writing briefs. The scout does not continuously download videos, access private retention, or measure all of YouTube.
+
+Evidence: `artifacts/shorts-study/observed-metadata.json`, the `shorts-study-*.log` reports, chronological frames/contact sheets, `ledger.json` and the separate current public-feed check. The current-feed check is isolated from live app data and does not publish anything.

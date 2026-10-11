@@ -12,7 +12,6 @@ import asyncio
 import logging
 import os
 import re
-import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +19,7 @@ from typing import Awaitable, Callable
 
 from .config import Settings, ffmpeg_exe, streamlink_cmd
 from .models import Platform, StreamTarget
+from .sweeper import _remove, owned_buffer_folders, safe_buffer_folder, safe_cleanup_path
 from .util import Backoff, CmdTimeout, run_cmd, spawn, terminate
 
 logger = logging.getLogger("clipbot.capture")
@@ -179,8 +179,12 @@ class Capture:
             await asyncio.sleep(delay)
 
     def _clear_folder(self) -> None:
+        if not safe_cleanup_path(self.folder.parent) or not safe_cleanup_path(self.folder):
+            raise RuntimeError("capture buffer path is a root, link or junction; choose a dedicated buffer folder")
         if self.folder.exists():
-            shutil.rmtree(self.folder, ignore_errors=True)
+            if not safe_buffer_folder(self.folder, allow_empty=True):
+                raise RuntimeError("capture buffer contains unrelated files; choose a dedicated buffer folder")
+            _remove(self.folder)
         self.folder.mkdir(parents=True, exist_ok=True)
 
     async def _run_once(self) -> bool:
@@ -371,13 +375,13 @@ class CaptureManager:
         horizon = time.time() - self.settings.capture.buffer_s - self.settings.clip.segment_wait_s
         for folder, when in list(self._retired.items()):
             if when < horizon:
-                shutil.rmtree(folder, ignore_errors=True)
+                if safe_buffer_folder(folder):
+                    _remove(folder)
                 self._retired.pop(folder, None)
         # folders left over from a previous run
         active = {c.folder for c in self.captures.values()} | set(self._retired)
-        if self.root.exists():
-            for d in self.root.iterdir():
-                if d.is_dir() and d not in active:
-                    newest = newest_segment_time(d)
-                    if newest is None or newest < horizon:
-                        shutil.rmtree(d, ignore_errors=True)
+        for d in owned_buffer_folders(self.root):
+            if d not in active:
+                newest = newest_segment_time(d)
+                if newest is not None and newest < horizon:
+                    _remove(d)

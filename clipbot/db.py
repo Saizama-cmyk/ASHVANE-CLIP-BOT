@@ -24,7 +24,8 @@ CREATE INDEX IF NOT EXISTS ix_cand_stage ON candidates(stage);
 CREATE TABLE IF NOT EXISTS posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL, platform TEXT NOT NULL,
     remote_id TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', posted_at REAL NOT NULL,
-    status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', deleted INTEGER NOT NULL DEFAULT 0);
+    status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', deleted INTEGER NOT NULL DEFAULT 0,
+    public_text TEXT NOT NULL DEFAULT '{}');
 CREATE INDEX IF NOT EXISTS ix_posts_platform ON posts(platform, posted_at);
 CREATE INDEX IF NOT EXISTS ix_posts_candidate ON posts(candidate_id);
 CREATE TABLE IF NOT EXISTS post_metrics (
@@ -60,6 +61,8 @@ class Store:
             cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(posts)")}
             if "deleted" not in cols:  # databases created by the first prototype
                 self._conn.execute("ALTER TABLE posts ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+            if "public_text" not in cols:
+                self._conn.execute("ALTER TABLE posts ADD COLUMN public_text TEXT NOT NULL DEFAULT '{}'")
             self._conn.commit()
 
     def close(self) -> None:
@@ -179,13 +182,14 @@ class Store:
 
     # posts --------------------------------------------------------------------
     def record_post(self, candidate_id: str, platform: str, remote_id: str, url: str,
-                    status: str, error: str = "", when: float | None = None) -> None:
+                    status: str, error: str = "", when: float | None = None,
+                    public_text: dict | None = None) -> None:
         with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO posts(candidate_id, platform, remote_id, url, posted_at, status, "
-                "error) VALUES(?,?,?,?,?,?,?)",
+                "error, public_text) VALUES(?,?,?,?,?,?,?,?)",
                 (candidate_id, platform, remote_id, url, time.time() if when is None else when,
-                 status, error))
+                 status, error, json.dumps(public_text or {})))
 
     def posts_since(self, platform: str, since_ts: float) -> int:
         """Successful posts on ``platform`` since ``since_ts`` (daily-cap accounting)."""
@@ -226,12 +230,13 @@ class Store:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT p.id, p.candidate_id, p.platform, p.remote_id, p.url, p.posted_at, "
-                "c.json FROM posts p JOIN candidates c ON c.id=p.candidate_id "
+                "c.json, p.public_text FROM posts p JOIN candidates c ON c.id=p.candidate_id "
                 "WHERE p.status='ok' AND p.deleted=0 AND p.remote_id!='' AND p.posted_at>=? "
                 "ORDER BY p.posted_at", (since_ts,)).fetchall()
         out = []
         for r in rows:
             cand = json.loads(r["json"])
+            published = json.loads(r['public_text'])
             ev, tgt = cand["event"], cand["event"]["target"]
             out.append({"post_id": r["id"], "candidate_id": r["candidate_id"],
                         "platform": r["platform"], "remote_id": r["remote_id"], "url": r["url"],
@@ -239,7 +244,7 @@ class Store:
                         "display_name": tgt.get("display_name", tgt["login"]),
                         "source": tgt["platform"], "category": tgt.get("category", ""),
                         "kind": ev.get("kind", ""), "score": cand.get("verdict", {}).get("score", 0),
-                        "title": cand.get("verdict", {}).get("title", "")})
+                        "title": published.get('title', '')})
         return out
 
     def record_metrics(self, post_id: int, views: int, likes: int, comments: int, shares: int,

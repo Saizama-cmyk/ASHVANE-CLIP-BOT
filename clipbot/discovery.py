@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -138,6 +140,7 @@ class Discovery:
         self.last_refresh: float = 0.0
         self._warned: set[str] = set()
         self._rejected: set[str] = set()   # platforms whose current keys were refused
+        self._twitch_ignored_logins = 0
 
     def apply(self, settings: Settings) -> None:
         old = self.settings
@@ -193,6 +196,9 @@ class Discovery:
                 self.targets[platform] = await fn(cfg)
                 self.messages[name] = (f"{name.title()}: {len(self.targets[platform])} streams "
                                        f"selected")
+                if platform == Platform.TWITCH and self._twitch_ignored_logins:
+                    self.messages[name] += (f"; ignored {self._twitch_ignored_logins} invalid channel "
+                                            "entries (check configured or suggested streamers)")
             except KeysRejected as exc:
                 # Asking every cycle with keys the platform has already refused only fills the
                 # log and spends a request. Say it once, plainly, and wait for new keys - the
@@ -271,12 +277,47 @@ class Discovery:
             self._game_ids[key] = str(data[0]["id"])
         return self._game_ids[key]
 
+    @staticmethod
+    def _twitch_login(value: Any) -> str | None:
+        """Canonical channel input; display names must never become Helix user_login.
+
+        Twitch's international display names may contain Unicode even when the account's
+        actual login is ASCII. The API rejects such query values rather than ignoring them.
+        """
+        if not isinstance(value, str):
+            return None
+        value = value.strip().lower()
+        if value.startswith(("twitch.tv/", "www.twitch.tv/", "m.twitch.tv/")):
+            value = "https://" + value
+        if "://" in value:
+            try:
+                parsed = urlsplit(value)
+                if (parsed.scheme not in ("http", "https") or parsed.username is not None
+                        or parsed.password is not None
+                        or parsed.hostname not in ("twitch.tv", "www.twitch.tv", "m.twitch.tv")):
+                    return None
+                value = unquote(parsed.path.strip("/").split("/")[0])
+            except ValueError:
+                return None
+        value = value.removeprefix("@").lower()
+        return value if re.fullmatch(r"[a-z0-9_]+", value) else None
+
     async def _twitch(self, cfg: PlatformCfg) -> list[StreamTarget]:
         d = self.settings.discovery
         limit = d.fetch_limit
-        forced_logins = list(dict.fromkeys(
-            [f.strip().lower() for f in cfg.forced_streamers if f.strip()]
-            + self.boosted.get("twitch", [])))
+        inputs = [*cfg.forced_streamers, *self.boosted.get("twitch", [])]
+        canonical = [self._twitch_login(value) for value in inputs]
+        self._twitch_ignored_logins = sum(login is None for login in canonical)
+        warning_key = "twitch-invalid-logins"
+        if self._twitch_ignored_logins:
+            if warning_key not in self._warned:
+                logger.warning("Ignored %s Twitch streamer entries that are not valid channel "
+                               "logins; check configured and suggested streamers",
+                               self._twitch_ignored_logins)
+                self._warned.add(warning_key)
+        else:
+            self._warned.discard(warning_key)
+        forced_logins = list(dict.fromkeys(login for login in canonical if login is not None))
         forced_live: list[StreamTarget] = []
         for i in range(0, len(forced_logins), limit):
             chunk = forced_logins[i:i + limit]
@@ -295,6 +336,20 @@ class Discovery:
                                             for g in games[:d.top_categories]))
         return select_targets(cfg, forced_live, forced_groups, list(top_groups),
                               d.streamers_per_category)
+
+    async def twitch_users(self, broadcaster_ids: list[str]) -> list[dict]:
+        """Resolve stable broadcaster IDs to actual logins, never display names."""
+        cfg = self.settings.twitch
+        if not (cfg.enabled and cfg.client_id and cfg.client_secret):
+            return []
+        ids = list(dict.fromkeys(value.strip() for value in broadcaster_ids
+                                 if isinstance(value, str) and value.strip().isascii()
+                                 and value.strip().isdigit()))
+        limit = self.settings.discovery.fetch_limit
+        users: list[dict] = []
+        for start in range(0, len(ids), limit):
+            users.extend(await self._helix(cfg, "users", [("id", value) for value in ids[start:start + limit]]))
+        return users
 
     async def twitch_clips(self, *, game_id: str = "", broadcaster_id: str = "",
                            started_at: str, first: int) -> list[dict]:

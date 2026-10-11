@@ -2,31 +2,33 @@
  * Ashvane on the phone: three places, one tab bar.
  *
  *   Desk       the clip desk on your PC, over your own Wi-Fi or Tailscale
- *   Assistant  a private chat that thinks on the phone (the PC is backup)
- *   Code       a small IDE whose agent is that same model
+ *   Research   original scripts and posts grounded in linked sources
+ *   Tools      the private Assistant and Code workspace, available on demand
  *
  * The phone signs in to the PC once (your profile password) and keeps the session token in the
  * keychain; the PC keeps that sign-in for weeks. Face ID / fingerprint guards the app itself.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Image, Linking, Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import { LockScreen, useLock } from "./Lock";
 import { call, KEY_HOST, KEY_TOKEN } from "./api";
 import * as secure from "./secure";
 import { useModel } from "./useModel";
-import Splash from "./Splash";
 import Assistant from "./Assistant";
 import Code from "./code/Code";
+import Desk from "./Desk";
+import Research, { useResearch } from "./Research";
 import { Clips, Live, Log, SettingsTab, SignIn, Studio } from "./Remote";
-import { C, Icon, IconButton, Pill, t } from "./theme";
+import { Button, C, Card, Icon, IconButton, Pill, t } from "./theme";
+import { isNewerVersion, releaseVersion } from "./updates";
 
-const POLL_MS = 2500;
-const RELEASE_API = "https://api.github.com/repos/Saizama-cmyk/Ashvane/releases/tags/phone-latest";
-const RELEASE_PAGE = "https://github.com/Saizama-cmyk/Ashvane/releases/tag/phone-latest";
-const TABS = [["desk", "Desk", "albums"], ["chat", "Assistant", "chatbubble-ellipses"], ["code", "Code", "code-slash"]];
-const DESK_TABS = [["live", "Live"], ["clips", "Clips"], ["studio", "Studio"], ["settings", "Settings"], ["log", "Log"]];
+const POLL_MS = 6000;
+const RELEASE_API = "https://api.github.com/repos/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tags/phone-latest";
+const RELEASE_PAGE = "https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-latest";
+const TABS = [["desk", "Desk", "albums"], ["research", "Research", "search"], ["tools", "Tools", "grid"]];
+const DESK_TABS = [["today", "Today"], ["live", "Live"], ["clips", "Clips"], ["studio", "Studio"], ["settings", "Settings"], ["log", "Log"]];
 
 /* The same releases the sideloaders read. AltStore updates by itself once its source is added;
    this banner is for everyone else (and Android, where you tap and install). */
@@ -35,8 +37,8 @@ function useUpdate(current) {
   useEffect(() => {
     let alive = true;
     fetch(RELEASE_API).then(r => r.json()).then(d => {
-      const found = (String(d.tag_name || d.name || "").match(/\d+\.\d+\.\d+/) || [])[0] || "";
-      if (alive && found && current && found !== current) setLatest(found);
+      const found = releaseVersion(d);
+      if (alive && isNewerVersion(found, current)) setLatest(found);
     }).catch(() => {});
     return () => { alive = false; };
   }, [current]);
@@ -44,11 +46,9 @@ function useUpdate(current) {
 }
 
 export default function App() {
-  const [splash, setSplash] = useState(true);       // plays on every launch, over whatever loads
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Main />
-      {splash && <Splash onDone={() => setSplash(false)} />}
     </View>);
 }
 
@@ -58,17 +58,29 @@ function Main() {
   const [ready, setReady] = useState(false);
   const [state, setState] = useState({});
   const [tab, setTab] = useState("desk");
-  const [deskTab, setDeskTab] = useState("live");
+  const [deskTab, setDeskTab] = useState("today");
   const [offline, setOffline] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState("");
-  const timer = useRef(null);
+  const [foreground, setForeground] = useState(AppState.currentState !== "background" && AppState.currentState !== "inactive");
+  const [loaded, setLoaded] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const flight = useRef(null);
+  const session = useRef(null);
+  const currentSession = `${host || ""}:${token || ""}`;
+  session.current = currentSession;
   const toast = (msg) => { setNote(msg); setTimeout(() => setNote(""), 2600); };
   const update = useUpdate(Constants.expoConfig?.version || "");
   const lock = useLock();
-  const m = useModel({ host, token });
+  const modelEnabled = useRef(false);
+  if (["chat", "code"].includes(tab)) modelEnabled.current = true;
+  const m = useModel({ host, token, enabled: modelEnabled.current });
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", next => setForeground(next === "active"));
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -80,29 +92,42 @@ function Main() {
 
   const signOut = useCallback(async (expired = false) => {
     await secure.del(KEY_TOKEN);
-    setToken(null); setState({}); setSignedOut(expired);
+    setToken(null); setState({}); setLoaded(false); setSignedOut(expired);
   }, []);
+  const onError = useCallback(() => setOffline(true), []);
 
-  const poll = useCallback(async () => {
-    if (!host || !token) return;
-    try {
-      const r = await call(host, "/api/state", { token });
-      if (r.status === 401) { await signOut(true); return; }
-      if (r.ok) { setState(r.data); setOffline(false); }
-    } catch (e) { setOffline(true); }
-  }, [host, token, signOut]);
+  const poll = useCallback(() => {
+    if (!host || !token) return Promise.resolve();
+    if (flight.current?.key === currentSession) return flight.current.promise;
+    const promise = (async () => {
+      try {
+        const r = await call(host, "/api/state", { token });
+        if (session.current !== currentSession) return;
+        if (r.status === 401) { await signOut(true); return; }
+        if (!r.ok) throw new Error(`The PC answered ${r.status}`);
+        setState(r.data); setOffline(false); setLoaded(true);
+      } catch (e) { if (session.current === currentSession) setOffline(true); }
+      finally { if (flight.current?.promise === promise) flight.current = null; }
+    })();
+    flight.current = { key: currentSession, promise };
+    return promise;
+  }, [host, token, signOut, currentSession]);
+
+  const research = useResearch({ host, token, active: foreground && !lock.locked && ["desk", "research"].includes(tab), onUnauthorized: signOut });
 
   useEffect(() => {
-    if (!host || !token || tab !== "desk") return undefined;
-    poll();
-    timer.current = setInterval(poll, POLL_MS);
-    return () => clearInterval(timer.current);
-  }, [host, token, poll, tab]);
+    if (!host || !token || !foreground || lock.locked || !["desk", "research"].includes(tab)) return undefined;
+    let alive = true, timer;
+    const tick = async () => { await poll(); if (alive) timer = setTimeout(tick, POLL_MS); };
+    tick();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [host, token, poll, tab, foreground, lock.locked]);
 
   const pause = async () => {
     setBusy(true);
     try {
-      await call(host, state.manual_paused ? "/api/control/resume" : "/api/control/pause", { token, method: "POST" });
+      const r = await call(host, state.manual_paused ? "/api/control/resume" : "/api/control/pause", { token, method: "POST" });
+      if (!r.ok) { if (r.status === 401) await signOut(true); throw new Error("Capture control failed"); }
       await poll();
     } catch (e) { setOffline(true); }
     setBusy(false);
@@ -118,9 +143,8 @@ function Main() {
   }
 
   const linked = !!(host && token);
-  const onError = () => setOffline(true);
-  const connection = !linked ? ["Not connected", "plain"] : offline ? ["Can't reach PC", "bad"] : ["Connected", "good"];
-  const title = TABS.find(x => x[0] === tab)[1];
+  const connection = !linked ? ["Not connected", "plain"] : offline ? ["Can't reach PC", "bad"] : !loaded ? ["Connecting", "plain"] : ["Connected", "good"];
+  const title = tab === "chat" ? "Assistant" : tab === "code" ? "Code" : TABS.find(x => x[0] === tab)?.[1] || "Desk";
 
   return (
     <SafeAreaProvider>
@@ -129,7 +153,7 @@ function Main() {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 }}>
           <Image source={require("./assets/icon.png")} resizeMode="contain" style={{ width: 28, height: 28 }} />
           <Text style={[t.title, { flex: 1 }]}>{title}</Text>
-          {tab === "desk" && <Pill label={connection[0]} tone={connection[1]} />}
+          {["desk", "research"].includes(tab) && <Pill label={connection[0]} tone={connection[1]} />}
           {tab === "desk" && linked && <IconButton icon="log-out-outline" label="Sign out" onPress={() => signOut(false)} />}
         </View>
 
@@ -137,7 +161,7 @@ function Main() {
         {!!update && <Banner tone="live" text={`Version ${update} is out · tap to get it`} onPress={() => Linking.openURL(RELEASE_PAGE)} />}
 
         <View style={{ flex: 1 }}>
-          {tab === "desk" && (!linked ? (
+          {["desk", "research"].includes(tab) && (!linked ? (
             <>
               {signedOut && <Banner tone="plain" text="The PC ended the session. Sign in again below." />}
               <SignIn onDone={(h, tk) => { setHost(h); setToken(tk); setSignedOut(false); setOffline(false); }} />
@@ -145,36 +169,40 @@ function Main() {
           ) : (
             <>
               {offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}
+              {tab === "desk" && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 56 }}
                 contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}>
                 {DESK_TABS.map(([key, label]) => {
                   const on = key === deskTab;
                   return (
-                    <Pressable key={key} onPress={() => setDeskTab(key)}
-                      style={{ height: 34, paddingHorizontal: 14, borderRadius: 17, justifyContent: "center",
-                        backgroundColor: on ? C.ink : C.s1, borderWidth: 1, borderColor: on ? C.ink : C.line }}>
+                    <Pressable key={key} onPress={() => setDeskTab(key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
+                      style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 14, borderRadius: 10, justifyContent: "center", opacity: pressed ? 0.7 : 1,
+                        backgroundColor: on ? C.ink : C.s1, borderWidth: 1, borderColor: on ? C.ink : C.line })}>
                       <Text style={{ fontSize: 14, fontWeight: "600", color: on ? C.bg : C.ink2 }}>{label}</Text>
                     </Pressable>);
                 })}
-              </ScrollView>
+              </ScrollView>}
               <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
                 refreshControl={<RefreshControl tintColor={C.ink2} refreshing={refreshing}
-                  onRefresh={async () => { setRefreshing(true); await poll(); setRefreshing(false); }} />}>
-                {deskTab === "live" && <Live state={state} onPause={pause} busy={busy} host={host} token={token} />}
-                {deskTab === "clips" && <Clips host={host} token={token} onError={onError} />}
-                {deskTab === "studio" && <Studio host={host} token={token} toast={toast} onError={onError} />}
-                {deskTab === "settings" && <SettingsTab host={host} token={token} toast={toast} onError={onError} />}
-                {deskTab === "log" && <Log host={host} token={token} state={state} onError={onError} />}
+                  onRefresh={async () => { setRefreshing(true); try { await Promise.all([poll(), research.load()]); setRefreshVersion(v => v + 1); } finally { setRefreshing(false); } }} />}>
+                {tab === "research" ? <Research research={research} /> : <>
+                  {deskTab === "today" && <Desk state={state} research={research.data} loaded={loaded} busy={busy} onPause={pause} onNavigate={setDeskTab} onResearch={() => setTab("research")} />}
+                  {deskTab === "live" && <Live state={state} onPause={pause} busy={busy} host={host} token={token} />}
+                  {deskTab === "clips" && <Clips host={host} token={token} state={state} toast={toast} refreshVersion={refreshVersion} onError={onError} />}
+                  {deskTab === "studio" && <Studio key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
+                  {deskTab === "settings" && <SettingsTab key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
+                  {deskTab === "log" && <Log key={refreshVersion} host={host} token={token} state={state} onError={onError} />}
+                </>}
               </ScrollView>
             </>))}
           {tab === "chat" && <Assistant host={host} token={token} m={m} onError={onError} />}
           {tab === "code" && <Code m={m} />}
+          {tab === "tools" && <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}><Card><Text style={t.h2}>Optional workspace tools</Text><Text style={[t.muted, { marginTop: 6, marginBottom: 16 }]}>A private assistant and code workspace are available when you need them.</Text><Button label="Open Assistant" icon="chatbubble-ellipses-outline" onPress={() => setTab("chat")} /><Button label="Open Code" icon="code-slash-outline" onPress={() => setTab("code")} style={{ marginTop: 10 }} /></Card></ScrollView>}
         </View>
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: C.s1, borderTopWidth: 1, borderTopColor: C.line }}>
           <View style={{ flexDirection: "row", paddingTop: 6 }}>
             {TABS.map(([key, label, icon]) => {
-              const on = key === tab;
+              const on = key === tab || (key === "tools" && ["chat", "code"].includes(tab));
               return (
                 <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
                   style={{ flex: 1, alignItems: "center", paddingVertical: 6, gap: 3 }}>
