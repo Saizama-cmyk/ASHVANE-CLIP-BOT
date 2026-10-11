@@ -4,6 +4,8 @@ import { C } from "./theme";
 
 // A single spatial transition when crossing the Stories boundary. It animates the live shell,
 // including its header and tabs. No screenshots, persistent animation loop or hidden content.
+const businessFor = tab => tab === "stories" || tab.startsWith("story-") ? "stories" : ["tools", "chat", "code"].includes(tab) ? null : "clips";
+
 export function usePortal(initial = "desk") {
   const [tab, setTab] = useState(initial);
   const [crossing, setCrossing] = useState(false);
@@ -26,7 +28,7 @@ export function usePortal(initial = "desk") {
   const navigate = useCallback(next => {
     destination.current = next;
     if (running.current || next === current.current) return;
-    if ((next === "stories") === (current.current === "stories")) { current.current = next; setTab(next); return; }
+    if (!businessFor(next) || !businessFor(current.current) || businessFor(next) === businessFor(current.current)) { current.current = next; setTab(next); return; }
     running.current = true; setCrossing(true);
     const out = Animated.timing(amount, { toValue: 1, duration: reduced ? 90 : 500, easing: Easing.out(Easing.cubic), useNativeDriver: true });
     animation.current = out;

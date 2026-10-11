@@ -370,10 +370,10 @@ function LinesSetting({ value, onSave, busy }) {
     <Button label="Save list" small busy={busy} onPress={() => onSave(text.split(/\r?\n/).map(item => item.trim()).filter(Boolean))} style={{ marginTop: 10 }} />
   </View>;
 }
-export function SettingsTab({ host, token, onError, toast }) {
+export function SettingsTab({ host, token, onError, toast, onlySections, excludeSections = [] }) {
   const [schema, setSchema] = useState(null);
   const [values, setValues] = useState(null);
-  const [section, setSection] = useState("");
+  const [section, setSection] = useState(onlySections?.[0] || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
@@ -394,7 +394,7 @@ export function SettingsTab({ host, token, onError, toast }) {
     } catch (e) { onError(); }
     setBusy(false);
   };
-  const props = schema?.properties || {};
+  const props = Object.fromEntries(Object.entries(schema?.properties || {}).filter(([key]) => (!onlySections || onlySections.includes(key)) && !excludeSections.includes(key)));
   const deref = (raw) => (raw?.$ref ? schema.$defs?.[raw.$ref.split("/").pop()] : raw) || {};
   if (!schema) return error ? <Card><Text style={t.error}>{error}</Text><Button label="Retry settings" onPress={load} style={{ marginTop: 12 }} /></Card> : <ActivityIndicator color={C.ink2} style={{ marginTop: 30 }} />;
   if (!section) {
@@ -411,9 +411,9 @@ export function SettingsTab({ host, token, onError, toast }) {
   const current = values?.[section] || {};
   return (
     <>
-      <Pressable accessibilityRole="button" accessibilityLabel="Back to all settings" onPress={() => setSection("")} style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 44, paddingVertical: 8, marginBottom: 6 }}>
+      {!onlySections && <Pressable accessibilityRole="button" accessibilityLabel="Back to all settings" onPress={() => setSection("")} style={{ flexDirection: "row", alignItems: "center", gap: 4, minHeight: 44, paddingVertical: 8, marginBottom: 6 }}>
         <Icon name="chevron-back" size={18} color={C.ink2} /><Text style={t.muted}>All settings</Text>
-      </Pressable>
+      </Pressable>}
       <Section title={props[section]?.title || section}>
         <Card pad={false}>
           {Object.entries(node.properties || {}).map(([key, raw], i) => {

@@ -2,8 +2,10 @@
 
 A native app that runs your Ashvane content desk from your phone: today's production and post results,
 source research, scripts and platform copy, streams, clip reviews, manual posting, settings and the log.
-The second primary tab, **Stories**, creates original narrated horror with illustrated or animated
-shadow-theatre scenes. It has its own publishing destinations and automatic posting preferences.
+Use the **Surge / Hollow** switcher beside the Ashvane brand to change businesses. Surge (Streamer clips) contains
+Desk and Research. Hollow (Scary stories) contains Create, Library, Publishing, Accounts and Settings, with its own
+channels, credentials and posting preferences. Each business remembers its last screen. Assistant
+and Code remain optional shared Tools.
 It talks to Ashvane on your PC over your own Wi-Fi or configured Tailscale connection using your profile sign-in.
 
 ## Get the file
@@ -75,10 +77,13 @@ npm ci
 npx expo run:android  # requires Android SDK, a full JDK and an emulator or connected device
 ```
 
-`App.js` handles the primary Desk, Stories, Research and Tools navigation. `Stories.js` provides the
+`App.js` handles the two-business switcher and shared Tools navigation. `Stories.js` provides the
 story composer, manuscript and scene controls, private review, final video preview and independent
-publishing controls. `Portal.js` transitions the live screen through a central black hole when crossing
-the Stories boundary, with a short opacity transition when reduced motion is enabled.
+publishing controls. `StoryAccounts.js` edits only story credentials, preserves blank secrets, and
+starts OAuth in the PC browser; the returned sign-in link and pasted return URL provide phone recovery.
+Stories Settings edits only the Stories configuration. Clip state/research polling stops in Stories.
+`Portal.js` transitions the live screen through a central black hole when crossing
+between Clips and Stories, with a short opacity transition when reduced motion is enabled.
 
 The phone downloads a final story preview with its bearer token into a temporary private cache;
 the token never goes into a media URL. Leaving the preview removes that cache. Production and

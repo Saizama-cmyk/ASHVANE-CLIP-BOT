@@ -195,7 +195,7 @@ function Project({ project, request, host, token, publishing, onUnauthorized, on
   </Card>;
 }
 
-export default function Stories({ studio, host, token, onUnauthorized, onDirtyChange }) {
+export default function Stories({ screen = "stories", studio, host, token, onUnauthorized, onDirtyChange }) {
   const { data, publishing, error, loading, load, request } = studio;
   const [topic, setTopic] = useState(""), [genre, setGenre] = useState("paranormal"), [format, setFormat] = useState("still"), [duration, setDuration] = useState("60"), [voice, setVoice] = useState("");
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(""), [failure, setFailure] = useState("");
@@ -217,7 +217,7 @@ export default function Stories({ studio, host, token, onUnauthorized, onDirtyCh
     {!!(error || failure) && <Card style={{ marginBottom: 16, gap: 12 }}><Text accessibilityRole="alert" style={t.error}>{failure || error}</Text><Button label="Retry connection" busy={loading} onPress={load} /></Card>}
     {!!notice && <Text accessibilityLiveRegion="polite" style={[t.muted, { marginBottom: 16 }]}>{notice}</Text>}
     {!data && loading && <ActivityIndicator accessibilityLabel="Loading story studio" color={C.ember} style={{ marginBottom: 16 }} />}
-    <Section title="New production"><Card style={{ gap: 20 }}>
+    {screen === "stories" && <Section title="New production"><Card style={{ gap: 20 }}>
       <Field label="Story premise" multiline value={topic} maxLength={data?.settings?.max_topic_chars || 1200} onChangeText={setTopic} placeholder="A night-shift operator hears tomorrow’s emergency calls…" />
       <Choices label="Genre" options={(data?.genres || []).map(g => [g.id, g.label])} value={genre} onChange={setGenre} />
       <Choices label="Visual treatment" options={[["still", "Illustrated"], ["animated", "Animated"]]} value={format} onChange={setFormat} />
@@ -229,10 +229,10 @@ export default function Stories({ studio, host, token, onUnauthorized, onDirtyCh
       {!!data?.busy && <Text accessibilityLiveRegion="polite" style={t.faint}>PC production in progress · {data.job?.stage || "working"}. New productions wait until it finishes.</Text>}
       {capabilities.narrator_available === false && <Text style={t.faint}>Narration needs setup on the PC before a video can be rendered.</Text>}
       {(capabilities.reasons || []).map((reason, i) => <Text key={i} style={t.faint}>{text(reason)}</Text>)}
-    </Card></Section>
-    <Publishing state={publishing} request={request} onError={setFailure} />
-    <Section title={`Production library${data?.projects ? ` · ${data.projects.length}` : ""}`} right={<Button small label="Refresh" busy={loading} onPress={load} />}>
+    </Card></Section>}
+    {screen === "story-publishing" && <Publishing state={publishing} request={request} onError={setFailure} />}
+    {screen === "story-library" && <Section title={`Production library${data?.projects ? ` · ${data.projects.length}` : ""}`} right={<Button small label="Refresh" busy={loading} onPress={load} />}>
       {!data?.projects?.length ? <Card><Empty icon="moon-outline" title="Your first story starts here" body="Choose a premise, genre and narrator. Manuscripts, scenes, final videos and publishing history stay together." /></Card> : data.projects.map(project => <Project key={project.id} project={project} request={request} host={host} token={token} publishing={publishing} onUnauthorized={onUnauthorized} onError={setFailure} onDirtyChange={projectDirty} />)}
-    </Section>
+    </Section>}
   </ScrollView>;
 }

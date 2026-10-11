@@ -1,5 +1,5 @@
 /**
- * Ashvane on the phone: four places, one tab bar.
+ * Ashvane on the phone: Clips and Stories, with shared optional tools.
  *
  *   Desk       the clip desk on your PC, over your own Wi-Fi or Tailscale
  *   Stories    original narrated horror production and its own publishing controls
@@ -22,6 +22,7 @@ import Code from "./code/Code";
 import Desk from "./Desk";
 import Research, { useResearch } from "./Research";
 import Stories, { useStories } from "./Stories";
+import StoryAccounts from "./StoryAccounts";
 import { PortalOverlay, usePortal } from "./Portal";
 import { Clips, Live, Log, SettingsTab, SignIn, Studio } from "./Remote";
 import { Button, C, Card, Icon, IconButton, Pill, t } from "./theme";
@@ -30,7 +31,9 @@ import { isNewerVersion, releaseVersion } from "./updates";
 const POLL_MS = 6000;
 const RELEASE_API = "https://api.github.com/repos/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tags/phone-latest";
 const RELEASE_PAGE = "https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-latest";
-const TABS = [["desk", "Desk", "albums"], ["stories", "Stories", "moon"], ["research", "Research", "search"], ["tools", "Tools", "grid"]];
+const CLIP_TABS = [["desk", "Desk", "albums"], ["research", "Research", "search"]];
+const STORY_TABS = [["stories", "Create", "moon"], ["story-library", "Library", "albums"], ["story-publishing", "Publishing", "send"], ["story-accounts", "Accounts", "people"], ["story-settings", "Settings", "settings"]];
+const isStory = key => key === "stories" || key.startsWith("story-");
 const DESK_TABS = [["today", "Today"], ["live", "Live"], ["clips", "Clips"], ["studio", "Studio"], ["settings", "Settings"], ["log", "Log"]];
 
 /* The same releases the sideloaders read. AltStore updates by itself once its source is added;
@@ -62,19 +65,28 @@ function Main() {
   const [state, setState] = useState({});
   const portal = usePortal("desk");
   const { tab, navigate } = portal;
+  const [business, setBusiness] = useState("clips");
+  const remembered = useRef({ clips: "desk", stories: "stories" });
   const storyEdits = useRef(false);
   const onStoryDirty = useCallback(value => { storyEdits.current = value; }, []);
   const setTab = useCallback(next => {
-    if (tab === "stories" && next !== "stories" && storyEdits.current) {
+    const go = () => {
+      if ([...CLIP_TABS, ...STORY_TABS].some(([key]) => key === next)) {
+        const target = isStory(next) ? "stories" : "clips";
+        remembered.current[target] = next; setBusiness(target);
+      }
+      navigate(next);
+    };
+    if (isStory(tab) && next !== tab && storyEdits.current) {
       if (Platform.OS === "web") {
-        if (globalThis.confirm("Leave without saving your story edits?")) { storyEdits.current = false; navigate(next); }
+        if (globalThis.confirm("Leave without saving your story edits?")) { storyEdits.current = false; go(); }
         return;
       }
       Alert.alert("Leave without saving?", "Your manuscript or scene edits have not been saved to the PC.", [
         { text: "Keep editing", style: "cancel" },
-        { text: "Discard edits", style: "destructive", onPress: () => { storyEdits.current = false; navigate(next); } },
+        { text: "Discard edits", style: "destructive", onPress: () => { storyEdits.current = false; go(); } },
       ]);
-    } else navigate(next);
+    } else go();
   }, [tab, navigate]);
   const [deskTab, setDeskTab] = useState("today");
   const [offline, setOffline] = useState(false);
@@ -132,10 +144,10 @@ function Main() {
   }, [host, token, signOut, currentSession]);
 
   const research = useResearch({ host, token, active: foreground && !lock.locked && ["desk", "research"].includes(tab), onUnauthorized: signOut });
-  const stories = useStories({ host, token, active: foreground && !lock.locked && tab === "stories", onUnauthorized: signOut });
+  const stories = useStories({ host, token, active: foreground && !lock.locked && isStory(tab), onUnauthorized: signOut });
 
   useEffect(() => {
-    if (!host || !token || !foreground || lock.locked || !["desk", "stories", "research"].includes(tab)) return undefined;
+    if (!host || !token || !foreground || lock.locked || !["desk", "research"].includes(tab)) return undefined;
     let alive = true, timer;
     const tick = async () => { await poll(); if (alive) timer = setTimeout(tick, POLL_MS); };
     tick();
@@ -163,6 +175,8 @@ function Main() {
 
   const linked = !!(host && token);
   const connection = !linked ? ["Not connected", "plain"] : offline ? ["Can't reach PC", "bad"] : !loaded ? ["Connecting", "plain"] : ["Connected", "good"];
+  const TABS = [...(business === "stories" ? STORY_TABS : CLIP_TABS), ["tools", "Tools", "grid"]];
+  const remoteTab = isStory(tab) || ["desk", "research"].includes(tab);
   const title = tab === "chat" ? "Assistant" : tab === "code" ? "Code" : TABS.find(x => x[0] === tab)?.[1] || "Desk";
 
   return (
@@ -172,37 +186,42 @@ function Main() {
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 }}>
           <Image source={require("./assets/icon.png")} resizeMode="contain" style={{ width: 28, height: 28 }} />
-          <Text style={[t.title, { flex: 1 }]}>{title}</Text>
-          {["desk", "stories", "research"].includes(tab) && <Pill label={connection[0]} tone={connection[1]} />}
-          {tab === "desk" && linked && <IconButton icon="log-out-outline" label="Sign out" onPress={() => signOut(false)} />}
+          <View style={{ flex: 1 }}><Text style={t.h2}>Ashvane</Text><Text style={t.faint}>{business === "stories" ? "Hollow" : "Surge"} · {title}</Text></View>
+          {remoteTab && <Pill label={isStory(tab) && linked ? (stories.error ? "Check connection" : stories.data ? "Connected" : "Connecting") : connection[0]} tone={isStory(tab) && linked ? (stories.error ? "bad" : stories.data ? "good" : "plain") : connection[1]} />}
+          {remoteTab && linked && <IconButton icon="log-out-outline" label="Sign out" onPress={() => signOut(false)} />}
         </View>
 
+        <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 12 }}>
+          {[["clips", "Surge", "Streamer clips"], ["stories", "Hollow", "Scary stories"]].map(([key, name, description]) => <Pressable key={key} accessibilityRole="button" accessibilityLabel={`${name} · ${description}`} accessibilityState={{ selected: business === key }} aria-selected={business === key} onPress={() => setTab(remembered.current[key])} style={({ pressed }) => ({ flex: 1, minHeight: 56, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: business === key ? C.ember : C.line, backgroundColor: business === key ? C.emberSoft : C.s1, opacity: pressed ? 0.7 : 1 })}><Text style={[t.body, { fontWeight: "600", color: business === key ? C.ember : C.ink }]}>{name}</Text><Text style={t.faint}>{description}</Text></Pressable>)}
+        </View>
         {!!note && <Banner tone="plain" text={note} />}
         {!!update && <Banner tone="live" text={`Version ${update} is out · tap to get it`} onPress={() => Linking.openURL(RELEASE_PAGE)} />}
 
         <View style={{ flex: 1 }}>
-          {["desk", "stories", "research"].includes(tab) && (!linked ? (
+          {remoteTab && (!linked ? (
             <>
               {signedOut && <Banner tone="plain" text="The PC ended the session. Sign in again below." />}
               <SignIn onDone={(h, tk) => { setHost(h); setToken(tk); setSignedOut(false); setOffline(false); }} />
             </>
           ) : (
             <>
-              {offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
-              {tab === "stories" && <Stories studio={stories} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} />}
+              {!isStory(tab) && offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
+              {isStory(tab) && !["story-accounts", "story-settings"].includes(tab) && <Stories screen={tab} studio={stories} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} />}
+              {tab === "story-accounts" && <StoryAccounts host={host} token={token} onUnauthorized={signOut} onChanged={stories.load} onDirtyChange={onStoryDirty} />}
+              {tab === "story-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["stories"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
               {tab === "desk" && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 56 }}
                 contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}>
                 {DESK_TABS.map(([key, label]) => {
                   const on = key === deskTab;
                   return (
-                    <Pressable key={key} onPress={() => setDeskTab(key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
+                    <Pressable key={key} onPress={() => setDeskTab(key)} accessibilityRole="tab" accessibilityState={{ selected: on }} aria-selected={on}
                       style={({ pressed }) => ({ minHeight: 44, paddingHorizontal: 14, borderRadius: 10, justifyContent: "center", opacity: pressed ? 0.7 : 1,
                         backgroundColor: on ? C.ink : C.s1, borderWidth: 1, borderColor: on ? C.ink : C.line })}>
                       <Text style={{ fontSize: 14, fontWeight: "600", color: on ? C.bg : C.ink2 }}>{label}</Text>
                     </Pressable>);
                 })}
               </ScrollView>}
-              {tab !== "stories" && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
+              {!isStory(tab) && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
                 refreshControl={<RefreshControl tintColor={C.ink2} refreshing={refreshing}
                   onRefresh={async () => { setRefreshing(true); try { await Promise.all([poll(), research.load()]); setRefreshVersion(v => v + 1); } finally { setRefreshing(false); } }} />}>
                 {tab === "research" ? <Research research={research} /> : <>
@@ -210,7 +229,7 @@ function Main() {
                   {deskTab === "live" && <Live state={state} onPause={pause} busy={busy} host={host} token={token} />}
                   {deskTab === "clips" && <Clips host={host} token={token} state={state} toast={toast} refreshVersion={refreshVersion} onError={onError} />}
                   {deskTab === "studio" && <Studio key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
-                  {deskTab === "settings" && <SettingsTab key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
+                  {deskTab === "settings" && <SettingsTab excludeSections={["stories", "story_accounts"]} key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
                   {deskTab === "log" && <Log key={refreshVersion} host={host} token={token} state={state} onError={onError} />}
                 </>}
               </ScrollView>}
@@ -225,11 +244,11 @@ function Main() {
             {TABS.map(([key, label, icon]) => {
               const on = key === tab || (key === "tools" && ["chat", "code"].includes(tab));
               return (
-                <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: on }}
+                <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: on }} aria-selected={on}
                   style={{ flex: 1, alignItems: "center", paddingVertical: 6, gap: 3 }}>
                   <View style={{ width: 22, height: 3, borderRadius: 2, marginBottom: 3, backgroundColor: on ? C.ember : "transparent" }} />
                   <Icon name={on ? icon : `${icon}-outline`} size={22} color={on ? C.ink : C.ink3} />
-                  <Text style={{ fontSize: 11.5, fontWeight: "600", color: on ? C.ink : C.ink3 }}>{label}</Text>
+                  <Text style={{ fontSize: 10.5, fontWeight: "600", color: on ? C.ink : C.ink3 }}>{label}</Text>
                 </Pressable>);
             })}
           </View>
