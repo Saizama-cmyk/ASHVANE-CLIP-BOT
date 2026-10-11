@@ -7,6 +7,14 @@ Four businesses are defined: **Ashvane Surge** (streamer clips),
 (client social content, starting with QuirkyCMD). New ventures are added
 only when the owner asks; future changes apply to the business the owner names.
 
+Startup reuses an available Ollama server or launches the installed local server
+when at least one business is enabled. AI settings expose automatic startup,
+executable and readiness timeout controls. Remote AI servers remain externally
+managed. Only processes launched by Ashvane belong to its shutdown cleanup.
+Resonance starts its existing music backend when enabled; native REAPER workers
+open as production jobs require them. ffmpeg and ffprobe run on demand rather
+than opening unnecessary application windows.
+
 Surge owns its stream sources, capture controls, clip library, clip studio, research,
 publishing schedule, growth views and publishing accounts. Hollow owns original
 story creation, its story library, narration/rendering, story publishing, story

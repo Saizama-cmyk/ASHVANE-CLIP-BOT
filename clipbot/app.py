@@ -109,6 +109,8 @@ class ClipBotApp:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._quit: asyncio.Event | None = None
         self._server: uvicorn.Server | None = None
+        from .dependencies import LocalDependencies
+        self.dependencies = LocalDependencies(self)
 
     @property
     def url(self) -> str:
@@ -143,6 +145,7 @@ class ClipBotApp:
                 server_task = asyncio.create_task(self._server.serve(), name="uvicorn")
             if is_frozen():  # the installed exe owns the Run key; dev runs only touch it on toggle
                 self.sync_autostart()
+            self.dependencies.request()
             await self.pipeline.start()
             if self.settings.businesses.resonance_enabled:
                 from .music_api import set_music_running
@@ -177,6 +180,7 @@ class ClipBotApp:
                 await self.creative_tools.close()
             await close_social(self)
             await close_music(self)
+            await self.dependencies.close()
             await self.pipeline.stop()
             self.stopped.set()
             logger.info("%s stopped", APP_NAME)
@@ -219,6 +223,8 @@ class ClipBotApp:
         if ("app", "start_with_windows") in changed:
             await asyncio.to_thread(self.sync_autostart)
         self.pipeline.apply_settings(new)
+        if any(path[0] in {"businesses", "ai"} for path in changed):
+            self.dependencies.request()
         if self.on_state_change:
             self.on_state_change()
         logger.info("settings saved (%d changed%s)", len(changed),

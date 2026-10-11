@@ -118,7 +118,9 @@ class SocialStudio:
         project = Path(self.settings.project_root)
         context = Path(self.settings.context_root)
         required = ("CHATGPT_INSTRUCTIONS.md", "CLAUDE_MEMORY.md")
-        if project.is_dir() and project.name.casefold() == "quirkycmd" and all((context / name).is_file() for name in required):
+        # Brand/style guidance lives in the handoff, independently of the media
+        # folder. Moving or removing old videos must not hide those profiles.
+        if project.name.casefold() == "quirkycmd" and all((context / name).is_file() for name in required):
             self._seed_quirkycmd()
 
     def _save(self):

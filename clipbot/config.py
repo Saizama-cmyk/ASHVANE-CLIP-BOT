@@ -542,6 +542,10 @@ Reply with ONLY JSON: {"facecam": true|false, "box": [x1, y1, x2, y2]} where the
 class AICfg(Section):
     """The local model (Ollama) that judges clipability and writes titles."""
     ollama_url: str = F("http://127.0.0.1:11434", "Ollama URL", "Where Ollama listens.")
+    auto_start: bool = F(True, "Start local AI automatically", "Start installed Ollama when an enabled business needs it. Existing servers and remote servers are left alone.")
+    executable: str = F("", "Ollama executable", "Optional local Ollama executable. Blank discovers the installed version.", widget="path")
+    startup_timeout_s: float = F(30, "Local AI startup timeout (s)", "Maximum wait for an automatically launched local Ollama server.", ge=1, le=300)
+    startup_poll_s: float = F(1, "Local AI startup check interval (s)", "Pause between readiness checks while starting Ollama.", ge=0.1, le=10)
     model: str = F("qwen3-coder:30b", "Model", "Pick from the models installed in Ollama.", widget="ollama_models")
     temperature: float = F(0.2, "Temperature", "Lower = more consistent verdicts.", ge=0, le=2)
     min_score: int = F(7, "Minimum score", "Clips scoring below this are rejected even if the model says pass.",

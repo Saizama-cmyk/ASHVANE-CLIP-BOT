@@ -84,9 +84,11 @@ def test_social_stop_cancels_shared_learning_task_and_reports_busy(ctx):
     asyncio.run(run())
 
 
-def test_seed_quirkycmd_once_preserves_archive_as_private_reference(ctx, tmp_path):
+@pytest.mark.parametrize("media_exists", [True, False])
+def test_seed_quirkycmd_once_preserves_archive_as_private_reference(ctx, tmp_path, media_exists):
     project = tmp_path / "quirkycmd"
-    project.mkdir()
+    if media_exists:
+        project.mkdir()
     context = tmp_path / "archive"
     context.mkdir()
     for filename in ("CHATGPT_INSTRUCTIONS.md", "CLAUDE_MEMORY.md", "CURRENT_PROJECT_STATE.md"):
@@ -100,7 +102,12 @@ def test_seed_quirkycmd_once_preserves_archive_as_private_reference(ctx, tmp_pat
     assert set(client["style_notes"]) == {"A", "B", "C"}
     assert "every Roblox game" in client["rules"]
     assert "references" not in studio.public_client(client)
-    assert len(SocialStudio(ctx).clients) == 1
+    profiles = studio.style_profiles
+    assert {row["legacy_style"] for row in profiles} == {"A", "B", "C"}
+    loaded = SocialStudio(ctx)
+    assert len(loaded.clients) == 1
+    assert loaded.style_profiles == profiles
+    assert project.exists() is media_exists
 
 
 def test_corrupt_library_is_not_replaced_by_seed_or_edit(ctx):
