@@ -1526,11 +1526,13 @@ class Settings(BaseModel):
     edit: EditCfg = Field(default_factory=EditCfg, title="Editor")
     posting: PostingCfg = Field(default_factory=PostingCfg, title="Posting")
     accounts: AccountsCfg = Field(default_factory=AccountsCfg, title="Accounts")
+    story_accounts: AccountsCfg = Field(default_factory=AccountsCfg, title="Hollow accounts",
+                                       description="Separate Stories destination accounts. Blank OAuth app credentials can use the shared app; account tokens are never shared.")
     copywriter: CopyCfg = Field(default_factory=CopyCfg, title="Copywriter")
     clip_import: ClipImportCfg = Field(default_factory=ClipImportCfg, title="Popular clips")
     trends: TrendsCfg = Field(default_factory=TrendsCfg, title="Trends")
     research: ResearchCfg = Field(default_factory=ResearchCfg, title="Research studio")
-    stories: StoriesCfg = Field(default_factory=StoriesCfg, title="Stories")
+    stories: StoriesCfg = Field(default_factory=StoriesCfg, title="Hollow · Scary stories")
     analytics: AnalyticsCfg = Field(default_factory=AnalyticsCfg, title="Analytics")
     dashboard: DashboardCfg = Field(default_factory=DashboardCfg, title="Dashboard")
     pets: PetsCfg = Field(default_factory=PetsCfg, title="Desktop pet")
@@ -1556,6 +1558,23 @@ class Settings(BaseModel):
 
 
 # --------------------------------------------------------------------------- metadata
+def story_account_settings(settings: Settings) -> AccountsCfg:
+    """Resolve shared developer apps without ever inheriting destination credentials.
+
+    Both fields must be blank to inherit a client pair, so a custom Stories app
+    cannot silently acquire another app's secret. Nothing is copied to settings.
+    """
+    accounts = settings.story_accounts.model_copy(deep=True)
+    for identity, secret in (("youtube_client_id", "youtube_client_secret"),
+                             ("tiktok_client_key", "tiktok_client_secret")):
+        if not getattr(accounts, identity) and not getattr(accounts, secret):
+            setattr(accounts, identity, getattr(settings.accounts, identity))
+            setattr(accounts, secret, getattr(settings.accounts, secret))
+    if not accounts.tiktok_redirect_uri:
+        accounts.tiktok_redirect_uri = settings.accounts.tiktok_redirect_uri
+    return accounts
+
+
 def _walk_fields(model: type[BaseModel], prefix: tuple[str, ...] = ()):
     """Yield (path tuple, FieldInfo) for every leaf field (nested sections recursed)."""
     for name, info in model.model_fields.items():
@@ -1804,6 +1823,11 @@ class AppPaths:
     db: Path
     tokens: Path
     models: Path | None = None
+
+    @property
+    def story_tokens(self) -> Path:
+        """Stories keeps its own encrypted credentials, even for the same provider."""
+        return self.data / "tokens-stories.json"
 
     def ensure(self) -> None:
         for p in (self.data, self.buffer, self.work, self.clips, self.logs, self.models):

@@ -101,6 +101,7 @@ class Pipeline:
         paths.ensure()
         self.store = Store(paths.db)
         self.tokens = TokenStore(paths.tokens)
+        self.story_tokens = TokenStore(paths.story_tokens)
         self.http: httpx.AsyncClient | None = None
         self.detector = Detector(settings.detector)
         self.transcriber = Transcriber(settings, paths.models)
@@ -162,8 +163,10 @@ class Pipeline:
         self.vision = Vision(s, self.http, gpu_lock)
         self.copywriter = Copywriter(s, self.http, gpu_lock)
         self.oauth = OAuthManager(s, self.http, self.tokens)
+        self.story_oauth = OAuthManager(s, self.http, self.story_tokens,
+                                        account_section="story_accounts", callback_scope="stories")
         self.publishers = build_publishers(s, self.http, self.tokens, self.oauth)
-        self.story_publishing = StoryPublishing(s, self.http, self.tokens, self.oauth,
+        self.story_publishing = StoryPublishing(s, self.http, self.story_tokens, self.story_oauth,
                                                self.stories, self.story_renderer)
         self.scheduler = Scheduler(s, self.store, self.publishers, self.paths)
         self.scheduler.quality_guard = self._review_final
@@ -240,6 +243,7 @@ class Pipeline:
         self.story_renderer.apply(s)
         self.story_publishing.apply(s)
         self.oauth.apply(s)
+        self.story_oauth.apply(s)
         self.scheduler.apply(s)
         loop = asyncio.get_running_loop()
         loop.create_task(self._assemble_limit.set_limit(s.workers.pipelines))

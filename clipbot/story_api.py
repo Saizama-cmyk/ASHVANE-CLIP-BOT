@@ -1,14 +1,19 @@
 """Authenticated Stories API; inherits the dashboard's profile and action guards."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import webbrowser
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
-from .config import merge_incoming
+from .config import AccountsCfg, masked_dump, merge_incoming
+from .publishers.base import PublishError
+from .publishers.oauth import PLATFORMS as OAUTH_PLATFORMS
 from .stories import StoryBusy
 
 logger = logging.getLogger("clipbot.story_api")
@@ -42,6 +47,79 @@ def install_story_routes(app, ctx) -> None:
         if not isinstance(data, dict) or set(data) - allowed:
             raise HTTPException(422, "Unexpected story request fields")
         return data
+
+    def oauth(platform: str):
+        if platform not in OAUTH_PLATFORMS:
+            raise HTTPException(404, "This destination does not use OAuth")
+        result = getattr(ctx.pipeline, "story_oauth", None)
+        if result is None:
+            raise HTTPException(503, "Hollow accounts are still starting")
+        return result
+
+    def account_state():
+        manager = oauth("youtube")
+        own, effective = ctx.settings.story_accounts, manager.accounts
+        apps = {}
+        for name, identity, secret in (("youtube", "youtube_client_id", "youtube_client_secret"),
+                                       ("tiktok", "tiktok_client_key", "tiktok_client_secret")):
+            configured = bool(getattr(effective, identity) and getattr(effective, secret))
+            apps[name] = {"configured": configured,
+                          "inherited": configured and not getattr(own, identity) and not getattr(own, secret)}
+        return {"accounts": masked_dump(ctx.settings)["story_accounts"],
+                "oauth": {name: manager.connected(name) for name in OAUTH_PLATFORMS},
+                "redirects": {name: manager.redirect_uri(name) for name in OAUTH_PLATFORMS},
+                "app_credentials": apps,
+                "destinations": publisher().state()["destinations"]}
+
+    def account_changed(platform):
+        publisher().identities.pop(platform, None)
+        publisher().errors.pop(platform, None)
+
+    @router.get("/accounts")
+    async def accounts():
+        return account_state()
+
+    @router.put("/accounts")
+    async def save_accounts(request: Request):
+        data = await body(request, set(AccountsCfg.model_fields))
+        if any(not isinstance(value, str) for value in data.values()):
+            raise HTTPException(422, "Account values must be text")
+        try:
+            settings = merge_incoming(ctx.settings, {"story_accounts": data})
+        except ValidationError as exc:
+            raise HTTPException(422, "Invalid Hollow account settings") from exc
+        await ctx.commit_settings(settings)
+        return account_state()
+
+    @router.post("/accounts/{platform}/open")
+    async def open_account(platform: str):
+        manager = oauth(platform)
+        try:
+            url = manager.start_url(platform)
+        except PublishError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        opened = await asyncio.to_thread(webbrowser.open, url)
+        return {"ok": True, "opened": bool(opened), "url": url}
+
+    @router.post("/accounts/{platform}/paste")
+    async def paste_account(platform: str, request: Request):
+        manager = oauth(platform)
+        data = await body(request, {"url"})
+        if not isinstance(data.get("url"), str):
+            raise HTTPException(422, "Paste the full callback address")
+        try:
+            await manager.callback_from_url(platform, data["url"])
+        except (PublishError, httpx.HTTPError, ValueError) as exc:
+            logger.warning("story sign-in failed (%s)", type(exc).__name__)
+            return JSONResponse({"ok": False, "error": "Hollow sign-in failed. Check the callback address and developer credentials, then connect again."}, status_code=422)
+        account_changed(platform)
+        return {"ok": True}
+
+    @router.post("/accounts/{platform}/disconnect")
+    async def disconnect_account(platform: str):
+        await asyncio.to_thread(oauth(platform).disconnect, platform)
+        account_changed(platform)
+        return {"ok": True}
 
     def operation(function, *args, **kwargs):
         try:

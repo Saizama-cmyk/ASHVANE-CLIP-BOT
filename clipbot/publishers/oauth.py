@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import httpx
 
-from ..config import Settings
+from ..config import Settings, story_account_settings
 from ..util import ERR_SNIPPET
 from .base import PublishError, TokenStore
 
@@ -32,10 +32,13 @@ PLATFORMS = ("youtube", "tiktok")
 
 
 class OAuthManager:
-    def __init__(self, settings: Settings, http: httpx.AsyncClient, tokens: TokenStore) -> None:
+    def __init__(self, settings: Settings, http: httpx.AsyncClient, tokens: TokenStore,
+                 *, account_section: str = "accounts", callback_scope: str = "") -> None:
         self.settings = settings
         self.http = http
         self.tokens = tokens
+        self.account_section = account_section
+        self.callback_scope = callback_scope
         self._states: dict[str, tuple[str, float]] = {}
         self._locks = {p: asyncio.Lock() for p in PLATFORMS}
 
@@ -44,11 +47,29 @@ class OAuthManager:
 
     def local_redirect(self, platform: str) -> str:
         d = self.settings.dashboard
-        return f"http://{d.host}:{d.port}/oauth/{platform}/callback"
+        scope = f"{self.callback_scope}/" if self.callback_scope else ""
+        if (platform == "youtube" and self.account_section == "story_accounts"
+                and not self.settings.story_accounts.youtube_client_id
+                and not self.settings.story_accounts.youtube_client_secret):
+            # A shared Google Web client requires the exact registered redirect;
+            # validated state still chooses the separate Hollow token store.
+            scope = ""
+        return f"http://{d.host}:{d.port}/oauth/{scope}{platform}/callback"
+
+    @property
+    def accounts(self):
+        if self.account_section == "story_accounts":
+            return story_account_settings(self.settings)
+        return getattr(self.settings, self.account_section)
+
+    def owns_state(self, platform: str, state: str) -> bool:
+        """Inspect without consuming: public callbacks must select exactly one business."""
+        entry = self._states.get(state)
+        return bool(entry and entry[0] == platform)
 
     def redirect_uri(self, platform: str) -> str:
         if platform == "tiktok":
-            return self.settings.accounts.tiktok_redirect_uri
+            return self.accounts.tiktok_redirect_uri
         return self.local_redirect(platform)
 
     def connected(self, platform: str) -> bool:
@@ -56,31 +77,32 @@ class OAuthManager:
                     or self.tokens.get(platform).get("access_token"))
 
     def start_url(self, platform: str) -> str:
-        a = self.settings.accounts
+        a = self.accounts
+        section = "Hollow accounts" if self.account_section == "story_accounts" else "Accounts"
         state = secrets.token_urlsafe(24)
         self._states[state] = (platform, time.time())
         if platform == "youtube":
             if not (a.youtube_client_id and a.youtube_client_secret):
-                raise PublishError("Add the YouTube OAuth client ID and secret in Settings → Accounts")
+                raise PublishError(f"Add the YouTube OAuth client ID and secret in Settings → {section}")
             return GOOGLE_AUTH_URL + "?" + urlencode({
                 "client_id": a.youtube_client_id, "redirect_uri": self.redirect_uri(platform),
                 "response_type": "code", "scope": YOUTUBE_SCOPES, "access_type": "offline",
                 "prompt": "consent", "include_granted_scopes": "true", "state": state})
         if platform == "tiktok":
             if not (a.tiktok_client_key and a.tiktok_client_secret):
-                raise PublishError("Add the TikTok client key and secret in Settings → Accounts")
+                raise PublishError(f"Add the TikTok client key and secret in Settings → {section}")
             if not a.tiktok_redirect_uri.startswith("https://"):
-                raise PublishError("TikTok needs an https redirect URI (Settings → Accounts)")
+                raise PublishError(f"TikTok needs an https redirect URI (Settings → {section})")
             return TIKTOK_AUTH_URL + "?" + urlencode({
                 "client_key": a.tiktok_client_key, "scope": TIKTOK_SCOPES,
                 "response_type": "code", "redirect_uri": a.tiktok_redirect_uri, "state": state})
         raise PublishError(f"no OAuth flow for {platform}")
 
     async def callback(self, platform: str, code: str, state: str) -> None:
-        entry = self._states.pop(state, None)
-        if not entry or entry[0] != platform:
+        if not self.owns_state(platform, state):
             raise PublishError("OAuth state mismatch — start the connection again")
-        a = self.settings.accounts
+        self._states.pop(state)
+        a = self.accounts
         if platform == "youtube":
             data = {"code": code, "client_id": a.youtube_client_id,
                     "client_secret": a.youtube_client_secret,
@@ -124,12 +146,13 @@ class OAuthManager:
         async with self._locks[platform]:
             tok = self.tokens.get(platform)
             if not tok:
-                raise PublishError(f"{platform} not connected — use Connect in Settings → Accounts")
+                section = "Hollow accounts" if self.account_section == "story_accounts" else "Accounts"
+                raise PublishError(f"{platform} not connected — use Connect in Settings → {section}")
             if tok.get("access_token") and time.time() < tok.get("expires_at", 0) - REFRESH_MARGIN_S:
                 return tok["access_token"]
             if not tok.get("refresh_token"):
                 raise PublishError(f"{platform} token expired and no refresh token — reconnect")
-            a = self.settings.accounts
+            a = self.accounts
             if platform == "youtube":
                 url, data = GOOGLE_TOKEN_URL, {
                     "client_id": a.youtube_client_id, "client_secret": a.youtube_client_secret,
@@ -147,3 +170,4 @@ class OAuthManager:
 
     def disconnect(self, platform: str) -> None:
         self.tokens.clear(platform)
+        self._states = {state: entry for state, entry in self._states.items() if entry[0] != platform}

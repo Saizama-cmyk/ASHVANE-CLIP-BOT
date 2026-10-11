@@ -64,14 +64,14 @@ def main():
                                     json={"name": "Packaged preview", "password": "packaged-preview-2026"})
                 login.raise_for_status()
                 report["checks"]["sign_in"] = True
-                for route in ("/api/state", "/api/research", "/api/setup", "/api/settings/schema", "/api/publishing/batch", "/api/stories", "/api/stories/publishing"):
+                for route in ("/api/state", "/api/research", "/api/setup", "/api/settings/schema", "/api/publishing/batch", "/api/stories", "/api/stories/publishing", "/api/stories/accounts"):
                     response = client.get(route)
                     response.raise_for_status()
                     response.json()
                     report["checks"][route] = True
                 research = client.get("/api/research").json()
                 report["sources"], report["ideas"] = len(research["sources"]), len(research["ideas"])
-                for name in ("index.html", "desk.js", "desk.css", "stories.js", "stories.css", "cosmic.js", "cosmic.css"):
+                for name in ("index.html", "desk.js", "desk.css", "stories.js", "stories.css", "cosmic.js", "cosmic.css", "business.js", "business.css"):
                     route = "/" if name == "index.html" else f"/static/{name}"
                     response = client.get(route)
                     response.raise_for_status()

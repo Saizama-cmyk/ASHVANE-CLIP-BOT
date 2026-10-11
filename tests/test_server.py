@@ -46,6 +46,26 @@ def test_state_and_index(running_app):
     assert c.get("/").status_code == 200 and "Ashvane" in c.get("/").text
 
 
+def test_running_pipeline_keeps_story_accounts_and_oauth_stores_separate(running_app):
+    app, client = running_app
+    clips, stories = app.pipeline.oauth, app.pipeline.story_oauth
+    assert clips.tokens is app.pipeline.tokens
+    assert stories.tokens is app.pipeline.story_tokens
+    assert clips.tokens.path != stories.tokens.path
+    assert app.pipeline.story_publishing.tokens is stories.tokens
+    assert app.pipeline.story_publishing.oauth is stories
+    clips.tokens.set("youtube", {"access_token": "clip-channel-token"})
+    assert client.get("/api/stories/accounts").json()["oauth"]["youtube"] is False
+    response = client.put("/api/stories/accounts", headers=H,
+                          json={"youtube_client_id": "story-app", "youtube_client_secret": "story-secret"})
+    assert response.status_code == 200
+    assert stories.accounts.youtube_client_id == "story-app"
+    assert not clips.accounts.youtube_client_id
+    assert response.json()["accounts"]["youtube_client_secret"] == C.MASK
+    assert client.post("/api/stories/accounts/youtube/disconnect", headers=H).json()["ok"]
+    assert clips.tokens.get("youtube")["access_token"] == "clip-channel-token"
+
+
 def test_settings_roundtrip_masking(running_app):
     app, c = running_app
     r = c.put("/api/settings", headers=H, json={"settings": {

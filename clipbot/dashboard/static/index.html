@@ -749,6 +749,7 @@ nav button:hover .i3{transform:scale(1.08)}
 <link rel="stylesheet" href="/static/desk.css">
 <link rel="stylesheet" href="/static/stories.css">
 <link rel="stylesheet" href="/static/cosmic.css">
+<link rel="stylesheet" href="/static/business.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -783,17 +784,27 @@ nav button:hover .i3{transform:scale(1.08)}
 <div class="shell">
 <aside class="rail">
   <div class="brand"><img src="/static/art/mark-96.png" alt="" width="42" height="42"><div><b>Ashvane</b><span>Capture / cut / publish</span></div></div>
-  <nav role="tablist" aria-orientation="vertical" aria-label="Sections">
+  <div class="business-picker">
+    <button type="button" id="businessToggle" aria-expanded="false" aria-controls="businessChoices"><span class="business-caption">Business</span><span class="business-current" id="businessCurrent">Surge</span><span class="business-description" id="businessDescription">Streamer clips</span><span class="business-chevron" aria-hidden="true">⌄</span></button>
+    <div id="businessChoices" class="business-choices" hidden aria-label="Choose business"><button type="button" data-business="clips" aria-pressed="true"><b>Surge</b><small>Streamer clips</small></button><button type="button" data-business="stories" aria-pressed="false"><b>Hollow</b><small>Scary stories</small></button></div>
+  </div>
+  <nav id="clipsNav" role="tablist" aria-orientation="vertical" aria-label="Surge sections">
     <button role="tab" aria-selected="true" data-view="clips" title="Clips"><span class="desk-nav-mark" aria-hidden="true">01</span><span class="t">Clips</span></button>
-    <button role="tab" aria-selected="false" data-view="stories" title="Stories"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Stories</span></button>
-    <button role="tab" aria-selected="false" data-view="studio" title="Studio"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Studio</span></button>
+    <button role="tab" aria-selected="false" data-view="studio" title="Studio"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Studio</span></button>
     <button role="tab" aria-selected="false" data-view="live" title="Live"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-live"/></svg><span class="t">Live</span></button>
-    <button role="tab" aria-selected="false" data-view="research" title="Research"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Research</span></button>
-    <button role="tab" aria-selected="false" data-view="desk" title="Today"><span class="desk-nav-mark" aria-hidden="true">05</span><span class="t">Today</span></button>
+    <button role="tab" aria-selected="false" data-view="research" title="Research"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Research</span></button>
+    <button role="tab" aria-selected="false" data-view="desk" title="Today"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Today</span></button>
     <button role="tab" aria-selected="false" data-view="growth" title="Growth"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-growth"/></svg><span class="t">Growth</span></button>
     <button role="tab" aria-selected="false" data-view="system" title="System"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-system"/></svg><span class="t">System</span></button>
     <button role="tab" aria-selected="false" data-view="settings" title="Settings"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings"/></svg><span class="t">Settings</span></button>
     <button role="tab" aria-selected="false" data-view="setup" title="Setup"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-setup"/></svg><span class="t">Setup</span><span class="count" id="setupCount" hidden></span></button>
+  </nav>
+  <nav id="storiesNav" role="tablist" aria-orientation="vertical" aria-label="Hollow sections" hidden>
+    <button type="button" role="tab" aria-selected="true" data-story-section="create"><span class="desk-nav-mark" aria-hidden="true">01</span><span class="t">Create</span></button>
+    <button type="button" role="tab" aria-selected="false" data-story-section="library"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Library</span></button>
+    <button type="button" role="tab" aria-selected="false" data-story-section="publishing"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Publishing</span></button>
+    <button type="button" role="tab" aria-selected="false" data-story-section="accounts"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Accounts</span></button>
+    <button type="button" role="tab" aria-selected="false" data-story-section="settings"><span class="desk-nav-mark" aria-hidden="true">05</span><span class="t">Settings</span></button>
   </nav>
   <div class="rail-foot">
     <div class="status" role="button" tabindex="0" title="Open the System panel: what this means, events, issues, analytics">
@@ -825,7 +836,7 @@ nav button:hover .i3{transform:scale(1.08)}
     <div class="stories-global-error" id="storiesGlobalError" role="alert" hidden><p id="storiesGlobalErrorText"></p><button class="btn" type="button" id="storiesReload">Try again</button></div>
     <div class="stories-layout">
       <aside class="stories-sidebar">
-        <section class="stories-panel"><div class="stories-panel-head"><h2>New story</h2><span>Start with a premise</span></div>
+        <section class="stories-panel" data-story-area="create"><div class="stories-panel-head"><h2>New story</h2><span>Start with a premise</span></div>
           <form id="storiesCreateForm" class="stories-compose">
             <div class="stories-field"><label for="storiesTopic">What happens?</label><textarea id="storiesTopic" name="story_topic" rows="4" maxlength="2000" placeholder="A place, a person, and something that should not be there…" required></textarea><p class="stories-help">Describe your own premise. Specific details give the story something to hold onto.</p></div>
             <div class="stories-field"><label for="storiesGenre">Genre</label><select id="storiesGenre" name="story_genre" required><option value="">Loading genres…</option></select></div>
@@ -839,7 +850,7 @@ nav button:hover .i3{transform:scale(1.08)}
             <button class="btn ghost" type="button" id="storiesSettings">Story settings</button>
           </form>
         </section>
-        <section class="stories-panel"><div class="stories-panel-head"><h2>Story publishing</h2><span>Separate from Clips</span></div>
+        <section class="stories-panel" data-story-area="publishing"><div class="stories-panel-head"><h2>Story publishing</h2><span>Separate from Clips</span></div>
           <form id="storiesPublishingForm" class="stories-publishing">
             <p>Choose the connected accounts for original stories. Automatic publishing sends only videos that pass story review.</p>
             <div class="stories-destinations" id="storiesDestinations"><p>Checking connected accounts…</p></div>
@@ -850,7 +861,7 @@ nav button:hover .i3{transform:scale(1.08)}
             <button class="btn ghost" type="button" id="storiesAccounts">Connect an account</button>
           </form>
         </section>
-        <section class="stories-panel"><div class="stories-panel-head"><h2>Your stories</h2><span id="storiesLibraryCount">Loading…</span></div><div class="stories-library-tools"><input id="storiesLibrarySearch" type="search" name="story_search" autocomplete="off" placeholder="Find a story" aria-label="Find a story"></div><div class="stories-library" id="storiesLibrary"><p class="stories-library-empty">Loading saved projects…</p></div></section>
+        <section class="stories-panel" data-story-area="library"><div class="stories-panel-head"><h2>Your stories</h2><span id="storiesLibraryCount">Loading…</span></div><div class="stories-library-tools"><input id="storiesLibrarySearch" type="search" name="story_search" autocomplete="off" placeholder="Find a story" aria-label="Find a story"></div><div class="stories-library" id="storiesLibrary"><p class="stories-library-empty">Loading saved projects…</p></div></section>
       </aside>
       <div class="stories-stage">
         <section class="stories-panel stories-empty" id="storiesEmpty"><div class="story-empty-line" aria-hidden="true"></div><h2>Build a story worth listening to.</h2><p>Start with your premise on the left, or open a saved story. The manuscript and director’s scene notes stay editable before you render.</p><div class="stories-worksteps" aria-label="Story production stages"><span>Manuscript</span><span>Scene direction</span><span>Narration &amp; video</span></div></section>
@@ -872,6 +883,8 @@ nav button:hover .i3{transform:scale(1.08)}
       </div>
     </div>
   </section>
+  <section class="view business-form-view" id="view-story-accounts" role="tabpanel"><div class="stories-panel"><div class="stories-panel-head"><h2>Hollow accounts</h2><span>Channels for this business</span></div><div id="storyAccountStatus" class="business-form-status" role="status" aria-live="polite">Loading Stories channels…</div><div id="storyAccountConnections" class="business-connections"></div><form id="storyAccountForm"><div id="storyAccountFields" class="fields"></div><div class="business-form-actions"><button class="btn primary" type="submit" id="storyAccountSave">Save Hollow account keys</button><button class="btn" type="button" id="storyAccountReload">Reload accounts</button></div></form></div></section>
+  <section class="view business-form-view" id="view-story-settings" role="tabpanel"><div class="stories-panel"><div class="stories-panel-head"><h2>Hollow settings</h2><span>Story production only</span></div><div id="storySettingsStatus" class="business-form-status" role="status" aria-live="polite">Loading story production settings…</div><form id="storySettingsForm"><div id="storySettingsFields" class="fields"></div><div class="business-form-actions"><button class="btn primary" type="submit" id="storySettingsSave">Save Hollow settings</button></div></form></div></section>
   <section class="view" id="view-desk" role="tabpanel">
     <div class="desk-focus"><div><p class="desk-date" id="deskDate">Today</p><h2 id="deskNextTitle">Connecting to your workspace</h2><p id="deskNextDetail">Your clips, research, and publishing connections will appear here.</p></div><button class="btn primary" id="deskNext" type="button" disabled>Connecting…</button></div>
     <div class="desk-counts" id="deskCounts" aria-label="Current content activity"><span class="dim">Waiting for the engine…</span></div>
@@ -1142,7 +1155,9 @@ function clock(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour: "2
 
 /* ---------------- tabs ---------------- */
 const PAGES = {
-  stories: ["Stories", "Original narrated stories, from manuscript to finished video."],
+  stories: ["Stories · Create", "Original narrated stories, from manuscript to finished video."],
+  "story-accounts": ["Stories · Accounts", "Connect the channels that publish this business’s original videos."],
+  "story-settings": ["Stories · Settings", "Configure the narrator, story direction, and production engine."],
   desk: ["Today", "Capture, queue, and publishing at a glance."],
   research: ["Research & original posts", "Find an angle worth explaining, with sources you can check."],
   live: ["Live desk", "Watch the streams. Catch the moments worth keeping."],
@@ -1158,7 +1173,7 @@ function show(view) {
   const pg = PAGES[view];
   $("#pageTitle").textContent = pg[0]; $("#pageSub").textContent = pg[1];
   document.title = `${pg[0]} · Ashvane`;
-  $$("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === view)));
+  $$("nav button[data-view]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === view)));
   $$("section.view").forEach(s => s.classList.toggle("active", s.id === "view-" + view));
   if (view === "live" && state) { renderMonitors(state); renderFlow(state); renderSamples(state); renderPosts(state); }
   if (view === "settings") ensureSettings();
@@ -1167,7 +1182,7 @@ function show(view) {
   if (view === "research" && typeof loadResearch === "function") loadResearch();
   history.replaceState(null, "", "#" + view);
 }
-$$("nav button").forEach(b => b.addEventListener("click", () => { sfx("click"); show(b.dataset.view); }));
+$$("nav button[data-view]").forEach(b => b.addEventListener("click", () => { sfx("click"); show(b.dataset.view); }));
 
 /* ---------------- live state ---------------- */
 function spark(points) {
@@ -1543,7 +1558,7 @@ function phoneChip(state) {
     });
 }
 function renderForm() {
-  const top = schema.properties;
+  const top = Object.fromEntries(Object.entries(schema.properties).filter(([k]) => !["stories", "story_accounts"].includes(k)));
   const placed = new Set(SETTING_GROUPS.flatMap(g => g[1]));
   const groups = [...SETTING_GROUPS, ["Other", Object.keys(top).filter(k => !placed.has(k))]];
   $("#snav").innerHTML = groups.map(([name, keys]) => {
@@ -2449,18 +2464,19 @@ window.addEventListener("resize", () => { if ($("#view-studio").classList.contai
 $("#monitorSearch").addEventListener("input", () => { if (state) renderMonitors(state); });
 $("#monitorMore").addEventListener("click", () => { allMonitors = !allMonitors; if (state) renderMonitors(state); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
-$$("nav button").forEach((b, i, tabs) => {
+$$("nav button[data-view]").forEach((b, i, tabs) => {
   b.id = "tab-" + b.dataset.view; b.setAttribute("aria-controls", "view-" + b.dataset.view);
   $("#view-" + b.dataset.view).setAttribute("aria-labelledby", b.id);
   b.addEventListener("keydown", e => {
     const horizontal = matchMedia("(max-width:640px)").matches;
     const delta = e.key === (horizontal ? "ArrowRight" : "ArrowDown") ? 1 : e.key === (horizontal ? "ArrowLeft" : "ArrowUp") ? -1 : 0;
-    if (delta) { e.preventDefault(); const next = tabs[(i + delta + tabs.length) % tabs.length]; next.focus(); next.click(); }
+    if (delta) { e.preventDefault(); const available = tabs.filter(t => !t.closest("nav").hidden); const next = available[(available.indexOf(b) + delta + available.length) % available.length]; next.focus(); next.click(); }
   });
 });
 /* ---------------- boot ---------------- */
 window.startAshvane = function() {
   const h = location.hash.slice(1);
+  if(window.ashvaneInitialRoute===undefined)window.ashvaneInitialRoute=h;
   if (h.startsWith("field=")) focusField(decodeURIComponent(h.slice(6)));
   else show(PAGES[h] ? h : "clips");
   poll();
@@ -2471,5 +2487,6 @@ window.startAshvane = function() {
 <script src="/static/desk.js"></script>
 <script src="/static/stories.js"></script>
 <script src="/static/cosmic.js"></script>
+<script src="/static/business.js"></script>
 </body>
 </html>

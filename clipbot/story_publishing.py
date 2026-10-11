@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .config import story_account_settings
 from .public_copy import check_public_text
 from .publishers import PLATFORMS, PostText, build_publishers
 from .publishers.base import PublishError
@@ -78,6 +79,7 @@ class StoryPublishing:
 
     def _publisher_settings(self):
         settings = self.settings.model_copy(deep=True)
+        settings.accounts = story_account_settings(self.settings)
         cfg = settings.stories
         youtube = settings.posting.youtube
         youtube.category_id, youtube.privacy = cfg.youtube_category_id, cfg.publish_privacy
@@ -92,7 +94,7 @@ class StoryPublishing:
         self.identities.clear()
 
     def _credentials(self, name):
-        accounts = self.settings.accounts
+        accounts = story_account_settings(self.settings)
         if name in {"youtube", "tiktok"}:
             stored = self.tokens.get(name)
             values = {"account": stored.get("open_id", ""),
@@ -108,6 +110,7 @@ class StoryPublishing:
 
     def _destination(self, name):
         configured, reason = self.publishers[name].configured()
+        reason = reason.replace("Settings → Accounts", "Hollow accounts")
         identity = self.identities.get(name, {})
         current = identity.get("credential_hash") == self._credentials(name)
         ready = configured and current and bool(identity.get("account_id")) and not identity.get("error")
@@ -127,7 +130,7 @@ class StoryPublishing:
     async def _identity(self, name):
         fingerprint = self._credentials(name)
         generation = self._settings_generation
-        snapshot = self.settings.model_copy(deep=True)
+        snapshot = self._publisher_settings()
         pub = self.publishers[name]
         configured, _ = pub.configured()
         cached = self.identities.get(name, {})
@@ -212,7 +215,7 @@ class StoryPublishing:
         except (httpx.HTTPError, PublishError, ValueError, KeyError, TypeError) as exc:
             if generation != self._settings_generation or fingerprint != self._credentials(name):
                 return
-            reason = f"Account verification failed: {type(exc).__name__}. Reconnect this destination in Accounts."
+            reason = f"Account verification failed: {type(exc).__name__}. Reconnect this destination in Hollow accounts."
             # Never display raw HTTP URLs or tokens from account errors.
             self.identities[name] = {"credential_hash": fingerprint, "account_id": "", "account_label": "", "error": reason,
                                      "checked_at": time.time()}

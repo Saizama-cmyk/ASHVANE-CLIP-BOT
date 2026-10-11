@@ -3,7 +3,7 @@
 (() => {
   const byId = id => document.getElementById(id);
   let data = null, selected = null, edited = false, manuscriptChanged = false;
-  let scenes = [], fetching = false, sending = false, initialized = false, publication = null;
+  let scenes = [], fetching = false, sending = false, initialized = false, publication = null, publicationEdited = false;
   const working = new Set(["queued","directing","writing","judging","narrating","rendering"]);
   const names = {queued:"Queued",directing:"Directing",writing:"Writing manuscript",judging:"Reviewing story",draft:"Draft ready",needs_review:"Needs review",narrating:"Recording narration",rendering:"Rendering scenes",ready:"Video ready",failed:"Needs attention",interrupted:"Interrupted",cancelled:"Cancelled"};
   function message(id, value) { const el=byId(id); el.textContent=value||""; el.hidden=!value; }
@@ -102,7 +102,7 @@
   function showError(e){toast(e.message||String(e));message("storiesProjectError",e.message||String(e));byId("storiesJob").hidden=false;}
   async function loadPublishing(){
     try{publication=await request("/api/stories/publishing");const cfg=publication.config||publication;const dest=publication.destinations||[];byId("storiesAutoPublish").checked=!!cfg.enabled;byId("storiesPrivacy").value=cfg.privacy||"public";
-      byId("storiesDestinations").innerHTML=dest.length?dest.map(d=>`<label class="stories-destination"><input type="checkbox" name="story_destination" value="${esc(d.id||d.platform)}" ${d.ready===false?"disabled":""} ${(cfg.destinations||[]).includes(d.id||d.platform)?"checked":""}><span><b>${esc(d.label||d.id||d.platform)}</b><small>${esc(d.reason||(d.ready===false?"Connect this account in Settings → Accounts.":d.account_label||d.account||"Connected account"))}</small></span></label>`).join(""):'<p>No publishing destinations are configured. Connect an account in Settings → Accounts.</p>';
+      byId("storiesDestinations").innerHTML=dest.length?dest.map(d=>`<label class="stories-destination"><input type="checkbox" name="story_destination" value="${esc(d.id||d.platform)}" ${d.ready===false?"disabled":""} ${(cfg.destinations||[]).includes(d.id||d.platform)?"checked":""}><span><b>${esc(d.label||d.id||d.platform)}</b><small>${esc(d.reason||(d.ready===false?"Connect this account in Stories → Accounts.":d.account_label||d.account||"Connected account"))}</small></span></label>`).join(""):'<p>No publishing destinations are configured. Connect an account in Stories → Accounts.</p>';
       message("storiesPublishError","");renderControls();
     }catch(e){message("storiesPublishError",e.message);}
   }
@@ -121,14 +121,15 @@
   byId("storiesCopyPublic").addEventListener("click",async()=>{try{await navigator.clipboard.writeText([byId("storyPublicTitle").value,byId("storyPublicDescription").value,byId("storyPublicHashtags").value].filter(Boolean).join("\n\n"));toast("Public title and description copied.");}catch(_){toast("Copy is unavailable here. Select the public text and copy it manually.");}});
   document.querySelectorAll('[data-story-pane]').forEach(b=>b.addEventListener("click",()=>setPane(b.dataset.storyPane)));
   document.querySelector('.stories-editor-tabs').addEventListener("keydown",e=>{if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;e.preventDefault();const tabs=[...document.querySelectorAll('[data-story-pane]')],i=tabs.indexOf(document.activeElement);const next=e.key==="Home"?0:e.key==="End"?tabs.length-1:(i+(e.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;setPane(tabs[next].dataset.storyPane);tabs[next].focus();});
-  byId("storiesReload").addEventListener("click",()=>{refresh();loadPublishing();});byId("storiesSettings").addEventListener("click",()=>deskSettings("stories"));
-  byId("storiesAccounts").addEventListener("click",()=>deskSettings("accounts"));
-  byId("storiesPublishingForm").addEventListener("submit",async e=>{e.preventDefault();const b=byId("storiesSavePublishing");b.disabled=true;try{await request("/api/stories/publishing",{method:"PUT",json:{enabled:byId("storiesAutoPublish").checked,destinations:selectedDestinations(),privacy:byId("storiesPrivacy").value}});message("storiesPublishError","");toast("Story publishing preferences saved.");await loadPublishing();}catch(err){message("storiesPublishError",err.message);}finally{b.disabled=false;}});
+  byId("storiesReload").addEventListener("click",()=>{refresh();loadPublishing();});byId("storiesSettings").addEventListener("click",()=>window.showStorySection("settings"));
+  byId("storiesAccounts").addEventListener("click",()=>window.showStorySection("accounts"));
+  byId("storiesPublishingForm").addEventListener("submit",async e=>{e.preventDefault();const b=byId("storiesSavePublishing");b.disabled=true;try{await request("/api/stories/publishing",{method:"PUT",json:{enabled:byId("storiesAutoPublish").checked,destinations:selectedDestinations(),privacy:byId("storiesPrivacy").value}});message("storiesPublishError","");publicationEdited=false;toast("Story publishing preferences saved.");await loadPublishing();}catch(err){message("storiesPublishError",err.message);}finally{b.disabled=false;}});
   byId("storiesDestinations").addEventListener("change",renderControls);
+  byId("storiesPublishingForm").addEventListener("change",()=>{publicationEdited=true;});
   byId("storiesPublishNow").addEventListener("click",async()=>{const p=project();if(!p)return;sending=true;renderControls();try{await request(`/api/stories/projects/${encodeURIComponent(p.id)}/publish`,{method:"POST",json:{destinations:selectedDestinations()}});toast("Story submitted to the publishing queue.");await refresh();}catch(err){message("storiesPublishError",err.message);}finally{sending=false;renderControls();}});
-  window.addEventListener("beforeunload",e=>{if(edited){e.preventDefault();e.returnValue="";}});
+  window.addEventListener("beforeunload",e=>{if(edited||publicationEdited){e.preventDefault();e.returnValue="";}});
   window.loadStories=()=>{refresh();loadPublishing();};
-  window.storyHasUnsavedChanges=()=>edited;
+  window.storyHasUnsavedChanges=()=>edited||publicationEdited;
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&byId("view-stories").classList.contains("active"))refresh(true);});
   setInterval(()=>{if(!document.hidden&&byId("view-stories").classList.contains("active"))refresh(true);},4000);
   if(byId("view-stories").classList.contains("active"))window.loadStories();

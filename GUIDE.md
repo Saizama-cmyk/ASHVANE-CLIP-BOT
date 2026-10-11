@@ -35,7 +35,11 @@ A free, local, open-source (AGPL-3.0) Windows app. It watches Twitch and Kick st
 
 ## App tour
 - **Live desk:** stream slots with chat sparklines. Click one to watch it full screen ~6 s behind live.
-- **Stories:** a separate studio for original narrated horror. Choose a premise, genre,
+- **Business switcher:** beside the Ashvane name, choose Surge (streamer clips) or
+  Hollow (scary stories). Each has
+  its own navigation, publishing connections and settings. Only switching businesses
+  triggers the black-hole transition.
+- **Stories:** a separate business workspace for original narrated horror. Choose a premise, genre,
   still illustrations or animated shadow theatre, and a target length. A local director,
   writer and independent jury create and review the manuscript; a failed story stays held
   for revision. Accepted stories can render and publish automatically to the destinations
@@ -68,8 +72,8 @@ Edits invalidate the previous review and video. Review explanations and internal
 never become narration, captions or published metadata. Stories are labelled original fiction;
 YouTube's synthetic-media disclosure is enabled by default.
 
-Stories shows the actual connected destination account. Connect or renew accounts under
-Settings → Accounts before publishing. Automatic publishing requires a current passing review,
+Stories shows its own connected destination account. Connect or renew accounts under
+  Hollow → Accounts before publishing; clip accounts are not reused. Automatic publishing requires a current passing review,
 a completed video and a verified account, and observes its own daily cap and gap. Long landscape
 episodes use YouTube or Discord. An interrupted or ambiguous upload is held for account checking
 instead of being retried automatically and risking a duplicate post.

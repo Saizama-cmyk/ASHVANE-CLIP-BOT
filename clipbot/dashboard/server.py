@@ -52,7 +52,8 @@ HTTPS_PORT = "443"
 HOURS_PER_DAY = 24
 _ID_RE = re.compile(r"^[0-9a-f]{6,32}$")
 _OAUTH_PLATFORMS = ("youtube", "tiktok")
-_PUBLIC = ("/static/", "/api/auth/", "/oauth/youtube/callback", "/oauth/tiktok/callback")
+_PUBLIC = ("/static/", "/api/auth/", "/oauth/youtube/callback", "/oauth/tiktok/callback",
+           "/oauth/stories/youtube/callback", "/oauth/stories/tiktok/callback")
 _PUBLIC_EXACT = {"/", "/remote", "/favicon.ico", "/api/control/focus"}   # shells only; their data is not
 
 
@@ -914,13 +915,39 @@ def create_app(ctx) -> FastAPI:
                              error_description: str = ""):
         if platform not in _OAUTH_PLATFORMS:
             raise HTTPException(404)
+        # The existing TikTok forwarding page may send either business here. Only a
+        # pending one-time state can choose its token store; never try both exchanges.
+        managers = [ctx.pipeline.oauth]
+        if getattr(ctx.pipeline, "story_oauth", None) is not None:
+            managers.append(ctx.pipeline.story_oauth)
+        owners = [manager for manager in managers if manager.owns_state(platform, state)]
+        if len(owners) != 1:
+            return _page("Connection failed", "OAuth state mismatch — start the connection again")
         if error or not code:
-            return _page("Connection cancelled", error_description or error or "no code returned")
+            return _page("Connection cancelled", "The provider did not authorize this connection.")
         try:
-            await ctx.pipeline.oauth.callback(platform, code, state)
-        except PublishError as exc:
-            return _page("Connection failed", str(exc))
-        return _page(f"{platform.title()} connected", "Ashvane can now post for you.")
+            await owners[0].callback(platform, code, state)
+        except (PublishError, httpx.HTTPError, ValueError) as exc:
+            logger.warning("sign-in callback failed (%s)", type(exc).__name__)
+            return _page("Connection failed", "Check developer credentials and start the connection again.")
+        business = "Hollow" if owners[0] is getattr(ctx.pipeline, "story_oauth", None) else "Surge"
+        return _page(f"{platform.title()} connected", f"{business} can now post for you.")
+
+    @app.get("/oauth/stories/{platform}/callback")
+    async def story_oauth_callback(platform: str, code: str = "", state: str = "", error: str = ""):
+        if platform not in _OAUTH_PLATFORMS:
+            raise HTTPException(404)
+        manager = getattr(ctx.pipeline, "story_oauth", None)
+        if manager is None or not manager.owns_state(platform, state):
+            return _page("Connection failed", "OAuth state mismatch — start the Hollow connection again")
+        if error or not code:
+            return _page("Connection cancelled", "The provider did not authorize this connection.")
+        try:
+            await manager.callback(platform, code, state)
+        except (PublishError, httpx.HTTPError, ValueError) as exc:
+            logger.warning("story sign-in callback failed (%s)", type(exc).__name__)
+            return _page("Connection failed", "Check Hollow developer credentials and connect again.")
+        return _page(f"{platform.title()} connected", "Hollow can now post for you.")
 
     @app.post("/oauth/{platform}/paste")
     async def oauth_paste(platform: str, request: Request):

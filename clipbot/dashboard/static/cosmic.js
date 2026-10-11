@@ -4,13 +4,13 @@
   const shell=document.querySelector('.shell'), originalShow=show;
   let current=document.querySelector('section.view.active')?.id.replace('view-','')||'clips', transition=null;
   function finish(){if(transition){transition.cancel();transition=null;}}
-  function immediate(view){originalShow(view);current=PAGES[view]?view:'clips';document.body.classList.toggle('story-mode',current==='stories');if(current==='stories'&&window.loadStories)window.loadStories();document.querySelector(`nav [data-view="${current}"]`)?.scrollIntoView({block:'nearest',inline:'nearest'});}
+  function immediate(view){originalShow(view);current=PAGES[view]?view:'clips';}
   function portal(view){
     finish();
     const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if(reduced||!shell.animate){immediate(view);shell.animate?.([{opacity:.6},{opacity:1}],{duration:100,easing:'ease-out'});return;}
+    if(reduced||!shell.animate){view();return;}
     const overlay=document.createElement('div');overlay.className='story-portal';overlay.setAttribute('aria-hidden','true');const canvas=document.createElement('canvas');overlay.append(canvas);document.body.append(overlay);
-    const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();immediate(view);return;}
+    const ctx=canvas.getContext('2d');if(!ctx){overlay.remove();view();return;}
     const w=innerWidth,h=innerHeight,dpr=Math.min(devicePixelRatio||1,1.5);canvas.width=w*dpr;canvas.height=h*dpr;ctx.scale(dpr,dpr);
     const x=w/2,y=h/2+scrollY;document.body.style.setProperty('--portal-x',`${x}px`);document.body.style.setProperty('--portal-y',`${y}px`);document.body.classList.add('story-portal-active');
     let raf=0, cancelled=false, swapped=false, first=null, second=null;
@@ -32,11 +32,14 @@
     const cleanup=()=>{if(cancelled)return;cancelled=true;cancelAnimationFrame(raf);first?.cancel();second?.cancel();overlay.remove();document.body.classList.remove('story-portal-active');shell.style.removeProperty('transform');shell.style.removeProperty('opacity');shell.style.removeProperty('filter');if(transition?.cancel===cleanup)transition=null;};
     transition={cancel:cleanup};raf=requestAnimationFrame(draw);
     first=shell.animate([{transform:'perspective(1100px) scale(1) rotate(0deg)',opacity:1},{transform:'perspective(1100px) scale(.56,.45) rotate(-8deg)',opacity:.92,offset:.48},{transform:'perspective(1100px) scale(.012,.002) rotate(-58deg)',opacity:0}],{duration:590,easing:'cubic-bezier(.4,0,.82,.45)',fill:'forwards'});
-    first.finished.then(()=>{if(cancelled)return;swapped=true;immediate(view);first.cancel();second=shell.animate([{transform:'perspective(1100px) scale(.012,.002) rotate(48deg)',opacity:0},{transform:'perspective(1100px) scale(.72,.64) rotate(5deg)',opacity:.85,offset:.5},{transform:'perspective(1100px) scale(1) rotate(0deg)',opacity:1}],{duration:650,easing:'cubic-bezier(.16,1,.3,1)',fill:'forwards'});return second.finished;}).then(()=>{if(cancelled)return;cleanup();document.getElementById('pageTitle')?.setAttribute('tabindex','-1');document.getElementById('pageTitle')?.focus({preventScroll:true});}).catch(()=>{if(!cancelled){if(!swapped)immediate(view);cleanup();}});
+    first.finished.then(()=>{if(cancelled)return;swapped=true;view();first.cancel();second=shell.animate([{transform:'perspective(1100px) scale(.012,.002) rotate(48deg)',opacity:0},{transform:'perspective(1100px) scale(.72,.64) rotate(5deg)',opacity:.85,offset:.5},{transform:'perspective(1100px) scale(1) rotate(0deg)',opacity:1}],{duration:650,easing:'cubic-bezier(.16,1,.3,1)',fill:'forwards'});return second.finished;}).then(()=>{if(cancelled)return;cleanup();document.getElementById('pageTitle')?.setAttribute('tabindex','-1');document.getElementById('pageTitle')?.focus({preventScroll:true});}).catch(()=>{if(!cancelled){if(!swapped)view();cleanup();}});
   }
-  show=function(view){view=PAGES[view]?view:'clips';if(view===current&&!transition)return;const cross=(current==='stories')!==(view==='stories');if(cross)portal(view);else{finish();immediate(view);}};
+  show=function(view){finish();immediate(view);};
+  window.businessPortal=portal;
+  window.businessShow=immediate;
+  window.finishBusinessPortal=finish;
   const skip=document.createElement('a');skip.className='cosmic-skip';skip.href='#workspace';skip.textContent='Skip to workspace';skip.addEventListener('click',e=>{e.preventDefault();document.getElementById('workspace').focus();});document.body.prepend(skip);
-  const subtitle=document.querySelector('.brand span');if(subtitle)subtitle.textContent='Independent media observatory';
+  const subtitle=document.querySelector('.brand span');if(subtitle)subtitle.textContent='Business dashboard';
   immediate(current);
   window.addEventListener('pagehide',finish);window.addEventListener('resize',()=>{if(transition){finish();immediate(current);}});
 })();
