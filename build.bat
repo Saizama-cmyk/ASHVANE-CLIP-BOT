@@ -13,6 +13,7 @@ if not exist "%PY%" (
 echo [1/3] Generating release metadata and app icon...
 "%PY%" installer\make_assets.py || goto :fail
 "%PY%" -m clipbot.icon assets || goto :fail
+"%PY%" scripts\fingerprint_dashboard_assets.py || goto :fail
 
 rem Whisper on the GPU needs NVIDIA's cuBLAS/cuDNN DLLs (pip: nvidia-cublas-cu12 nvidia-cudnn-cu12).
 rem Bundle them when installed; clipbot.transcribe adds <app>\nvidia\*\bin to the DLL path.
