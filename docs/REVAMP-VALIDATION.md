@@ -1,6 +1,20 @@
-# Revamp validation — October 3, 2026
+# Revamp validation — October 11, 2026
 
 The local overhaul has a runnable Windows build and rebuilt phone screens. The checks below establish what was exercised; they do not establish earnings, platform monetization eligibility or human-level editorial judgment.
+
+## October 11: published phone release and private editorial notes
+
+The final source suite passed **495 tests**, with one skipped, in 106.25 seconds. The changes were pushed to the canonical `Saizama-cmyk/ASHVANE-CLIP-BOT` repository. Native [phone run 38143306146](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/actions/runs/38143306146) succeeded and published **1.0.21** from `5a7f12c`. All seven downloaded release assets passed checksum and metadata checks. The actual IPA is ARM64 iPhoneOS with its release JavaScript; the APK has the expected version/package and preserves the prior signing certificate. Both contain the new Desk and Research screens. The raw update feed and stable `phone-latest` downloads match the release. Installation on a physical phone still requires its sideloader or Android installer; device playback and biometrics were not tested.
+
+The final Windows runtime passed all ten isolated startup/API/asset checks and replaced the installed app. Its executable SHA-256 is `A511EE540B9E729157F08870B80D6AB7A057F4CDCF482709DA60C856899C119A`; the previous runtime is backed up under `artifacts/installed-ashvane-backup-20261011-public`. Authenticated checks confirmed normal-profile startup, the scheduled-publishing control, exact desktop JavaScript, and active Twitch discovery. Phone remote is enabled using the existing profile password; actual Wi-Fi, Tailscale IP and Tailscale HTTPS probes all answered.
+
+Public writing now receives the selected cut's speech and its own video frames, never private reviewer reasons, ratings, suggested captions, evidence prose, visual assessments or discovery chat. Public metadata, comments and hooks are checked before rendering/uploading; missing or legacy copy waits instead of falling back to a judge caption. Custom templates and the final YouTube suffix are checked too. Tests include rejection controls, valid source dialogue and passing reviewer quotations, legacy databases, Studio and disabled-review paths. Analytics records the actual composed upload metadata, including YouTube truncation and suffix, rather than private judge titles.
+
+Twenty public streamer Shorts were analyzed through downloaded chronological frames and captions. The [study](STREAMER-CLIP-STUDY.md) documents sources, view snapshots, observed arcs and limitations. Useful formats informed the writer prompt; the [YouTube guide](YOUTUBE-PUBLISHING.md) records official title/description/hashtag guidance. This is bounded qualitative research, not proof of global trends or revenue effects. The running trend scout also refreshed its configured sources after installation.
+
+YouTube again confirmed `invalid_grant` for the saved login. That revoked local token was backed up and removed so the app correctly requests **Settings → Accounts → YouTube → Connect** instead of presenting it as usable. Google displayed a sign-in form; the user must complete that login. No video was uploaded during verification. Automatic publishing therefore remains dependent on renewed account authorization and the existing review gates.
+
+Evidence: `artifacts/final-public-phone-tests.log`, `public-copy-packaged-verification.log`, `public-update-install.log`, `phone-remote-installed-verification.json`, `youtube-login-verification.json`, and `phone/.expo/released-1.0.21/release-verification.json`. Earlier sections below describe historical checks and are superseded where the final state above differs.
 
 ## October 11: desktop editor and Shorts direction
 

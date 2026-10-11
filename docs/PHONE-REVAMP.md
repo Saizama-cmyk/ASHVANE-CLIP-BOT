@@ -1,5 +1,7 @@
 # Phone content desk
 
+**Released October 11: version 1.0.21.** The [native build](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/actions/runs/38143306146) succeeded. The actual [iPhone IPA](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/download/phone-latest/Ashvane.ipa), [Android APK](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/download/phone-latest/Ashvane.apk), update feeds, package reports and checksums were downloaded and verified. Both contain the new Desk and Research screens; Android preserves the previous signing certificate. The update feed now points to 1.0.21. The installed PC answers through Wi-Fi and Tailscale with the existing profile login. The unsigned IPA still needs the user's sideloader; installation and physical-device behavior have not been verified.
+
 The phone opens on **Desk → Today**. It shows the PC's actual stream monitors, active pipeline jobs, scheduled/posted/rejected stage counts with their time window, recent cuts, publishing connections, and real post results. Live, Clips, Studio, Settings, and Log remain within Desk. **Research** is a primary destination; Assistant and Code are under **Tools**.
 
 Research uses the authenticated `/api/research` contract in `REVAMP.md`: refresh public sources, choose linked evidence, request an original topic draft, inspect each agent's current state, read scripts and separate platform copy, open HTTP(S) source links, and share the text using the native share sheet. Deletion requires a confirmation. It never labels text as a produced video or auto-publishes research drafts. Source freshness and failures remain visible with previous useful data.
@@ -49,4 +51,4 @@ Pushing this source to `main` automatically starts the phone workflow. A manual 
 - `https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/download/phone-latest/sideload.json`
 - `https://raw.githubusercontent.com/Saizama-cmyk/ASHVANE-CLIP-BOT/main/docs/sideload.json`
 
-The new native installation files are confirmed only after that run finishes and the released files pass inspection. Installing the unsigned IPA still requires the user's existing sideloader and Apple ID; no signing credentials are needed by this build workflow. Physical-device playback, share sheets and biometric prompts remain unverified here.
+The native installation files have now passed inspection, as recorded in the release note above. Installing the unsigned IPA still requires the user's existing sideloader and Apple ID; no signing credentials are needed by this build workflow. Physical-device playback, share sheets and biometric prompts remain unverified here.
