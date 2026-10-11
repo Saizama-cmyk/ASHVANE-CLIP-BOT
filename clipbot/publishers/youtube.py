@@ -19,6 +19,15 @@ AGE_RESTRICTION_HOLD = ("YouTube's upload API cannot set an 18+ age restriction.
                         "turn off the manual 18+ hold in Settings → Posting for ordinary uploads.")
 
 
+def upload_metadata(post: PostText, cfg) -> dict:
+    """One representation for upload, privacy validation and the analytics snapshot."""
+    suffix = cfg.shorts_suffix
+    return {"snippet": {"title": (post.title[:TITLE_MAX - len(suffix)] + suffix).strip(),
+                        "description": post.caption[:DESCRIPTION_MAX],
+                        "tags": post.hashtags, "categoryId": cfg.category_id},
+            "status": {"privacyStatus": cfg.privacy, "selfDeclaredMadeForKids": False}}
+
+
 class YouTubePublisher(Publisher):
     name = "youtube"
 
@@ -41,11 +50,7 @@ class YouTubePublisher(Publisher):
         if cfg.age_restrict:
             raise PublishError(AGE_RESTRICTION_HOLD)
         token = await self.oauth.access_token("youtube")
-        suffix = cfg.shorts_suffix
-        title = (post.title[:TITLE_MAX - len(suffix)] + suffix).strip()
-        meta = {"snippet": {"title": title, "description": post.caption[:DESCRIPTION_MAX],
-                            "tags": post.hashtags, "categoryId": cfg.category_id},
-                "status": {"privacyStatus": cfg.privacy, "selfDeclaredMadeForKids": False}}
+        meta = upload_metadata(post, cfg)
         data = await read_bytes(video)
         r = await self.http.post(
             UPLOAD_URL, params={"uploadType": "resumable", "part": "snippet,status"},

@@ -10,7 +10,7 @@ from clipbot.copywriter import Copywriter
 from clipbot.db import Store
 from clipbot.pipeline import Pipeline
 from clipbot.public_copy import UnsafePublicCopy, check_public_text
-from clipbot.scheduler import Scheduler, compose_post
+from clipbot.scheduler import Scheduler, compose_post, public_snapshot
 from tests.test_scheduler import FakePub, cand, enabled, pubs
 
 
@@ -105,6 +105,20 @@ def test_visible_hashtags_are_separate_from_youtube_metadata_tags(tmp_path):
     post = compose_post(clip, settings, 'youtube')
     assert '#CounterStrike' in post.caption and '#xQc' not in post.caption
     assert post.hashtags == ['xQc', 'xqc spelling']
+
+
+def test_youtube_suffix_is_guarded_and_snapshot_matches_api_limits(tmp_path):
+    clip = cand(tmp_path)
+    settings = Settings()
+    settings.posting.youtube.shorts_suffix = ' Judge confidence: 0.7'
+    with pytest.raises(UnsafePublicCopy):
+        compose_post(clip, settings, 'youtube')
+    settings.posting.youtube.shorts_suffix = ' #Example'
+    clip.post_copy['youtube'].update(title='X' * 100, description='Y' * 5000)
+    post = compose_post(clip, settings, 'youtube')
+    sent = public_snapshot(post, settings, 'youtube')
+    assert len(sent['title']) == 100 and sent['title'].endswith(' #Example')
+    assert len(sent['description']) == 5000
 
 
 def test_studio_and_final_gate_hold_private_hook_even_with_review_disabled(tmp_path):

@@ -24,6 +24,7 @@ from .models import Candidate, Platform, Stage
 from .safety import Filter
 from .publishers import PLATFORMS, PostText, Publisher
 from .publishers.base import PublishResult
+from .publishers.youtube import upload_metadata
 from .public_copy import check_public_text, require_public_copy, UnsafePublicCopy
 
 logger = logging.getLogger("clipbot.scheduler")
@@ -72,8 +73,15 @@ def compose_post(c: Candidate, settings: Settings, target: str = "") -> PostText
     caption = re.sub(r"\n{3,}", "\n\n", caption)
     flt = Filter(settings)
     post = PostText(title=flt.mask(title), caption=flt.mask(caption), hashtags=flt.clean(tags))
-    check_public_text(c, {'title': post.title, 'description': post.caption, 'tags': post.hashtags}, settings)
+    check_public_text(c, public_snapshot(post, settings, target), settings)
     return post
+
+
+def public_snapshot(post: PostText, settings: Settings, target: str) -> dict:
+    if target == 'youtube':
+        snippet = upload_metadata(post, settings.posting.youtube)['snippet']
+        return {key: snippet[key] for key in ('title', 'description', 'tags')}
+    return {'title': post.title, 'description': post.caption, 'tags': post.hashtags}
 
 
 def in_posting_window(settings: Settings, now: datetime) -> bool:
@@ -242,8 +250,7 @@ class Scheduler:
         result = await self.publishers[name].publish(Path(c.final_path), post)
         await asyncio.to_thread(self.store.record_post, c.id, name, result.remote_id, result.url,
                                 "ok" if result.ok else "failed", result.error,
-                                public_text={'title': post.title, 'description': post.caption,
-                                             'tags': post.hashtags})
+                                public_text=public_snapshot(post, self.settings, name))
         attempts = sum(1 for p in await asyncio.to_thread(self.store.posts_for_candidate, c.id)
                        if p["platform"] == name)
         async with self._cand_lock:
