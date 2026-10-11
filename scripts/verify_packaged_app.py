@@ -66,6 +66,11 @@ def main():
                                     json={"name": "Packaged preview", "password": "packaged-preview-2026"})
                 login.raise_for_status()
                 report["checks"]["sign_in"] = True
+                reference_options = client.get("/api/music/references/options")
+                reference_options.raise_for_status()
+                report["checks"]["reference_upload_limits"] = reference_options.json()["max_upload_bytes"] == settings.music.reference_upload_max_bytes
+                stopped_upload = client.post("/api/music/references/upload", content=b"verification", headers={"X-ClipBot": "1", "X-File-Name": "verification.wav"})
+                report["checks"]["reference_upload_stopped_gate"] = stopped_upload.status_code == 409
                 # Exercise the compatibility form before the new profile panel
                 # initializes anything. This uses isolated, stopped test data.
                 legacy_account = client.put("/api/stories/accounts", headers={"X-ClipBot": "1"},

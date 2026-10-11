@@ -78,6 +78,19 @@ a native export, measures it and optionally obtains a tentative audio observatio
 Saved revisions are private auditions; no music publishing or automatic release
 approval is implemented. Changing tempo alone is not audio time stretching.
 
+The **Create** desk on Windows and phone now owns reference recordings and lyrics
+input. Drop/choose supported audio or video, select a saved reference, audition its
+preview and write what to borrow. Bounded authenticated uploads spool temporarily
+before the local worker validates and analyzes the recording. Saved observations
+and creator notes inform generated lyrics and musical direction; original supplied
+lyrics are preserved. Basic analysis estimates tempo; optional **Listen & describe**
+uses the installed local listening model. Style hints are appended only on request.
+References do not directly condition YuE2 audio, clone a voice or guarantee a match.
+Import UTF-8 TXT/LRC lyrics on the same desk; replacement requires confirmation.
+LocalSongLab remains an internal engine; opening its separate interface is unnecessary
+for this workflow. Seven live adapter/reference-worker checks passed on 11 October
+2026, including real upload, analysis, retained listing and byte-range audio preview.
+
 After the owner completed REAPER startup setup on 11 October 2026, a native test
 successfully changed a test track to -10 dB and pan 0.2, then exported a one-second
 48 kHz stereo PCM24 WAV. Read-back confirmed the edits; decoded audio was non-silent

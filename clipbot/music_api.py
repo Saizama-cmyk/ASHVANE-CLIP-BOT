@@ -10,21 +10,25 @@ import json
 import logging
 import re
 import sys
+import tempfile
 from http import HTTPStatus
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import JSONResponse, StreamingResponse
 
 from .util import spawn, terminate
+from .sweeper import safe_cleanup_path
 
 logger = logging.getLogger("clipbot.music_api")
 IDENT = r"[a-zA-Z0-9_-]+"
 UUID = r"[0-9a-f-]{36}"
-READ = re.compile(rf"(?:status|songs(?:/{IDENT})?|jobs/{IDENT}|renders|voices|process/jobs/{IDENT}|rap/capabilities|rap/jobs/{IDENT}|reaper/(?:status|projects(?:/{UUID})?|listening/{UUID}))\Z")
-WRITE = re.compile(rf"(?:create|process|jobs/{IDENT}/cancel|process/jobs/{IDENT}/cancel|rap/(?:draft|describe)|reaper/projects(?:/{UUID}/(?:open|export|edit|validate|cancel|revisions/{UUID}/listen))?|reaper/listening/{UUID}/cancel)\Z")
-MEDIA = re.compile(rf"/(?:media/{IDENT}|download/{IDENT}|renders/(?:media|download)/{IDENT}|reaper/(?:media|download)/{UUID}/{UUID})\Z")
+REFERENCE_UUID = r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"
+READ = re.compile(rf"(?:status|songs(?:/{IDENT})?|jobs/{IDENT}|renders|voices|process/jobs/{IDENT}|references(?:/{REFERENCE_UUID})?|rap/capabilities|rap/jobs/{IDENT}|reaper/(?:status|projects(?:/{UUID})?|listening/{UUID}))\Z")
+WRITE = re.compile(rf"(?:create|process|jobs/{IDENT}/cancel|process/jobs/{IDENT}/cancel|references/(?:describe|{REFERENCE_UUID}/(?:analyze|cancel))|rap/(?:draft|describe)|reaper/projects(?:/{UUID}/(?:open|export|edit|validate|cancel|revisions/{UUID}/listen))?|reaper/listening/{UUID}/cancel)\Z")
+MEDIA = re.compile(rf"/(?:media/{IDENT}|download/{IDENT}|renders/(?:media|download)/{IDENT}|references/media/{REFERENCE_UUID}|reaper/(?:media|download)/{UUID}/{UUID})\Z")
 
 
 class MusicBridge:
@@ -35,6 +39,7 @@ class MusicBridge:
         self.producer = None
         self.message = "Stopped"
         self.started = False
+        self.reference_uploads = asyncio.Semaphore(ctx.settings.music.reference_upload_slots)
 
     @property
     def cfg(self):
@@ -76,6 +81,105 @@ class MusicBridge:
                           "" if key.endswith("_url") and isinstance(item, str) and item.startswith(("http:", "https:", "file:")) else self.rewrite(item))
                     for key, item in value.items()}
         return value
+
+    async def upload_reference(self, request):
+        """Bound and spool the incoming body before forwarding to the fixed service."""
+        require_running(self.ctx)
+        cfg = self.cfg
+        encoded = request.headers.get("x-file-name", "")
+        if re.search(r"%(?![0-9a-fA-F]{2})", encoded):
+            raise HTTPException(422, "Invalid reference filename")
+        try:
+            name = unquote(encoded, errors="strict")
+        except UnicodeError as exc:
+            raise HTTPException(422, "Invalid reference filename") from exc
+        if (not name or len(name) > cfg.reference_filename_max_chars or name in {".", ".."}
+                or any(char in name for char in ("/", "\\", ":", "\x00", "\r", "\n"))):
+            raise HTTPException(422, "Choose a reference with a simple filename")
+        if Path(name).suffix.lower() not in cfg.reference_extensions:
+            raise HTTPException(415, "Choose a supported audio or video reference")
+        length = request.headers.get("content-length")
+        if length is not None:
+            if not length.isdecimal():
+                raise HTTPException(422, "Invalid reference size")
+            if int(length) > cfg.reference_upload_max_bytes:
+                raise HTTPException(413, "Music reference exceeds the configured size limit")
+        root = (getattr(self.ctx, "paths", None) or self.ctx.pipeline.paths).work / "music-reference-uploads"
+        if not safe_cleanup_path(root):
+            raise HTTPException(503, "Music reference temporary storage is unavailable")
+        async with asyncio.timeout(cfg.reference_upload_timeout_s), self.reference_uploads:
+            await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
+            # The temporary file is deleted even after a disconnect or rejected upload.
+            with tempfile.TemporaryFile(dir=root) as file:
+                size = 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > cfg.reference_upload_max_bytes:
+                        raise HTTPException(413, "Music reference exceeds the configured size limit")
+                    write = asyncio.create_task(asyncio.to_thread(file.write, chunk))
+                    try:
+                        await asyncio.shield(write)
+                    except asyncio.CancelledError:
+                        await asyncio.gather(write, return_exceptions=True)
+                        raise
+                if not size or (length is not None and size != int(length)):
+                    raise HTTPException(422, "Music reference is empty or its transfer was incomplete")
+                require_running(self.ctx)
+                await asyncio.to_thread(file.seek, 0)
+
+                async def body():
+                    while True:
+                        read = asyncio.create_task(asyncio.to_thread(file.read, cfg.chunk_bytes))
+                        try:
+                            chunk = await asyncio.shield(read)
+                        except asyncio.CancelledError:
+                            await asyncio.gather(read, return_exceptions=True)
+                            raise
+                        if not chunk:
+                            break
+                        yield chunk
+
+                try:
+                    async with httpx.AsyncClient(trust_env=False, follow_redirects=False,
+                                                 timeout=cfg.reference_upload_timeout_s) as client:
+                        headers = {"X-Local-Song-Lab": "1", "X-File-Name": quote(name, safe=""),
+                                   "Content-Type": "application/octet-stream", "Content-Length": str(size)}
+                        async with client.stream("POST", self.base + "/api/references/upload", headers=headers, content=body()) as response:
+                            raw = bytearray()
+                            async for chunk in response.aiter_bytes(cfg.chunk_bytes):
+                                raw.extend(chunk)
+                                if len(raw) > cfg.response_max_bytes:
+                                    raise HTTPException(502, "Music reference response exceeded its limit")
+                            try:
+                                result = json.loads(raw)
+                            except (ValueError, UnicodeError) as exc:
+                                raise HTTPException(502, "Music reference service returned an invalid response") from exc
+                            if not isinstance(result, dict):
+                                raise HTTPException(502, "Music reference service returned an invalid response")
+                            if response.status_code >= 400:
+                                raise HTTPException(response.status_code, str(result.get("error", "Music reference could not be saved")))
+                            return self.rewrite(result)
+                except httpx.HTTPError as exc:
+                    raise HTTPException(503, "Music reference transfer failed. Check saved references before retrying.") from exc
+
+    async def reference_context(self, data):
+        """Resolve reference observations before spending local model/generation time."""
+        from .creative_tools import text
+        ident = data.get("reference_id", "")
+        notes = text(data.get("reference_notes", ""), "Reference direction", self.cfg.reference_notes_max_chars)
+        if not isinstance(ident, str) or (ident and not re.fullmatch(REFERENCE_UUID, ident)):
+            raise HTTPException(422, "Select a saved music reference")
+        if not ident:
+            return {"what_to_borrow": notes} if notes else {}
+        record = await self.call("GET", "/api/references/" + ident)
+        if not isinstance(record, dict) or record.get("id") != ident:
+            raise HTTPException(502, "Music reference service returned the wrong reference")
+        if record.get("status") != "completed":
+            raise HTTPException(409, "Wait for this reference to finish analyzing, or select no reference")
+        return {"what_to_borrow": notes, "tempo_estimate_bpm": record.get("tempo_bpm"),
+                "analysis_note": record.get("analysis_note", ""),
+                "description": record.get("caption", ""), "style_hint": record.get("style_hint", ""),
+                "basis": "Saved local reference observations; tempo may be half/double time. A description is available only if a local listening job completed. Never copy source lyrics or assume voice cloning."}
 
     async def start(self):
         async with self.lock:
@@ -186,11 +290,30 @@ def install_music_routes(app, ctx):
     from .music_producer import MusicProducer
     service.producer = MusicProducer(ctx, service)
 
+    @router.get("/references/options")
+    async def reference_options():
+        return {"max_upload_bytes": service.cfg.reference_upload_max_bytes,
+                "extensions": service.cfg.reference_extensions,
+                "max_notes_chars": service.cfg.reference_notes_max_chars,
+                "max_lyrics_file_bytes": service.cfg.lyrics_file_max_bytes,
+                "poll_ms": service.cfg.poll_s * 1000}
+
+    @router.post("/references/upload", status_code=202)
+    async def upload_reference(request: Request):
+        try:
+            return await service.upload_reference(request)
+        except TimeoutError as exc:
+            raise HTTPException(408, "Reference transfer timed out. Check saved references before retrying.") from exc
+
     @router.post("/lyrics")
     async def lyrics(request: Request):
         from .creative_tools import creative_tools
         require_running(ctx)
-        return await creative_tools(ctx).lyrics(await read_body(request, ctx.settings.creative.request_max_bytes))
+        data = await read_body(request, ctx.settings.creative.request_max_bytes)
+        reference = await service.reference_context(data)
+        data.pop("reference_id", None)
+        data.pop("reference_notes", None)
+        return await creative_tools(ctx).lyrics(data, **({"reference": reference} if reference else {}))
 
     @router.post("/produce", status_code=202)
     async def produce(request: Request):
@@ -246,6 +369,7 @@ def install_music_routes(app, ctx):
             data = await read_body(request, service.cfg.request_max_bytes)
             if path == "create":
                 from .creative_tools import creative_tools, text
+                reference = await service.reference_context(data)
                 mode = data.pop("lyrics_mode", "given")
                 direction = data.pop("lyrics_direction", "")
                 if mode not in {"given", "generated"}:
@@ -255,7 +379,8 @@ def install_music_routes(app, ctx):
                 if (mode == "generated" and not original) or not style:
                     generated = await creative_tools(ctx).lyrics({"style": style, "direction": direction,
                         "duration_seconds": data.get("duration_seconds", ctx.settings.creative.music_duration_s),
-                        "mode": data.get("mode", "general") if mode == "generated" else "instrumental"})
+                        "mode": data.get("mode", "general") if mode == "generated" else "instrumental"},
+                        **({"reference": reference} if reference else {}))
                     if mode == "generated" and not original:
                         data["lyrics"] = generated["lyrics"]
                     if not style:
@@ -263,7 +388,7 @@ def install_music_routes(app, ctx):
                     if not data.get("title", "").strip():
                         data["title"] = generated["title"]
             result = await service.call("POST", "/api/" + path, data)
-            return JSONResponse(service.rewrite(result), status_code=HTTPStatus.ACCEPTED if path.endswith(("/edit", "/export", "/listen")) or path in {"create", "process"} else HTTPStatus.OK)
+            return JSONResponse(service.rewrite(result), status_code=HTTPStatus.ACCEPTED if path.endswith(("/edit", "/export", "/listen", "/analyze", "/describe")) or path in {"create", "process"} else HTTPStatus.OK)
         raise HTTPException(404, "Unknown music operation")
 
     app.include_router(router)

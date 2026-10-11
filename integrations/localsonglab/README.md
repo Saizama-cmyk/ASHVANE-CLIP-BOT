@@ -57,6 +57,14 @@ owner's existing installations.
 Every POST uses existing LocalSongLab Host/Origin checks, JSON content type and
 `X-Local-Song-Lab: 1`. There are no arbitrary command/path/Lua inputs.
 
+The reference-upload exception uses raw binary content and `X-File-Name` with an
+encoded filename. Ashvane bounds, authenticates and spools uploads before forwarding
+to this fixed loopback route; the existing reference worker checks containers,
+storage limits and preview output. Desktop and phone use Ashvane's `/api/music`
+reference list/upload/analyze/cancel/describe/media routes, not the separate studio
+interface. TXT/LRC lyrics are imported locally into editable text. Saved reference
+observations and creator notes inform local lyric writing and take direction.
+
 - `GET /api/runtime`, `POST /api/runtime {enabled: boolean}`.
 - `GET /api/reaper/status`: native health, defaults/options/limits, projects and
   `dry_vocals_available`/`dry_vocal_renders`.

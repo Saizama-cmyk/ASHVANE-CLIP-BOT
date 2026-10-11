@@ -120,7 +120,7 @@ class CreativeTools:
         return {"ideas": ideas, "account_profile_id": memory["account_profile_id"],
                 "source_basis": "Original local ideas informed by saved production guidance and your creative memory; no live trend research was performed."}
 
-    async def lyrics(self, data):
+    async def lyrics(self, data, *, reference=None):
         from .creative_memory import creative_memory
         cfg = self.ctx.settings.creative
         if set(data) - {"style", "direction", "duration_seconds", "mode"}:
@@ -138,7 +138,7 @@ class CreativeTools:
             raise HTTPException(409, memory["error"])
         result = await self.chat("music", "Write original singable lyrics for the requested musical direction, mood, genre, duration and vocal role. If no subject or style is supplied, choose a specific coherent emotional idea and purposeful musical style. Use concrete images, natural stresses, purposeful repetition and a memorable hook; avoid filler rhymes, contradictory point of view, generic AI imagery and unrelated verse/chorus themes. Fit the requested duration instead of producing a full long song for a short take. Use [Verse], [Chorus], [Bridge] only as useful section markers. Return JSON {title,style,lyrics}. style is a compact production direction specifying tempo/feel, arrangement and mood. For instrumental mode lyrics MUST be empty. No analysis, production notes or self-evaluation inside lyrics. Do not imitate an existing performer's voice or copy known lyrics.",
                                  {"style": style, "direction": direction, "mode": mode, "target_seconds": duration,
-                                  "saved_creative_memory": memory})
+                                  "saved_creative_memory": memory, "reference_observations": reference or {}})
         return {"title": text(result.get("title", ""), "Take title", cfg.music_title_max_chars),
                 "account_profile_id": memory["account_profile_id"],
                 "style": style or text(result.get("style"), "Musical style", cfg.music_style_max_chars, False),
