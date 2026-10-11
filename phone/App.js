@@ -1,7 +1,8 @@
 /**
- * Ashvane on the phone: three places, one tab bar.
+ * Ashvane on the phone: four places, one tab bar.
  *
  *   Desk       the clip desk on your PC, over your own Wi-Fi or Tailscale
+ *   Stories    original narrated horror production and its own publishing controls
  *   Research   original scripts and posts grounded in linked sources
  *   Tools      the private Assistant and Code workspace, available on demand
  *
@@ -9,7 +10,7 @@
  * keychain; the PC keeps that sign-in for weeks. Face ID / fingerprint guards the app itself.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Image, Linking, Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, AppState, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 import { LockScreen, useLock } from "./Lock";
@@ -20,6 +21,8 @@ import Assistant from "./Assistant";
 import Code from "./code/Code";
 import Desk from "./Desk";
 import Research, { useResearch } from "./Research";
+import Stories, { useStories } from "./Stories";
+import { PortalOverlay, usePortal } from "./Portal";
 import { Clips, Live, Log, SettingsTab, SignIn, Studio } from "./Remote";
 import { Button, C, Card, Icon, IconButton, Pill, t } from "./theme";
 import { isNewerVersion, releaseVersion } from "./updates";
@@ -27,7 +30,7 @@ import { isNewerVersion, releaseVersion } from "./updates";
 const POLL_MS = 6000;
 const RELEASE_API = "https://api.github.com/repos/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tags/phone-latest";
 const RELEASE_PAGE = "https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-latest";
-const TABS = [["desk", "Desk", "albums"], ["research", "Research", "search"], ["tools", "Tools", "grid"]];
+const TABS = [["desk", "Desk", "albums"], ["stories", "Stories", "moon"], ["research", "Research", "search"], ["tools", "Tools", "grid"]];
 const DESK_TABS = [["today", "Today"], ["live", "Live"], ["clips", "Clips"], ["studio", "Studio"], ["settings", "Settings"], ["log", "Log"]];
 
 /* The same releases the sideloaders read. AltStore updates by itself once its source is added;
@@ -57,7 +60,22 @@ function Main() {
   const [token, setToken] = useState(null);
   const [ready, setReady] = useState(false);
   const [state, setState] = useState({});
-  const [tab, setTab] = useState("desk");
+  const portal = usePortal("desk");
+  const { tab, navigate } = portal;
+  const storyEdits = useRef(false);
+  const onStoryDirty = useCallback(value => { storyEdits.current = value; }, []);
+  const setTab = useCallback(next => {
+    if (tab === "stories" && next !== "stories" && storyEdits.current) {
+      if (Platform.OS === "web") {
+        if (globalThis.confirm("Leave without saving your story edits?")) { storyEdits.current = false; navigate(next); }
+        return;
+      }
+      Alert.alert("Leave without saving?", "Your manuscript or scene edits have not been saved to the PC.", [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard edits", style: "destructive", onPress: () => { storyEdits.current = false; navigate(next); } },
+      ]);
+    } else navigate(next);
+  }, [tab, navigate]);
   const [deskTab, setDeskTab] = useState("today");
   const [offline, setOffline] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
@@ -114,9 +132,10 @@ function Main() {
   }, [host, token, signOut, currentSession]);
 
   const research = useResearch({ host, token, active: foreground && !lock.locked && ["desk", "research"].includes(tab), onUnauthorized: signOut });
+  const stories = useStories({ host, token, active: foreground && !lock.locked && tab === "stories", onUnauthorized: signOut });
 
   useEffect(() => {
-    if (!host || !token || !foreground || lock.locked || !["desk", "research"].includes(tab)) return undefined;
+    if (!host || !token || !foreground || lock.locked || !["desk", "stories", "research"].includes(tab)) return undefined;
     let alive = true, timer;
     const tick = async () => { await poll(); if (alive) timer = setTimeout(tick, POLL_MS); };
     tick();
@@ -148,12 +167,13 @@ function Main() {
 
   return (
     <SafeAreaProvider>
+      <Animated.View style={portal.shellStyle}>
       <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={["top"]}>
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12 }}>
           <Image source={require("./assets/icon.png")} resizeMode="contain" style={{ width: 28, height: 28 }} />
           <Text style={[t.title, { flex: 1 }]}>{title}</Text>
-          {["desk", "research"].includes(tab) && <Pill label={connection[0]} tone={connection[1]} />}
+          {["desk", "stories", "research"].includes(tab) && <Pill label={connection[0]} tone={connection[1]} />}
           {tab === "desk" && linked && <IconButton icon="log-out-outline" label="Sign out" onPress={() => signOut(false)} />}
         </View>
 
@@ -161,7 +181,7 @@ function Main() {
         {!!update && <Banner tone="live" text={`Version ${update} is out · tap to get it`} onPress={() => Linking.openURL(RELEASE_PAGE)} />}
 
         <View style={{ flex: 1 }}>
-          {["desk", "research"].includes(tab) && (!linked ? (
+          {["desk", "stories", "research"].includes(tab) && (!linked ? (
             <>
               {signedOut && <Banner tone="plain" text="The PC ended the session. Sign in again below." />}
               <SignIn onDone={(h, tk) => { setHost(h); setToken(tk); setSignedOut(false); setOffline(false); }} />
@@ -169,6 +189,7 @@ function Main() {
           ) : (
             <>
               {offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
+              {tab === "stories" && <Stories studio={stories} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} />}
               {tab === "desk" && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 56 }}
                 contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}>
                 {DESK_TABS.map(([key, label]) => {
@@ -181,7 +202,7 @@ function Main() {
                     </Pressable>);
                 })}
               </ScrollView>}
-              <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
+              {tab !== "stories" && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
                 refreshControl={<RefreshControl tintColor={C.ink2} refreshing={refreshing}
                   onRefresh={async () => { setRefreshing(true); try { await Promise.all([poll(), research.load()]); setRefreshVersion(v => v + 1); } finally { setRefreshing(false); } }} />}>
                 {tab === "research" ? <Research research={research} /> : <>
@@ -192,7 +213,7 @@ function Main() {
                   {deskTab === "settings" && <SettingsTab key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
                   {deskTab === "log" && <Log key={refreshVersion} host={host} token={token} state={state} onError={onError} />}
                 </>}
-              </ScrollView>
+              </ScrollView>}
             </>))}
           {tab === "chat" && <Assistant host={host} token={token} m={m} onError={onError} />}
           {tab === "code" && <Code m={m} />}
@@ -204,7 +225,7 @@ function Main() {
             {TABS.map(([key, label, icon]) => {
               const on = key === tab || (key === "tools" && ["chat", "code"].includes(tab));
               return (
-                <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
+                <Pressable key={key} onPress={() => setTab(key)} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: on }}
                   style={{ flex: 1, alignItems: "center", paddingVertical: 6, gap: 3 }}>
                   <View style={{ width: 22, height: 3, borderRadius: 2, marginBottom: 3, backgroundColor: on ? C.ember : "transparent" }} />
                   <Icon name={on ? icon : `${icon}-outline`} size={22} color={on ? C.ink : C.ink3} />
@@ -214,6 +235,8 @@ function Main() {
           </View>
         </SafeAreaView>
       </SafeAreaView>
+      </Animated.View>
+      <PortalOverlay portal={portal} />
     </SafeAreaProvider>);
 }
 

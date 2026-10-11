@@ -28,8 +28,11 @@ export function baseUrl(raw) {
   return `http://${bare.includes(":") ? bare : `${bare}:${DEFAULT_PORT}`}`;
 }
 
-export async function call(host, path, { token, method = "GET", body, timeout = TIMEOUT_MS } = {}) {
+export async function call(host, path, { token, method = "GET", body, timeout = TIMEOUT_MS, signal } = {}) {
   const ctrl = new AbortController();
+  const abort = () => ctrl.abort();
+  if (signal?.aborted) ctrl.abort();
+  else signal?.addEventListener("abort", abort);
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     const res = await fetch(`${host}${path}`, {
@@ -48,6 +51,7 @@ export async function call(host, path, { token, method = "GET", body, timeout = 
     return { ok: res.ok, status: res.status, data };
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
   }
 }
 

@@ -1,18 +1,16 @@
 /**
- * The look, in one place. Warm near-black like anodised edit-suite hardware, the warm satin ink
- * of the Ashvane mark for text, and its ember as the one accent - used for "live", the selected
- * tab and the primary action, nowhere else. Depth comes from tonal steps and hairlines, never
- * shadows. Labels are sentence case; numbers, timecode and code are monospaced.
+ * An original observatory instrument deck: cool hull surfaces, pale instrument lettering,
+ * restrained amber controls. Depth comes from tonal steps and rails rather than decoration.
  */
 import React from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 export const C = {
-  bg: "#0B0B0C", s1: "#151517", s2: "#1D1E21", s3: "#27282C", s4: "#323338",
-  line: "rgba(255,255,255,0.07)", line2: "rgba(255,255,255,0.14)",
-  ink: "#F3F0E9", ink2: "#B9B4AB", ink3: "#A49F97",
-  ember: "#F06834", emberSoft: "rgba(240,104,52,0.14)", emberLine: "rgba(240,104,52,0.45)",
+  bg: "#070A10", s1: "#111925", s2: "#182332", s3: "#223142", s4: "#304353",
+  line: "#263747", line2: "#40566B",
+  ink: "#DFE8ED", ink2: "#A7B9C9", ink3: "#98A9BA",
+  ember: "#DAA66B", emberSoft: "rgba(218,166,107,0.12)", emberLine: "rgba(218,166,107,0.46)",
   good: "#5FCB8E", goodSoft: "rgba(95,203,142,0.13)",
   bad: "#EC5B52", badSoft: "rgba(236,91,82,0.13)",
   warn: "#E8B04B",
@@ -120,7 +118,7 @@ export function Field({ label, style, inputStyle, mono, ...props }) {
       {!!label && <Text style={[t.label, { marginBottom: 6 }]}>{label}</Text>}
       <TextInput placeholderTextColor={C.ink3} selectionColor={C.ember} cursorColor={C.ember}
         style={[st.input, mono && { fontFamily: MONO, fontSize: 14 }, props.multiline && { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }, inputStyle]}
-        {...props} />
+        {...props} accessibilityLabel={props.accessibilityLabel || label} />
     </View>);
 }
 
@@ -165,10 +163,10 @@ export const chatStyles = StyleSheet.create({
 });
 
 const st = StyleSheet.create({
-  card: { borderRadius: 16, borderWidth: 1, borderColor: C.line, overflow: "hidden" },
+  card: { borderRadius: 8, borderWidth: 1, borderColor: C.line, overflow: "hidden" },
   cardPad: { padding: 16 },
   sectionHead: { flexDirection: "row", alignItems: "center", marginBottom: 8, paddingHorizontal: 4, minHeight: 22 },
-  btn: { minHeight: 48, borderRadius: 12, paddingHorizontal: 18, flexDirection: "row", gap: 8,
+  btn: { minHeight: 48, borderRadius: 8, paddingHorizontal: 18, flexDirection: "row", gap: 8,
     alignItems: "center", justifyContent: "center", borderWidth: 1 },
   btnSmall: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10 },
   btnText: { fontSize: 15.5, fontWeight: "600" },
@@ -180,8 +178,8 @@ const st = StyleSheet.create({
   pill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, height: 26, borderRadius: 13, borderWidth: 1 },
   pillDot: { width: 6, height: 6, borderRadius: 3 },
   pillText: { fontSize: 12.5, fontWeight: "600" },
-  input: { minHeight: 48, borderRadius: 12, paddingHorizontal: 14, backgroundColor: C.s2, color: C.ink,
-    fontSize: 15.5, borderWidth: 1, borderColor: C.line },
+  input: { minHeight: 48, borderRadius: 8, paddingHorizontal: 14, backgroundColor: C.s2, color: C.ink,
+    fontSize: 16, borderWidth: 1, borderColor: C.line },
   divider: { height: 1, backgroundColor: C.line },
   empty: { alignItems: "center", paddingVertical: 28, paddingHorizontal: 20 },
   emptyIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: C.s2, alignItems: "center",

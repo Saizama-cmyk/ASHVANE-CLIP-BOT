@@ -2,6 +2,8 @@
 
 A native app that runs your Ashvane content desk from your phone: today's production and post results,
 source research, scripts and platform copy, streams, clip reviews, manual posting, settings and the log.
+The second primary tab, **Stories**, creates original narrated horror with illustrated or animated
+shadow-theatre scenes. It has its own publishing destinations and automatic posting preferences.
 It talks to Ashvane on your PC over your own Wi-Fi or configured Tailscale connection using your profile sign-in.
 
 ## Get the file
@@ -73,7 +75,17 @@ npm ci
 npx expo run:android  # requires Android SDK, a full JDK and an emulator or connected device
 ```
 
-`App.js` handles the primary Desk, Research and Tools navigation. `Desk.js`, `Research.js` and `Remote.js`
+`App.js` handles the primary Desk, Stories, Research and Tools navigation. `Stories.js` provides the
+story composer, manuscript and scene controls, private review, final video preview and independent
+publishing controls. `Portal.js` transitions the live screen through a central black hole when crossing
+the Stories boundary, with a short opacity transition when reduced motion is enabled.
+
+The phone downloads a final story preview with its bearer token into a temporary private cache;
+the token never goes into a media URL. Leaving the preview removes that cache. Production and
+publishing continue on the PC when the phone sleeps. Story polling stops while the app is locked,
+in the background, or on another tab.
+
+`Desk.js`, `Research.js` and `Remote.js`
 provide the content desk screens. The app uses the web dashboard API and authenticates with a bearer
 token from `/api/auth/login`. The local AI tools use a custom native module, so a native development
 build is required instead of the standard Expo Go app. See [phone revamp verification](../docs/PHONE-REVAMP.md)
