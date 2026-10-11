@@ -252,7 +252,10 @@ def test_batch_api_requires_session_and_action_header(tmp_path):
                 assert (await client.get("/api/publishing/batch")).status_code == 401
                 assert (await client.post("/api/publishing/batch", headers={"X-ClipBot": "1"})).status_code == 401
                 auth = ProfileStore()
-                profile = auth.create("Batch tester", "safe-password-123", pipeline.settings.app.min_password_len)
+                setup = await client.post("/api/auth/setup", headers={"X-ClipBot": "1"},
+                                          json={"name": "Batch tester", "password": "safe-password-123"})
+                assert setup.status_code == 200
+                profile = setup.json()["profile"]
                 token = auth.create_session(profile["id"], pipeline.settings.app.session_hours)
                 client.headers["Authorization"] = f"Bearer {token}"
                 snapshot = (await client.get("/api/publishing/batch")).json()

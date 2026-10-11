@@ -749,9 +749,11 @@ nav button:hover .i3{transform:scale(1.08)}
 <link rel="stylesheet" href="/static/desk.css?v=a304f06551a48a4d">
 <link rel="stylesheet" href="/static/stories.css?v=324bf69692b3d826">
 <link rel="stylesheet" href="/static/cosmic.css?v=3bad212166c84804">
-<link rel="stylesheet" href="/static/business.css?v=f9e1357ec89f4988">
+<link rel="stylesheet" href="/static/business.css?v=12cdb423062346c1">
 <link rel="stylesheet" href="/static/music.css?v=2b1d084744b33f5a">
-<link rel="stylesheet" href="/static/social.css?v=5705f84c5367c836">
+<link rel="stylesheet" href="/static/social.css?v=b6576a04b326dd0b">
+<link rel="stylesheet" href="/static/creative.css?v=c216f842b402b15b">
+<link rel="stylesheet" href="/static/accounts.css?v=86231a76ae88e87b">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -839,7 +841,7 @@ nav button:hover .i3{transform:scale(1.08)}
   </div>
 </aside>
 <div class="content">
-  <div class="topbar"><div class="grow"><h1 id="pageTitle">Clip workspace</h1><p id="pageSub">Watch the cut. Check the moment. Publish when it’s ready.</p></div><div class="top-tools"><button class="btn ghost" type="button" id="phoneBtn" hidden>Phone remote</button></div></div>
+  <div class="topbar"><div class="grow"><h1 id="pageTitle">Clip workspace</h1><p id="pageSub">Watch the cut. Check the moment. Publish when it’s ready.</p></div><div class="top-tools"><button class="btn" type="button" id="accountProfilesButton">Account profiles</button><button class="btn ghost" type="button" id="phoneBtn" hidden>Phone remote</button></div></div>
   <div class="banner" id="restartBanner"><span>Some changes need a restart: <b id="restartList"></b></span>
     <button class="btn primary" id="restartBtn" type="button">Restart Ashvane</button></div>
   <div class="banner" id="updBanner"><span id="updText"></span><button class="btn primary" id="updBtn" type="button">Update now</button></div>
@@ -853,7 +855,7 @@ nav button:hover .i3{transform:scale(1.08)}
       <aside class="stories-sidebar">
         <section class="stories-panel" data-story-area="create"><div class="stories-panel-head"><h2>New story</h2><span>Start with a premise</span></div>
           <form id="storiesCreateForm" class="stories-compose">
-            <div class="stories-field"><label for="storiesTopic">What happens?</label><textarea id="storiesTopic" name="story_topic" rows="4" maxlength="2000" placeholder="A place, a person, and something that should not be there…" required></textarea><p class="stories-help">Describe your own premise. Specific details give the story something to hold onto.</p></div>
+            <fieldset class="stories-fieldset stories-field"><legend>Story premise</legend><div class="creative-mode"><label><input type="radio" name="story_topic_mode" value="generated" checked><span>Generate a premise</span></label><label><input type="radio" name="story_topic_mode" value="given"><span>Use my premise</span></label></div><p id="storiesTopicModeHelp" class="creative-mode-help">Leave the premise empty to let the local writer invent an original story.</p></fieldset><div class="stories-field"><label for="storiesTopic">Premise or selected idea</label><textarea id="storiesTopic" name="story_topic" rows="4" maxlength="2000" placeholder="Optional · generate a premise, or choose an idea below"></textarea></div><div class="stories-field"><label for="storiesDirection">Creative direction</label><textarea id="storiesDirection" name="story_direction" rows="3" maxlength="2000" placeholder="Optional mood, setting, themes or things to avoid"></textarea></div><button class="btn" type="button" id="storiesIdeasGenerate">Suggest story ideas</button><p id="storiesIdeasStatus" class="stories-help" role="status" aria-live="polite"></p><div id="storiesIdeas" class="creative-ideas"></div><div id="storiesIdeaFeedback" hidden></div>
             <div class="stories-field"><label for="storiesGenre">Genre</label><select id="storiesGenre" name="story_genre" required><option value="">Loading genres…</option></select></div>
             <fieldset class="stories-fieldset stories-field"><legend>Visual treatment</legend><div class="stories-format"><label><input type="radio" name="story_format" value="still" checked><span><b>Still illustrations</b><small>Original illustrated shadow theatre</small></span></label><label><input type="radio" name="story_format" value="animated"><span><b>Animated scenes</b><small>Original moving shadow theatre</small></span></label></div><p class="stories-help" id="storiesFormatNote">Checking visual providers…</p></fieldset>
             <div class="stories-length"><div class="stories-field"><label for="storiesLength">Length</label><select id="storiesLength" name="story_length"><option value="short">Short</option><option value="episode">Episode</option></select></div><div class="stories-field"><label for="storiesDuration">Seconds</label><input type="number" id="storiesDuration" name="story_duration" value="60" min="30" max="1800" step="1" inputmode="numeric" required></div></div>
@@ -893,7 +895,7 @@ nav button:hover .i3{transform:scale(1.08)}
             <p class="stories-render-reason" id="storiesRenderReason">Checking production readiness…</p>
           </form>
           <section class="stories-preview" id="storiesPreview" hidden aria-label="Rendered story preview"><video id="storiesVideo" controls playsinline preload="metadata"></video><div class="stories-preview-actions"><p>Rendered video from this saved project.</p><a class="btn" id="storiesDownload" href="#" download>Download video</a></div><div class="stories-publish-actions"><p id="storiesPublishStatus" aria-live="polite">Ready videos can be sent to your selected connected accounts.</p><button class="btn primary" type="button" id="storiesPublishNow" disabled>Publish story now</button></div></section>
-          <details class="stories-review"><summary>Private review &amp; project actions</summary><div id="storiesPrivateReview"></div><p class="stories-help">Review notes are never included when you copy public details.</p><button class="btn danger" type="button" id="storiesDelete">Delete story</button></details>
+          <div id="storiesDraftFeedback"></div><details class="stories-review"><summary>Private review &amp; project actions</summary><div id="storiesPrivateReview"></div><p class="stories-help">Review notes are never included when you copy public details.</p><button class="btn danger" type="button" id="storiesDelete">Delete story</button></details>
         </section>
       </div>
     </div>
@@ -908,15 +910,15 @@ nav button:hover .i3{transform:scale(1.08)}
     <div data-music-area="create" class="music-grid">
       <section class="music-panel"><h3>Compose a take</h3><form id="musicCreateForm">
         <div class="music-field"><label for="musicTitle">Working title</label><input id="musicTitle" name="music_title" autocomplete="off" maxlength="120" placeholder="Name this take"></div>
-        <div class="music-field"><label for="musicStyle">Sound &amp; performance direction</label><textarea id="musicStyle" name="music_style" rows="4" maxlength="2000" required placeholder="Genre, instruments, energy, voice and rhythm"></textarea><p class="music-help">Describe the music you want to hear. This direction goes to your local generation engine.</p></div>
-        <div class="music-field"><label for="musicLyrics">Lyrics</label><textarea id="musicLyrics" name="music_lyrics" rows="7" maxlength="24000" placeholder="Your words, with section labels such as [Verse] and [Chorus]"></textarea></div>
+        <div class="music-field"><label for="musicStyle">Sound &amp; performance direction</label><textarea id="musicStyle" name="music_style" rows="4" maxlength="2000" placeholder="Optional genre, instruments, energy, voice and rhythm"></textarea><p class="music-help">Optional: describe the music you want to hear, or let the creative model choose a direction.</p></div>
+        <fieldset class="music-field"><legend>Words for this take</legend><div class="creative-mode"><label><input type="radio" name="music_lyrics_mode" value="generated" checked><span>Generate lyrics</span></label><label><input type="radio" name="music_lyrics_mode" value="given"><span>Use my lyrics</span></label><label><input type="radio" name="music_lyrics_mode" value="instrumental"><span>Instrumental</span></label></div></fieldset><div class="music-field" id="musicLyricsDirectionField"><label for="musicLyricsDirection">Lyric direction</label><textarea id="musicLyricsDirection" name="music_lyrics_direction" rows="3" maxlength="4000" placeholder="Optional subject, emotion, point of view or phrases to include"></textarea><button class="btn" id="musicDraftLyrics" type="button">Draft lyrics first</button></div><p id="musicLyricsStatus" class="music-help" role="status" aria-live="polite">Leave generated lyrics empty to write them when you generate the take.</p><div class="music-field" id="musicLyricsField"><label for="musicLyrics">Lyrics</label><textarea id="musicLyrics" name="music_lyrics" rows="7" maxlength="24000" placeholder="Generated words appear here, or enter your own with [Verse] and [Chorus]"></textarea></div><div id="musicLyricsFeedback" hidden></div>
         <div class="music-fields"><div class="music-field"><label for="musicMode">Performance</label><select id="musicMode" name="music_mode"><option value="general">General music</option><option value="rap">Rap</option></select></div><div class="music-field"><label for="musicDuration">Length in seconds</label><input id="musicDuration" name="music_duration" type="number" min="10" max="360" step="1" value="60" inputmode="numeric" required></div></div>
         <details><summary>Generation controls</summary><div class="music-fields"><div class="music-field"><label for="musicSeed">Audio seed</label><input id="musicSeed" name="music_seed" type="number" value="-1" min="-1" max="2147483647" step="1"><p class="music-help">−1 chooses a new seed.</p></div><div class="music-field"><label for="musicLmSeed">Composition seed</label><input id="musicLmSeed" name="music_lm_seed" type="number" value="-1" min="-1" max="2147483647" step="1"></div><div class="music-field"><label for="musicSteps">Generation steps</label><input id="musicSteps" name="music_steps" type="number" value="32" min="8" max="64" step="1"></div><div class="music-field"><label for="musicCot">Composition planning</label><select id="musicCot" name="music_cot"><option value="full">Full composition</option><option value="melody">Melody</option><option value="off">Off</option></select></div></div></details>
         <div class="music-actions"><button class="btn primary" id="musicGenerate" type="submit" disabled>Generate take</button><button class="btn" id="musicSaveDraft" type="button">Save direction on this PC</button></div><p class="music-status" id="musicDraftStatus" role="status" aria-live="polite">Your direction stays here while you work.</p>
       </form></section>
       <section class="music-panel"><h3>From first take to finished session</h3><p>Generate a source, audition it in Library, then take it into Production. REAPER projects keep the original take available while you develop a new beat.</p><p>To replace existing backing, choose a processed artist version that has a saved dry vocal. A full song mix can be layered with a new beat.</p><div id="musicJob" class="music-job" hidden aria-live="polite"><strong id="musicJobStage"></strong><p id="musicJobMessage"></p><div class="music-actions"><button class="btn" id="musicCancel" type="button">Cancel generation</button></div></div><p id="musicCreateStatus" class="music-status" role="status" aria-live="polite"></p><button class="btn" type="button" data-music-go="library">Hear saved takes</button></section>
     </div>
-    <div data-music-area="library" class="music-grid" hidden><section class="music-panel"><h3>Local take library</h3><div class="music-field"><label for="musicSearch">Find a take</label><input id="musicSearch" name="music_search" type="search" autocomplete="off" placeholder="Title or sound direction"></div><div id="musicLibrary" class="music-list" aria-live="polite"><p class="music-help">Loading saved takes…</p></div></section><section class="music-panel"><h3>Source audition</h3><div id="musicSourceEmpty" class="music-empty"><p>Select a saved take to listen, read its lyrics, and prepare a production session.</p></div><div id="musicSource" hidden><div class="music-audition"><h3 id="musicSourceTitle" class="music-source-title"></h3><p id="musicSourceMeta" class="music-source-meta"></p><audio id="musicAudio" controls preload="none" aria-label="Selected source take"></audio><a class="btn" id="musicSourceDownload" download hidden>Download source</a></div><details><summary>Lyrics &amp; source direction</summary><p id="musicSourceStyle" class="music-source-meta"></p><p id="musicSourceLyrics" class="music-source-meta"></p></details><div class="music-actions"><button class="btn primary" type="button" id="musicUseTake">Take into Production</button><button class="btn" type="button" id="musicReuse">Use direction for a new take</button></div></div><p id="musicLibraryStatus" class="music-status" role="status" aria-live="polite"></p></section></div>
+    <div data-music-area="library" class="music-grid" hidden><section class="music-panel"><h3>Local take library</h3><div class="music-field"><label for="musicSearch">Find a take</label><input id="musicSearch" name="music_search" type="search" autocomplete="off" placeholder="Title or sound direction"></div><div id="musicLibrary" class="music-list" aria-live="polite"><p class="music-help">Loading saved takes…</p></div></section><section class="music-panel"><h3>Source audition</h3><div id="musicSourceEmpty" class="music-empty"><p>Select a saved take to listen, read its lyrics, and prepare a production session.</p></div><div id="musicSource" hidden><div class="music-audition"><h3 id="musicSourceTitle" class="music-source-title"></h3><p id="musicSourceMeta" class="music-source-meta"></p><audio id="musicAudio" controls preload="none" aria-label="Selected source take"></audio><a class="btn" id="musicSourceDownload" download hidden>Download source</a></div><details><summary>Lyrics &amp; source direction</summary><p id="musicSourceStyle" class="music-source-meta"></p><p id="musicSourceLyrics" class="music-source-meta"></p></details><div class="music-actions"><button class="btn primary" type="button" id="musicUseTake">Take into Production</button><button class="btn" type="button" id="musicReuse">Use direction for a new take</button></div></div><div id="musicSourceFeedback" hidden></div><p id="musicLibraryStatus" class="music-status" role="status" aria-live="polite"></p></section></div>
     <div data-music-area="production" class="music-grid" hidden><section class="music-panel"><h3>Shape the session</h3><form id="musicProductionForm"><div class="music-field"><label for="musicProductionSource">Source take or artist version</label><select id="musicProductionSource" name="music_production_source"><option value="">Original beat · no source take</option></select><p class="music-help" id="musicReplacementHelp">Choose a take to layer a beat, or start an original instrumental.</p></div><div class="music-field"><label for="musicProductionTitle">Session title</label><input id="musicProductionTitle" name="music_production_title" maxlength="120" autocomplete="off" placeholder="Name the production session"></div><div class="music-field"><label for="musicBrief">Production notes</label><textarea id="musicBrief" name="music_producer_brief" rows="5" maxlength="2000" placeholder="What should change? Describe the groove, arrangement and finish you want."></textarea><p class="music-help">Notes are saved with the project. The local producer uses these notes to edit and render the REAPER session. Optional beat controls below set the starting arrangement.</p></div><div class="music-fields"><div class="music-field"><label for="musicBeatStyle">Beat</label><select id="musicBeatStyle" name="music_beat_style"><option value="trap">Trap</option><option value="boom-bap">Boom bap</option><option value="four-on-floor">Four on the floor</option></select></div><div class="music-field"><label for="musicBpm">Tempo · BPM</label><input id="musicBpm" name="music_bpm" type="number" min="40" max="240" step="1" value="120" required></div><div class="music-field"><label for="musicBars">Beat length · bars</label><input id="musicBars" name="music_bars" type="number" min="1" max="128" step="1" value="8" required></div><div class="music-field"><label for="musicBeatSeed">Beat seed</label><input id="musicBeatSeed" name="music_beat_seed" type="number" min="0" max="2147483647" step="1" value="0" required></div></div><details><summary>Optional custom beat patterns</summary><label class="music-check"><input type="checkbox" id="musicCustomBeat" name="music_custom_beat"><span>Use my sixteenth-note patterns instead of the starting beat</span></label><p class="music-help">Each row is one bar, repeated across the session. The local producer can further change the arrangement and effects from your notes.</p><div id="musicPatterns" hidden></div></details><label class="music-check"><input type="checkbox" id="musicReplaceBacking" name="music_replace_backing" disabled><span>Replace backing using this version’s saved dry vocal</span></label><div class="music-actions"><button class="btn primary" type="button" id="musicProduce" disabled>Produce from these notes</button><button class="btn" type="submit" id="musicPrepare" disabled>Prepare editable session</button><button class="btn" type="button" id="musicSaveProduction">Save notes on this PC</button></div><p id="musicProductionStatus" class="music-status" role="status" aria-live="polite">Checking production tools…</p><div id="musicProducerJob" class="music-job" hidden aria-live="polite"><strong id="musicProducerStage"></strong><p id="musicProducerMessage"></p><div class="music-actions"><button class="btn" type="button" id="musicProducerCancel">Cancel production</button><button class="btn" type="button" id="musicApplyPlan" hidden>Apply reviewed plan &amp; render</button></div><details id="musicPlanDetails" hidden><summary>Production plan &amp; review</summary><pre id="musicPlanText" class="music-source-meta"></pre></details></div></form></section><section class="music-panel"><h3>Sessions &amp; versions</h3><div class="music-field"><label for="musicProjectSelect">Saved REAPER session</label><select id="musicProjectSelect" name="music_project"><option value="">Select a session</option></select></div><div id="musicProjectEmpty"><p>Prepare a session to create an editable REAPER project. Direct the local producer with your notes, or open REAPER on this PC for optional visual edits. Exported versions can be auditioned here.</p></div><div id="musicProject" hidden><h3 id="musicProjectTitle" class="music-source-title"></h3><p id="musicProjectInfo"></p><p id="musicProjectNotes" class="music-source-meta"></p><div class="music-actions"><button class="btn" id="musicOpenReaper" type="button">Open REAPER on this PC</button><button class="btn primary" id="musicExport" type="button">Export a new version</button><button class="btn" id="musicEditProject" type="button">Use these beat settings</button></div><p id="musicProjectStatus" class="music-status" role="status" aria-live="polite"></p><div id="musicVersions" class="music-versions"></div></div></section></div>
     <section data-music-area="settings" class="music-panel music-settings" hidden><h3>Resonance settings</h3><p>Connect the managed local music tools and set the request limits for this business.</p><form id="musicSettingsForm"><div id="musicSettingsFields" class="fields"></div><div class="music-actions"><button class="btn primary" type="submit" id="musicSettingsSave" disabled>Save Resonance settings</button><button class="btn" type="button" id="musicSettingsReload">Reload settings</button></div><p id="musicSettingsStatus" class="music-status" role="status" aria-live="polite">Loading music settings…</p></form></section>
   </section>
@@ -1030,7 +1032,8 @@ nav button:hover .i3{transform:scale(1.08)}
   </section>
 
   <!-- SYSTEM -->
-  <section class="view" id="view-system" role="tabpanel">
+  <section class="view" id="view-system" role="tabpanel"><div class="panel"><div class="phead"><h2>Business readiness</h2><span class="sub">Measured dependencies and runtime state for each workspace.</span><button class="btn" id="systemReadinessReload" type="button">Check businesses</button></div><div id="systemReadiness" class="business-readiness"><p class="business-readiness-note">Readiness appears after a check. A hardware scan also refreshes these checks.</p></div></div>
+    <div class="panel"><div class="phead"><h2>Surge processing time</h2><span class="sub">Local job timing and buffer freshness.</span></div><div id="systemLatency" class="business-latency"><p class="business-readiness-note">Waiting for pipeline timing. Source-to-viewer delay is not measured.</p></div></div>
     <div class="panel">
       <div class="phead"><h2>Auto-tune</h2><span class="sub">Detects this PC and recommends settings. Nothing changes until you apply.</span>
         <button class="btn primary" id="scanBtn" type="button">Scan this PC</button></div>
@@ -1091,7 +1094,7 @@ nav button:hover .i3{transform:scale(1.08)}
   <section class="view" id="view-setup" role="tabpanel">
     <div class="panel">
       <div class="phead"><h2>Setup checklist</h2><button class="btn" id="recheck" type="button" style="margin-left:auto"><i class="ico i3" style="--i:url(/static/ui/chrome/refresh.png);--ia:url(/static/ui/ember/refresh.png)" aria-hidden="true"></i>Check again</button></div>
-      <ul class="checks" id="checks"></ul>
+      <div class="business-readiness" id="checks"></div>
     </div>
   </section>
 </main>
@@ -1121,7 +1124,7 @@ nav button:hover .i3{transform:scale(1.08)}
   <div class="ask-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 1l2.2 7.8L22 12l-7.8 2.2L12 23l-2.2-8.8L2 12l7.8-3.2z"/></svg></div>
   <h3 id="askTitle"></h3><p id="askBody"></p>
   <input type="text" id="askInput" hidden spellcheck="false">
-  <div class="ask-btns"><button class="btn ghost" value="cancel" id="askNo" type="submit">Cancel</button><button class="btn primary" value="ok" id="askYes" type="submit">OK</button></div>
+  <label id="askRememberLabel" class="ask-remember" hidden><input id="askRemember" type="checkbox"> Don’t show unsaved navigation warnings again</label><div class="ask-btns"><button class="btn ghost" value="cancel" id="askNo" type="submit">Cancel</button><button class="btn primary" value="ok" id="askYes" type="submit">OK</button></div>
 </form></dialog>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="chromeFill" x1="0" y1="0" x2="0" y2="1">
   <stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#C9CDD4"/><stop offset=".55" stop-color="#7E838C"/><stop offset="1" stop-color="#EDEFF2"/></linearGradient></defs></svg>
@@ -1357,6 +1360,7 @@ async function poll() {
     pollFails = 0;
     $("#connBanner").classList.remove("show");
     renderHeader(state); phoneChip(state);
+    renderSystemLatency(state);
     if (typeof renderDesk === "function") renderDesk();
     if ($("#view-live").classList.contains("active")) { renderMonitors(state); renderFlow(state); renderSamples(state); renderPosts(state); }
     refreshMs = state.refresh_ms || refreshMs;
@@ -1667,12 +1671,16 @@ function showErrors(list) {
   if (first) { openSection(first.closest("fieldset").id.slice(4)); requestAnimationFrame(() => first.scrollIntoView({block: "center", behavior: "smooth"})); }
 }
 function markDirty() { dirty = true; $("#saveMsg").className = "msg"; $("#saveMsg").textContent = "Unsaved changes"; }
-let settingsPromise = null;
+let settingsPromise = null, settingsProfileIds = {};
+function settingsProfileHeaders() {
+  return {"X-Surge-Profile": settingsProfileIds.clips || "", "X-Hollow-Profile": settingsProfileIds.stories || ""};
+}
 function ensureSettings() { if (!settingsPromise) settingsPromise = loadSettings(); return settingsPromise; }
 async function loadSettings() {
   const [sc, st] = await Promise.all([api("/api/settings/schema"), api("/api/settings")]);
   schema = sc.body.schema;
   current = st.body.settings;
+  settingsProfileIds = st.body.account_profile_ids || {};
   renderForm();
 }
 async function loadModels(force) {
@@ -1690,7 +1698,7 @@ async function loadModels(force) {
 }
 async function saveSettings(payload) {
   $("#saveBtn").disabled = true;
-  const r = await api("/api/settings", {method: "PUT", json: {settings: payload}});
+  const r = await api("/api/settings", {method: "PUT", headers: settingsProfileHeaders(), json: {settings: payload}});
   $("#saveBtn").disabled = false;
   return afterSave(r);
 }
@@ -1703,9 +1711,9 @@ function afterSave(r) {
     poll();
     return true;
   }
-  const errs = (r.body && r.body.errors) || [{field: "", msg: `HTTP ${r.status}`}];
+  const errs = (r.body && r.body.errors) || [{field: "", msg: (r.body && r.body.detail) || `HTTP ${r.status}`}];
   showErrors(errs);
-  m.className = "msg bad"; m.textContent = `${errs.length} problem(s) — see the highlighted fields`;
+  m.className = "msg bad"; m.textContent = errs.length === 1 && !errs[0].field ? errs[0].msg : `${errs.length} problem(s) — see the highlighted fields`;
   return false;
 }
 $("#sform").addEventListener("submit", async e => {
@@ -1722,7 +1730,7 @@ $("#sections").addEventListener("click", async e => {
   if (ob) {
     if (dirty) { toast("Save your changes first, then connect"); return; }
     ob.disabled = true; ob.classList.add("busy");
-    const r = await api(`/api/oauth/${ob.dataset.oauth}/open`, {method: "POST"});
+    const r = await api(`/api/oauth/${ob.dataset.oauth}/open`, {method: "POST", headers: {"X-Account-Profile": settingsProfileIds.clips || ""}});
     ob.disabled = false; ob.classList.remove("busy");
     if (r.body && r.body.ok) toast("Sign-in opened in your browser. Approve it there, then come back.");
     else if (r.body && r.body.url) { toast("Couldn't open your browser. Opening here instead."); window.open(r.body.url, "_blank"); }
@@ -1733,7 +1741,7 @@ $("#sections").addEventListener("click", async e => {
   if (rs) {
     const sec = rs.dataset.resetSection;
     if (!await ask({title: "Reset section?", body: `Every ${sec} setting goes back to its default. Other sections stay as they are.`, ok: "Reset", danger: true})) return;
-    afterSave(await api(`/api/settings/reset/${encodeURIComponent(sec)}`, {method: "POST"}));
+    afterSave(await api(`/api/settings/reset/${encodeURIComponent(sec)}`, {method: "POST", headers: settingsProfileHeaders()}));
     return;
   }
   const rf = e.target.closest("[data-reset-field]");
@@ -1746,7 +1754,7 @@ $("#sections").addEventListener("click", async e => {
 });
 $("#sections").addEventListener("click", async e => {
   if (!e.target.closest("#tiktokPasteBtn")) return;
-  const r = await api("/oauth/tiktok/paste", {method: "POST", json: {url: $("#tiktokPaste").value}});
+  const r = await api("/oauth/tiktok/paste", {method: "POST", headers: {"X-Account-Profile": settingsProfileIds.clips || ""}, json: {url: $("#tiktokPaste").value}});
   toast(r.body && r.body.ok ? "TikTok connected" : (r.body && r.body.error) || `HTTP ${r.status}`);
   if (r.body && r.body.ok) { $("#tiktokPaste").value = ""; poll(); }
 });
@@ -1761,7 +1769,7 @@ $("#importFile").addEventListener("change", async e => {
   const f = e.target.files[0]; if (!f) return;
   let data;
   try { data = JSON.parse(await f.text()); } catch (err) { toast("That file is not valid JSON"); return; }
-  const ok = afterSave(await api("/api/settings/import", {method: "POST", json: data}));
+  const ok = afterSave(await api("/api/settings/import", {method: "POST", headers: settingsProfileHeaders(), json: data}));
   if (ok) toast("Settings imported");
   e.target.value = "";
 });
@@ -1780,23 +1788,38 @@ function focusField(dotted) {
 
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
+function renderSystemLatency(snapshot) {
+  const target=document.getElementById('systemLatency');if(!target)return;const timing=snapshot?.latency;
+  if(!timing){target.innerHTML='<p class="business-readiness-note">No timing sample is available. Source-to-viewer delay is not measured.</p>';return;}
+  const seconds=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Math.max(0,Number(value)).toFixed(1)+'s':'Not measured';
+  const phases={assemble_wait:'Waiting to assemble',assemble:'Assembling source',qc:'Source quality check',transcribe_wait:'Waiting to transcribe',transcribe:'Transcribing',transcribe_including_wait:'Transcribing / waiting',ai_wait:'Waiting for AI',ai:'AI review',edit_wait:'Waiting to edit',edit:'Rendering edit',final_review:'Final review'};
+  const slots=timing.transcription||{},active=timing.active_jobs||[],recent=timing.recent_jobs||[];
+  const rows=active.map(job=>`<tr><td>${esc(String(job.id).slice(0,12))}</td><td>${esc(phases[job.phase]||job.phase||'Working')}</td><td>${seconds(job.phase_age_s)}</td><td>${seconds(job.age_s)}</td></tr>`).join('');
+  const finished=recent.map(job=>Number(job.age_s)).filter(Number.isFinite).sort((a,b)=>a-b),middle=Math.floor(finished.length/2),median=finished.length?(finished.length%2?finished[middle]:(finished[middle-1]+finished[middle])/2):null;
+  const capture=(snapshot.monitors||[]).filter(monitor=>monitor.capture).map(monitor=>`<li><b>${esc(monitor.display_name||monitor.login||monitor.key)}</b><span>Completed segment age ${seconds(monitor.capture.complete_segment_age_s)} · audio sample age ${seconds(monitor.capture.audio_sample_age_s)} · last probe ${seconds(monitor.capture.audio_probe_s)}</span></li>`).join('');
+  target.innerHTML=`<p class="business-readiness-note">Transcription: ${Number(slots.active)||0} active · ${Number(slots.waiting)||0} waiting. AI slots: ${Number(timing.ai_slots?.active)||0}/${Number(timing.ai_slots?.limit)||0}. Assembly slots: ${Number(timing.assembly_slots?.active)||0}/${Number(timing.assembly_slots?.limit)||0}. Edit slots: ${Number(timing.edit_slots?.active)||0}/${Number(timing.edit_slots?.limit)||0}.</p>${active.length?`<div class="business-latency-table"><table><caption>Tracked active clips</caption><thead><tr><th>Clip</th><th>Phase</th><th>In phase</th><th>Total age</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="business-readiness-note">No tracked clip jobs are active.</p>'}<p class="business-readiness-note">${finished.length?'Median completion age: '+seconds(median)+' across '+finished.length+' recently tracked clip'+(finished.length===1?'':'s')+'.':'No completed timing sample yet.'} These are local processing times. Broadcaster/source-to-viewer delay is not measured.</p>${capture?`<details><summary>Local capture buffer freshness</summary><p class="business-readiness-note">Segment and audio sample ages describe files on this PC; they do not measure broadcaster delay.</p><ul>${capture}</ul></details>`:''}`;
+}
+function renderBusinessReadiness(result, id) {
+  const target=document.getElementById(id);if(!target)return;
+  const itemHtml=(item,business)=>`<li class="${item.ok?'ok':item.required?'no':'opt'}"><span class="mark" aria-hidden="true">${item.ok?'✓':item.required?'!':'–'}</span><div><b>${esc(item.label)}</b><p class="d">${esc(item.detail||'')}</p></div>${!item.ok&&item.field?`<button class="btn ghost" type="button" data-readiness-business="${esc(business||'clips')}" data-readiness-field="${esc(item.field)}">Review settings</button>`:''}</li>`;
+  if(!result.businesses){target.innerHTML='<ul class="checks">'+(result.items||[]).map(item=>itemHtml(item,'clips')).join('')+'</ul>';return;}
+  const labels={ready:'Checks passed',blocked:'Needs attention',stopped:'Stopped',busy:'Busy',unverified:'Not verified'};
+  target.innerHTML=`<p class="business-readiness-note">${esc(result.shared?.message||'Read-only checks. Businesses start only from their Run controls.')}</p><div class="business-readiness-groups">${result.businesses.map(group=>`<details class="business-readiness-group" data-readiness-status="${esc(group.status)}" ${group.enabled?'open':''}><summary><strong>${esc(group.name)}</strong><span>${esc(labels[group.status]||group.status)}</span></summary><p class="business-readiness-note">${esc(group.message||'')}</p><ul class="checks">${(group.items||[]).map(item=>itemHtml(item,group.id)).join('')}</ul></details>`).join('')}</div>`;
+}
 /* ---------------- setup checklist ---------------- */
 async function loadSetup(auto) {
   const r = await api("/api/setup");
-  if (!r.ok) return;
+  if (!r.ok) {$("#checks").textContent="Business checks could not be read. Retry when the local dashboard is ready.";$("#systemReadiness").textContent="Business checks could not be read. Retry the check.";return;}
   const s = r.body, missing = s.items.filter(i => i.required && !i.ok).length;
   window.deskSetupState = s;
   if (typeof renderDesk === "function") renderDesk();
   const c = $("#setupCount"); c.hidden = !missing; c.textContent = missing;
-  $("#checks").innerHTML = s.items.map(i => {
-    const cls = i.ok ? "ok" : i.required ? "no" : "opt";
-    return `<li class="${cls}"><span class="mark">${i.ok ? "✓" : i.required ? "!" : "–"}</span>
-      <div><b>${esc(i.label)}</b>${i.required ? "" : ' <span class="small dim">(optional)</span>'}<div class="d">${esc(i.detail)}</div></div>
-      ${i.ok ? "" : `<button class="btn ${i.required ? "primary" : "ghost"}" type="button" data-goto="${esc(i.field)}">Fix in Settings</button>`}</li>`;
-  }).join("");
+  renderBusinessReadiness(s, 'checks');
+  renderBusinessReadiness(s, 'systemReadiness');
   // Today shows the next missing requirement; the full checklist remains one click away.
 }
-$("#checks").addEventListener("click", e => { const b = e.target.closest("[data-goto]"); if (b) focusField(b.dataset.goto); });
+for(const id of ['checks','systemReadiness'])document.getElementById(id).addEventListener('click',event=>{const button=event.target.closest('[data-readiness-field],[data-readiness-business]');if(!button)return;const business=button.dataset.readinessBusiness,field=button.dataset.readinessField;if(business==='music')showMusicSection('settings');else if(business==='stories')showStorySection('settings');else if(business==='social')showSocialSection('clients');else if(field)focusField(field);});
+$('#systemReadinessReload').addEventListener('click',async()=>{const button=$('#systemReadinessReload');button.disabled=true;button.textContent='Checking…';try{await loadSetup();}finally{button.disabled=false;button.textContent='Check businesses';}});
 $("#recheck").addEventListener("click", () => loadSetup());
 
 
@@ -1977,6 +2000,7 @@ $("#scanBtn").addEventListener("click", async () => {
   const r = await api("/api/system/scan", {method: "POST", json: {network: true}});
   $("#scanBtn").disabled = false; $("#scanBtn").classList.remove("busy"); if (!r.ok) { $("#hwBox").textContent = "Scan failed."; return; }
   const h = r.body.hardware; recs = r.body.recommendations;
+  if(r.body.readiness){window.deskSetupState=r.body.readiness;renderBusinessReadiness(r.body.readiness,"systemReadiness");renderBusinessReadiness(r.body.readiness,"checks");}
   $("#hwBox").innerHTML = `<b>${h.cpu_threads}</b> CPU threads · <b>${h.ram_gb}</b> GB RAM · <b>${esc(h.gpu_name || "no NVIDIA GPU")}</b> ${h.vram_gb ? h.vram_gb + " GB VRAM" : ""} · NVENC ${h.nvenc ? "yes" : "no"} · ${h.disk_free_gb} GB free · ${h.net_mbps ? h.net_mbps + " Mbps down" : "speed test skipped"} · Whisper on ${h.whisper_device}`;
   $("#recs").innerHTML = recs.map((x, i) => `<label class="rec"><input type="checkbox" data-i="${i}" ${x.change ? "checked" : ""}><b>${esc(x.field)}</b><span>${esc(String(x.current))} → <b style="color:var(--amber)">${esc(String(x.value))}</b></span><span class="dim">${esc(x.reason)}</span></label>`).join("");
   $("#recBar").hidden = false;
@@ -2307,7 +2331,9 @@ $("#updBtn").addEventListener("click", e => installUpdate(e.currentTarget));
 $("#updBox").addEventListener("click", e => { const b = e.target.closest("[data-update]"); if (b) installUpdate(b); });
 
 /* ---------------- ask: in-app confirm / prompt ---------------- */
-function ask({title, body = "", ok = "OK", cancel = "Cancel", danger = false, input = null}) {
+function ask({title, body = "", ok = "OK", cancel = "Cancel", danger = false, input = null, navigation = false}) {
+  if(navigation){try{if(localStorage.getItem("ashvane-skip-unsaved-navigation")==="true")return Promise.resolve(true);}catch(_){}}
+  $("#askRememberLabel").hidden=!navigation; $("#askRemember").checked=false;
   const d = $("#ask"), inp = $("#askInput");
   $("#askTitle").textContent = title; $("#askBody").textContent = body; $("#askBody").hidden = !body;
   $("#askYes").textContent = ok; $("#askNo").textContent = cancel;
@@ -2319,6 +2345,7 @@ function ask({title, body = "", ok = "OK", cancel = "Cancel", danger = false, in
   return new Promise(resolve => {
     d.addEventListener("close", () => {
       const yes = d.returnValue === "ok";
+      if(navigation&&yes&&$("#askRemember").checked){try{localStorage.setItem("ashvane-skip-unsaved-navigation","true");}catch(_){}}
       resolve(input ? (yes ? inp.value.trim() || null : null) : yes);
     }, {once: true});
   });
@@ -2522,10 +2549,12 @@ window.startAshvane = function() {
 };
 </script>
 <script src="/static/desk.js?v=58a7dd72e9d0abb0"></script>
-<script src="/static/stories.js?v=1791269d99eddb25"></script>
+<script src="/static/creative.js?v=30b375f805ec3272"></script>
+<script src="/static/stories.js?v=45d9637174ad5ad5"></script>
 <script src="/static/cosmic.js?v=35802f62e4e04bd1"></script>
-<script src="/static/music.js?v=8a5c86d9328aa82d"></script>
-<script src="/static/social.js?v=cf74e33f50e1a4d2"></script>
-<script src="/static/business.js?v=79028c2b5de280f7"></script>
+<script src="/static/music.js?v=04d86f883b9d41b1"></script>
+<script src="/static/social.js?v=207e9a50c584a238"></script>
+<script src="/static/business.js?v=dfaef0e4b887e046"></script>
+<script src="/static/accounts.js?v=7d6c62b3c5570780"></script>
 </body>
 </html>

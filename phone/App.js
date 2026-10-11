@@ -10,8 +10,9 @@
  * keychain; the PC keeps that sign-in for weeks. Face ID / fingerprint guards the app itself.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, AppState, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, AppState, Image, Linking, Modal, Switch, Platform, Pressable, RefreshControl, ScrollView, StatusBar, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { LockScreen, useLock } from "./Lock";
 import { call, KEY_HOST, KEY_TOKEN } from "./api";
@@ -23,6 +24,8 @@ import Desk from "./Desk";
 import Research, { useResearch } from "./Research";
 import Stories, { useStories } from "./Stories";
 import StoryAccounts from "./StoryAccounts";
+import AccountProfiles from "./AccountProfiles";
+import PhoneSetup from "./PhoneSetup";
 import Music from "./Music";
 import Social from "./Social";
 import { PortalOverlay, usePortal } from "./Portal";
@@ -33,9 +36,9 @@ import { isNewerVersion, releaseVersion } from "./updates";
 const POLL_MS = 6000;
 const RELEASE_API = "https://api.github.com/repos/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tags/phone-latest";
 const RELEASE_PAGE = "https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-latest";
-const CLIP_TABS = [["desk", "Desk", "albums"], ["research", "Research", "search"]];
+const CLIP_TABS = [["desk", "Desk", "albums"], ["research", "Research", "search"], ["clip-accounts", "Accounts", "people"]];
 const STORY_TABS = [["stories", "Create", "moon"], ["story-library", "Library", "albums"], ["story-publishing", "Publishing", "send"], ["story-accounts", "Accounts", "people"], ["story-settings", "Settings", "settings"]];
-const MUSIC_TABS = [["music", "Create", "musical-notes"], ["music-library", "Library", "albums"], ["music-production", "Production", "options"], ["music-settings", "Settings", "settings"]];
+const MUSIC_TABS = [["music", "Create", "musical-notes"], ["music-library", "Library", "albums"], ["music-production", "Production", "options"], ["music-accounts", "Accounts", "people"], ["music-settings", "Settings", "settings"]];
 const SOCIAL_TABS = [["social", "Clients", "people"], ["social-content", "Content", "create"], ["social-calendar", "Calendar", "calendar"], ["social-assets", "Assets", "images"], ["social-profiles", "Profiles", "link"], ["social-settings", "Settings", "settings"]];
 const BUSINESS = [["clips", "Surge", "Streamer clips", CLIP_TABS], ["stories", "Hollow", "Scary stories", STORY_TABS], ["music", "Resonance", "Music production", MUSIC_TABS], ["social", "Social Studio", "Client content", SOCIAL_TABS]];
 const businessFor = key => BUSINESS.find(([, , , tabs]) => tabs.some(([tab]) => tab === key))?.[0];
@@ -76,8 +79,11 @@ function Main() {
   const [business, setBusiness] = useState("clips");
   const remembered = useRef({ clips: "desk", stories: "stories", music: "music", social: "social" });
   const [businessStates, setBusinessStates] = useState([]), [businessError, setBusinessError] = useState(""), [runtimeBusy, setRuntimeBusy] = useState(false);
-  const storyEdits = useRef(false);
-  const onStoryDirty = useCallback(value => { storyEdits.current = value; }, []);
+  const storyEdits = useRef(false), persistentEditor = useRef(false), accountEdits = useRef(false);
+  const onAccountDirty = useCallback(value => { accountEdits.current = !!value; }, []);
+  const [skipNavigationWarning, setSkipNavigationWarning] = useState(false), [pendingNavigation, setPendingNavigation] = useState(null), [skipNextWarnings, setSkipNextWarnings] = useState(false);
+  useEffect(() => { AsyncStorage.getItem("ashvane.skip-navigation-warning").then(value => setSkipNavigationWarning(value === "yes")).catch(() => {}); }, []);
+  const onStoryDirty = useCallback(value => { storyEdits.current = typeof value === "object" ? !!value?.dirty : !!value; persistentEditor.current = !!value?.persistent; }, []);
   const setTab = useCallback(next => {
     const go = () => {
       if (businessFor(next)) {
@@ -86,18 +92,17 @@ function Main() {
       }
       navigate(next);
     };
-    const unmountsEditor = businessFor(next) !== businessFor(tab) || isStory(tab) || [tab, next].some(key => ["music-settings", "social-settings"].includes(key));
-    if (next !== tab && unmountsEditor && storyEdits.current) {
-      if (Platform.OS === "web") {
-        if (globalThis.confirm("Leave without saving your workspace edits?")) { storyEdits.current = false; go(); }
-        return;
-      }
-      Alert.alert("Leave without saving?", "Your workspace edits have not been saved to the PC.", [
-        { text: "Keep editing", style: "cancel" },
-        { text: "Discard edits", style: "destructive", onPress: () => { storyEdits.current = false; go(); } },
-      ]);
+    const leavesStoryProject = tab === "story-library" && businessFor(next) === "stories" && next !== tab && !persistentEditor.current;
+    const leavesAccount = ["clip-accounts", "story-accounts", "music-accounts"].includes(tab) && next !== tab;
+    if (next !== tab && ((leavesAccount && accountEdits.current) || (leavesStoryProject && storyEdits.current))) {
+      if (leavesAccount) {
+        if (Platform.OS === "web") { if (globalThis.confirm("Leave without saving your account edits?")) go(); }
+        else Alert.alert("Leave without saving?", "Your account edits have not been saved.", [{ text: "Keep editing", style: "cancel" }, { text: "Discard edits", style: "destructive", onPress: go }]);
+      } else if (skipNavigationWarning) go();
+      else { setSkipNextWarnings(false); setPendingNavigation(() => go); }
     } else go();
-  }, [tab, navigate]);
+  }, [tab, navigate, skipNavigationWarning]);
+
   const [deskTab, setDeskTab] = useState("today");
   const [offline, setOffline] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
@@ -246,13 +251,14 @@ function Main() {
           ) : (
             <>
               {businessFor(tab) === "clips" && offline && <Banner tone="bad" text="Can't reach the PC. Pull down to retry, or open Live → Test." />}
-              {isStory(tab) && !["story-accounts", "story-settings"].includes(tab) && <Stories screen={tab} studio={stories} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} />}
-              {tab === "story-accounts" && <StoryAccounts host={host} token={token} onUnauthorized={signOut} onChanged={stories.load} onDirtyChange={onStoryDirty} />}
+              <View style={{ flex: 1, display: isStory(tab) && !["story-accounts", "story-settings"].includes(tab) ? "flex" : "none" }}><Stories screen={isStory(tab) ? tab : remembered.current.stories} studio={stories} active={isStory(tab) && !["story-accounts", "story-settings"].includes(tab) && foreground && !lock.locked} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} /></View>
+              {["clip-accounts", "music-accounts"].includes(tab) && <AccountProfiles key={tab} business={businessFor(tab)} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onAccountDirty} />}
+              {tab === "story-accounts" && <StoryAccounts host={host} token={token} onUnauthorized={signOut} onChanged={stories.load} onDirtyChange={onAccountDirty} />}
               {tab === "story-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["stories"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
-              {isMusic(tab) && tab !== "music-settings" && <Music screen={tab} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} active={foreground && !lock.locked} runtime={runtime} />}
+              <View style={{ flex: 1, display: isMusic(tab) && !["music-settings", "music-accounts"].includes(tab) ? "flex" : "none" }}><Music screen={isMusic(tab) ? tab : remembered.current.music} host={host} token={token} onUnauthorized={signOut}  active={isMusic(tab) && !["music-accounts", "music-settings"].includes(tab) && foreground && !lock.locked} runtime={businessStates.find(row => row.id === "music")} /></View>
               {tab === "music-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["music"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
               {tab === "social-settings" && <ScrollView contentContainerStyle={{ padding: 16 }}><SettingsTab onlySections={["social"]} host={host} token={token} toast={toast} onError={onError} /></ScrollView>}
-              {isSocial(tab) && tab !== "social-settings" && <Social screen={tab} host={host} token={token} onUnauthorized={signOut} onDirtyChange={onStoryDirty} active={foreground && !lock.locked} runtime={runtime} />}
+              <View style={{ flex: 1, display: isSocial(tab) && tab !== "social-settings" ? "flex" : "none" }}><Social screen={isSocial(tab) ? tab : remembered.current.social} host={host} token={token} onUnauthorized={signOut}  active={isSocial(tab) && foreground && !lock.locked} runtime={businessStates.find(row => row.id === "social")} /></View>
               {tab === "desk" && <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, height: 56 }}
                 contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}>
                 {DESK_TABS.map(([key, label]) => {
@@ -265,7 +271,7 @@ function Main() {
                     </Pressable>);
                 })}
               </ScrollView>}
-              {businessFor(tab) === "clips" && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
+              {["desk", "research"].includes(tab) && <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 30 }}
                 refreshControl={<RefreshControl tintColor={C.ink2} refreshing={refreshing}
                   onRefresh={async () => { setRefreshing(true); try { await Promise.all([poll(), research.load()]); setRefreshVersion(v => v + 1); } finally { setRefreshing(false); } }} />}>
                 {tab === "research" ? <Research research={research} /> : <>
@@ -273,14 +279,14 @@ function Main() {
                   {deskTab === "live" && <Live state={state} onPause={pause} busy={busy} host={host} token={token} />}
                   {deskTab === "clips" && <Clips host={host} token={token} state={state} toast={toast} refreshVersion={refreshVersion} onError={onError} />}
                   {deskTab === "studio" && <Studio key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
-                  {deskTab === "settings" && <SettingsTab excludeSections={["stories", "story_accounts", "music", "social", "businesses"]} key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
+                  {deskTab === "settings" && <SettingsTab excludeSections={["accounts", "stories", "story_accounts", "music", "social", "businesses"]} key={refreshVersion} host={host} token={token} toast={toast} onError={onError} />}
                   {deskTab === "log" && <Log key={refreshVersion} host={host} token={token} state={state} onError={onError} />}
                 </>}
               </ScrollView>}
             </>))}
           {tab === "chat" && <Assistant host={host} token={token} m={m} onError={onError} />}
           {tab === "code" && <Code m={m} />}
-          {tab === "tools" && <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}><Card><Text style={t.h2}>Optional workspace tools</Text><Text style={[t.muted, { marginTop: 6, marginBottom: 16 }]}>A private assistant and code workspace are available when you need them.</Text><Button label="Open Assistant" icon="chatbubble-ellipses-outline" onPress={() => setTab("chat")} /><Button label="Open Code" icon="code-slash-outline" onPress={() => setTab("code")} style={{ marginTop: 10 }} /></Card></ScrollView>}
+          {tab === "tools" && <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}><PhoneSetup host={host} token={token} onUnauthorized={signOut} latency={state?.latency} /><Card><Text style={t.h2}>Optional workspace tools</Text><Text style={[t.muted, { marginTop: 6, marginBottom: 16 }]}>A private assistant and code workspace are available when you need them.</Text><Button label="Open Assistant" icon="chatbubble-ellipses-outline" onPress={() => setTab("chat")} /><Button label="Open Code" icon="code-slash-outline" onPress={() => setTab("code")} style={{ marginTop: 10 }} /></Card></ScrollView>}
         </View>
 
         <SafeAreaView edges={["bottom"]} style={{ backgroundColor: C.s1, borderTopWidth: 1, borderTopColor: C.line }}>
@@ -299,6 +305,7 @@ function Main() {
         </SafeAreaView>
       </SafeAreaView>
       </Animated.View>
+      <Modal transparent visible={!!pendingNavigation} animationType="fade" onRequestClose={() => setPendingNavigation(null)}><View style={{ flex: 1, backgroundColor: "#000a", justifyContent: "center", padding: 24 }}><Card style={{ gap: 16 }}><Text style={t.h2}>Leave without saving?</Text><Text style={t.muted}>Your story project edits have not been saved to the PC. You can keep editing or return to them later in this session.</Text><View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}><Text style={[t.muted, { flex: 1 }]}>Don't show again</Text><Switch accessibilityLabel="Don't show again" value={skipNextWarnings} onValueChange={setSkipNextWarnings} /></View><Button label="Keep editing" onPress={() => setPendingNavigation(null)} /><Button label="Leave editor" onPress={() => { if (skipNextWarnings) { setSkipNavigationWarning(true); AsyncStorage.setItem("ashvane.skip-navigation-warning", "yes").catch(() => {}); } const go = pendingNavigation; setPendingNavigation(null); go?.(); }} /></Card></View></Modal>
       <PortalOverlay portal={portal} />
     </SafeAreaProvider>);
 }

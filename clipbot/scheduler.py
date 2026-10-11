@@ -116,6 +116,11 @@ class Scheduler:
         self.analytics = None        # set by the pipeline: steers picks and caps flooding
         self.quality_guard = None    # pipeline's final-cut gate, including older scheduled clips
         self.media_locks: dict[str, asyncio.Lock] = {}
+        self.account_profiles = None
+
+    def _profile_hold(self, candidate):
+        return (self.account_profiles.held_reason("clips", candidate.source.get("account_profile_id", "default"))
+                if self.account_profiles else "")
 
     def apply(self, settings: Settings) -> None:
         self.settings = settings
@@ -212,6 +217,8 @@ class Scheduler:
                 fresh = await asyncio.to_thread(self.store.get_candidate, c.id)
                 if fresh is None or fresh.stage != Stage.SCHEDULED or fresh.posted_to.get(name) in ("ok", "failed"):
                     continue
+                if self._profile_hold(fresh):
+                    continue
                 if not fresh.final_path or not Path(fresh.final_path).exists():
                     fresh.stage = Stage.FAILED
                     fresh.error = "Finished video is missing from its saved path. Restore the file or make a new clip before posting."
@@ -229,9 +236,20 @@ class Scheduler:
             return await self._post_checked(name, cand_id)
 
     async def _post_checked(self, name: str, cand_id: str):
+        if self.account_profiles:
+            if reason := self.account_profiles.held_reason("clips", self.account_profiles.active_id("clips")):
+                return PublishResult(False, error=reason)
+            async with self.account_profiles.upload("clips"):
+                return await self._post_for_profile(name, cand_id)
+        return await self._post_for_profile(name, cand_id)
+
+    async def _post_for_profile(self, name: str, cand_id: str):
         c = await asyncio.to_thread(self.store.get_candidate, cand_id)
         if c is None:
             return None
+        if reason := self._profile_hold(c):
+            self.last_error[name] = reason
+            return PublishResult(False, error=reason)
         # Recheck under the media lock: a manual or automatic upload may have finished while waiting.
         if c.posted_to.get(name) == "ok":
             posts = await asyncio.to_thread(self.store.posts_for_candidate, cand_id)
@@ -301,6 +319,8 @@ class Scheduler:
         return out
 
     def _maybe_finish(self, c: Candidate) -> None:
+        if self._profile_hold(c):
+            return
         active = self.active_platforms()
         if active and all(c.posted_to.get(p) in ("ok", "failed") for p in active):
             c.stage = Stage.POSTED
@@ -322,6 +342,8 @@ class Scheduler:
         horizon = time.time() - self.settings.posting.retention_days * DAY_S
         expired = await asyncio.to_thread(self.store.expired_candidates, horizon)
         for c in expired:
+            if self._profile_hold(c):
+                continue
             if self.settings.posting.delete_remote_on_expiry:
                 for p in await asyncio.to_thread(self.store.posts_for_candidate, c.id):
                     if p["status"] != "ok" or p["deleted"] or p["platform"] not in self.publishers:

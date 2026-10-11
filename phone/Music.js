@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { Button, C, Card, Empty, Field, Pill, Section, t } from "./theme";
+import Learning from "./Learning";
 import BusinessMedia from "./BusinessMedia";
 import { useWorkspace } from "./workspace";
 
@@ -8,7 +9,7 @@ const terminal = new Set(["completed", "failed", "cancelled", "needs_input"]);
 const ongoing = job => job && !terminal.has(job.status);
 const normalize = row => ({ ...row, ...row.parameters, id: row.id });
 const savedWork = new Map();
-const initialCreate = { title: "", style: "", lyrics: "", mode: "general", duration_seconds: "60", seed: "-1", lm_seed: "-1", steps: "32", cot: "full" };
+const initialCreate = { title: "", style: "", lyrics: "", lyrics_mode: "generated", lyrics_direction: "", generated_lyrics: "", instrumental: false, mode: "general", duration_seconds: "60", seed: "-1", lm_seed: "-1", steps: "32", cot: "full" };
 const initialSession = { title: "", producer_brief: "", source: "", bpm: "120", bars: "8", seed: "0", beat_style: "trap", replace_backing: false };
 const sessionFor = project => ({ ...initialSession, ...Object.fromEntries(["title", "producer_brief", "bpm", "bars", "seed", "beat_style"].map(key => [key, String(project[key] ?? initialSession[key])])), source: project.render_id ? `render:${project.render_id}` : project.song_id ? `song:${project.song_id}` : "", replace_backing: !!project.replace_backing });
 export function Options({ label, options, value, onChange, disabled }) {
@@ -19,11 +20,12 @@ export default function Music({ host, token, onUnauthorized, onDirtyChange, scre
   const api = useWorkspace({ host, token, onUnauthorized }, "/api/music");
   const { request, action, error, setError, busy, notice } = api;
   const [engine, setEngine] = useState(null), [reaper, setReaper] = useState(null), [songs, setSongs] = useState([]), [renders, setRenders] = useState([]);
-  const [direction, setDirection] = useState(initialCreate), [session, setSession] = useState(() => restored.project ? { ...sessionFor(restored.project), producer_brief: restored.producer?.brief || restored.project.producer_brief || "" } : initialSession), [dirty, setDirty] = useState({ create: false, session: false });
+  const [direction, setDirection] = useState(restored.direction || initialCreate), [session, setSession] = useState(() => restored.session || (restored.project ? { ...sessionFor(restored.project), producer_brief: restored.producer?.brief || restored.project.producer_brief || "" } : initialSession)), [dirty, setDirty] = useState(restored.dirty || { create: false, session: false });
+  const [learningDirty, setLearningDirty] = useState(false), [lyricsProfile, setLyricsProfile] = useState("");
   const [generation, setGeneration] = useState(restored.generation || null), [producer, setProducer] = useState(restored.producer || null), [project, setProject] = useState(restored.project || null), [selected, setSelected] = useState(null), [preview, setPreview] = useState(null);
-  useEffect(() => { savedWork.set(sessionKey, { generation, producer, project }); if (savedWork.size > 8) savedWork.delete(savedWork.keys().next().value); }, [sessionKey, generation, producer, project]);
+  useEffect(() => { savedWork.set(sessionKey, { generation, producer, project, direction, session, dirty }); if (savedWork.size > 8) savedWork.delete(savedWork.keys().next().value); }, [sessionKey, generation, producer, project, direction, session, dirty]);
   const edit = (setter, key, value) => { setter(d => ({ ...d, [key]: value })); setDirty(d => ({ ...d, [setter === setDirection ? "create" : "session"]: true })); };
-  useEffect(() => { onDirtyChange?.(dirty.create || dirty.session); }, [dirty, onDirtyChange]);
+  useEffect(() => { onDirtyChange?.({ dirty: dirty.create || dirty.session || learningDirty, persistent: true }); }, [dirty, learningDirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const load = useCallback(async () => {
     const results = await Promise.allSettled([request("/status"), request("/songs"), request("/reaper/status"), request("/renders")]);
@@ -57,11 +59,13 @@ export default function Music({ host, token, onUnauthorized, onDirtyChange, scre
     };
     timer = setTimeout(tick, 1500); return () => { alive = false; clearTimeout(timer); };
   }, [active, generation, producer, project, request, load, setError]);
+  useEffect(() => { if (!active) setPreview(null); }, [active]);
   const enabled = !!runtime?.enabled;
   const create = () => action(async () => {
     const duration = Number(direction.duration_seconds), steps = Number(direction.steps);
-    if (!direction.style.trim() || !Number.isInteger(duration) || duration < 10 || duration > 360 || !Number.isInteger(steps) || steps < 8 || steps > 64) throw new Error("Enter a musical direction, a length from 10 to 360 seconds and 8 to 64 generation steps.");
-    setGeneration(await request("/create", { method: "POST", body: { ...direction, duration_seconds: duration, steps, seed: Number(direction.seed), lm_seed: Number(direction.lm_seed) } })); setDirty(d => ({ ...d, create: false }));
+    if (!Number.isInteger(duration) || duration < 10 || duration > 360 || !Number.isInteger(steps) || steps < 8 || steps > 64) throw new Error("Enter a length from 10 to 360 seconds and 8 to 64 generation steps.");
+    const { generated_lyrics, instrumental, ...fields } = direction;
+    setGeneration(await request("/create", { method: "POST", body: { ...fields, lyrics_mode: direction.instrumental ? "given" : direction.lyrics_mode, lyrics: direction.instrumental ? "" : direction.lyrics_mode === "given" ? direction.lyrics : direction.generated_lyrics, duration_seconds: duration, steps, seed: Number(direction.seed), lm_seed: Number(direction.lm_seed) } })); setDirty(d => ({ ...d, create: false }));
   }, "Local generation started. Your take will appear in Library.");
   const prepare = async () => {
     const bpm = Number(session.bpm), bars = Number(session.bars), seed = Number(session.seed);
@@ -94,7 +98,10 @@ export default function Music({ host, token, onUnauthorized, onDirtyChange, scre
     {!!notice && <Text accessibilityLiveRegion="polite" style={[t.muted, { marginBottom: 16 }]}>{notice}</Text>}
     {screen === "music" && <Section title="Create a take"><Card style={{ gap: 16 }}>
       <Text style={t.faint}>{engine?.message || "Checking local engine…"}</Text>
-      {[['title', 'Take title'], ['style', 'Musical direction'], ['lyrics', 'Lyrics']].map(([key, label]) => <Field editable={!busy} key={key} label={label} value={direction[key]} multiline={key !== "title"} maxLength={key === "title" ? 120 : 12000} onChangeText={value => edit(setDirection, key, value)} />)}
+      {[['title', 'Take title'], ['style', 'Musical direction · optional']].map(([key, label]) => <Field editable={!busy} key={key} label={label} value={direction[key]} multiline={key !== "title"} maxLength={key === "title" ? 120 : 2000} onChangeText={value => edit(setDirection, key, value)} />)}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}><Text style={[t.muted, { flex: 1 }]}>Instrumental</Text><Switch disabled={busy} accessibilityLabel="Instrumental" value={direction.instrumental} onValueChange={v => edit(setDirection, "instrumental", v)} /></View>
+      {!direction.instrumental && <><Options disabled={busy} label="Lyrics source" options={[["generated", "Generate lyrics"], ["given", "Use my lyrics"]]} value={direction.lyrics_mode} onChange={v => edit(setDirection, "lyrics_mode", v)} />
+      {direction.lyrics_mode === "given" ? <Field editable={!busy} label="Your lyrics" value={direction.lyrics} multiline maxLength={12000} onChangeText={v => edit(setDirection, "lyrics", v)} /> : <><Field editable={!busy} label="Lyrics direction · optional" value={direction.lyrics_direction} multiline maxLength={4000} onChangeText={v => edit(setDirection, "lyrics_direction", v)} /><Button label="Suggest lyrics" busy={busy} onPress={() => action(async () => { const result = await request("/lyrics", { method: "POST", timeout: 300000, body: { style: direction.style, direction: direction.lyrics_direction, duration_seconds: Number(direction.duration_seconds), mode: direction.mode } }); setLyricsProfile(result.account_profile_id || ""); edit(setDirection, "generated_lyrics", result.lyrics || ""); if (!direction.title && result.title) setDirection(d => ({ ...d, title: result.title })); }, "Lyrics suggested. Edit them or generate a take.")} />{!!direction.generated_lyrics && <Field editable={!busy} label="Generated lyrics" value={direction.generated_lyrics} multiline maxLength={12000} onChangeText={v => edit(setDirection, "generated_lyrics", v)} />}<Text style={t.faint}>Leave the direction empty to let Resonance choose. Lyrics are generated when you start the take.</Text></> }</>}
       <Options disabled={busy} label="Performance" options={[["general", "General music"], ["rap", "Rap"]]} value={direction.mode} onChange={v => edit(setDirection, "mode", v)} />
       {[["duration_seconds", "Length in seconds"], ["seed", "Audio seed"], ["lm_seed", "Composition seed"], ["steps", "Generation steps"]].map(([key, label]) => <Field editable={!busy} key={key} label={label} value={direction[key]} keyboardType="numbers-and-punctuation" onChangeText={v => edit(setDirection, key, v)} />)}
       <Text style={t.faint}>Seed −1 chooses a new take.</Text>
@@ -137,6 +144,7 @@ export default function Music({ host, token, onUnauthorized, onDirtyChange, scre
       </Card></Section>}
     </>}
     {!!preview && ["music-library", "music-production"].includes(screen) && <Card style={{ gap: 14, marginTop: 16 }}><BusinessMedia host={host} token={token} path={preview.path} label={preview.label} onUnauthorized={onUnauthorized} /><Button label="Close audio preview" onPress={() => setPreview(null)} /></Card>}
+    <Learning active={active} host={host} token={token} onUnauthorized={onUnauthorized} business="music" onDirtyChange={setLearningDirty} example={screen === "music" && !direction.instrumental && direction.lyrics_mode === "generated" && direction.generated_lyrics ? { title: direction.title, text: direction.generated_lyrics, account_profile_id: lyricsProfile } : selected ? { title: selected.title, text: selected.lyrics || selected.style, account_profile_id: selected.account_profile_id } : undefined} />
     {(dirty.create || dirty.session) && <Button label="Discard unsaved music direction" onPress={() => { setDirection(initialCreate); setSession(initialSession); setDirty({ create: false, session: false }); }} style={{ marginTop: 16 }} />}
   </ScrollView>;
 }

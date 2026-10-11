@@ -449,7 +449,10 @@ def test_research_api_guards_validation_and_delete(tmp_path):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=base) as client:
                 assert (await client.get("/api/research")).status_code == 401
                 auth = ProfileStore()
-                profile = auth.create("Research tester", "safe-password-123", s.app.min_password_len)
+                setup = await client.post("/api/auth/setup", headers={"X-ClipBot": "1"},
+                                          json={"name": "Research tester", "password": "safe-password-123"})
+                assert setup.status_code == 200
+                profile = setup.json()["profile"]
                 token = auth.create_session(profile["id"], s.app.session_hours)
                 client.headers["Authorization"] = f"Bearer {token}"
                 assert (await client.get("/api/research")).json()["sources"] == engine.sources

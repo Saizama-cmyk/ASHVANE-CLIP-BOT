@@ -48,6 +48,7 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
     else if(path==='/api/social/clients'&&method==='GET')data={clients};
     else if(path==='/api/social/clients'&&method==='POST'){const client={id:'c'.repeat(32),public_handles:{},...body};clients.push(client);data={ok:true,client};}
     else if(/^\/api\/social\/clients\/[ab]+$/.test(path)&&method==='PATCH'){const id=path.split('/').pop();clients=clients.map(row=>row.id===id?{...row,...body}:row);data={ok:true,client:clients.find(row=>row.id===id)};}
+    else if(path.endsWith('/style-profiles')){const id=path.split('/')[4];data={profiles:Object.entries(clients.find(c=>c.id===id)?.style_notes||{}).map(([key,instructions])=>({id:key,name:`Style ${key}`,instructions,client_id:id}))};}
     else if(path.endsWith('/accounts')&&path.startsWith('/api/social/')){const id=path.split('/')[4];data={public_handles:clients.find(row=>row.id===id).public_handles,publishing_available:false};}
     else if(path.endsWith('/assets')){const id=path.split('/')[4];data={assets:[{id:`asset-${id[0]}`,client_id:id,name:`${id===clientA?'QuirkyCMD':'Second client'} reference`,kind:'audio',historical:true,url:`/api/social/assets/asset-${id[0]}`}]};}
     else if(path.endsWith('/content')&&path.startsWith('/api/social/clients/')){const id=path.split('/')[4];if(method==='GET')data={items:posts.filter(row=>row.client_id===id)};else{const item={id:'d'.repeat(32),client_id:id,...body};posts.push(item);data={ok:true,item};}}
@@ -62,13 +63,13 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
   });
   const tab=async name=>{await page.getByRole('tab',{name,exact:true}).click();};
   const switchTo=async name=>{await page.getByRole('button',{name:new RegExp(`^${name} ·`)}).click();await page.waitForTimeout(250);};
-  await page.goto(base);await switchTo('Resonance');await page.getByLabel('Musical direction',{exact:true}).waitFor();
+  await page.goto(base);await switchTo('Resonance');await page.getByLabel('Musical direction · optional',{exact:true}).waitFor();
   assert.equal(mutations.length,0,'Navigation must not start a business');
   assert(await page.getByRole('button',{name:'Generate local take',exact:true}).isDisabled());
   await page.getByRole('button',{name:'Start Resonance',exact:true}).click();await page.getByRole('button',{name:'Stop Resonance',exact:true}).waitFor();
   assert.equal(businesses.find(row=>row.id==='clips').enabled,false);assert.equal(businesses.find(row=>row.id==='stories').enabled,true);
-  await page.getByLabel('Take title',{exact:true}).fill('Mobile fixture');await page.getByLabel('Musical direction',{exact:true}).fill('Original quiet instrumental');
-  page.once('dialog',d=>d.dismiss());await switchTo('Social Studio');assert.equal(await page.getByLabel('Take title',{exact:true}).inputValue(),'Mobile fixture');
+  await page.getByLabel('Take title',{exact:true}).fill('Mobile fixture');await page.getByLabel('Musical direction · optional',{exact:true}).fill('Original quiet instrumental');
+  await switchTo('Social Studio');await switchTo('Resonance');assert.equal(await page.getByLabel('Take title',{exact:true}).inputValue(),'Mobile fixture');
   await page.getByRole('button',{name:'Generate local take',exact:true}).click();await page.getByRole('button',{name:'Cancel current music job',exact:true}).click();
   assert.equal(mutations.find(row=>row.path==='/api/music/create').body.duration_seconds,60);
   await tab('Library');await page.getByRole('button',{name:'Audition Fixture take',exact:true}).click();await page.getByRole('button',{name:'Use this source for a session',exact:true}).click();
@@ -81,7 +82,7 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
   await page.getByRole('button',{name:'Cancel current music job',exact:true}).click();
   assert.equal(mutations.find(row=>row.path==='/api/music/produce').body.project_id,projectId);
   await page.getByRole('button',{name:'Open REAPER on PC',exact:true}).click();await page.getByText('REAPER opened on your PC.',{exact:true}).waitFor();
-  await page.getByRole('button',{name:'Audition version 1',exact:true}).click();await page.locator('audio').waitFor();
+  await page.getByRole('button',{name:'Audition version 1',exact:true}).click();await page.locator('audio:visible').waitFor();
   await page.getByRole('button',{name:'Export current session',exact:true}).click();await page.getByRole('button',{name:'Cancel session export',exact:true}).click();
   await page.getByText('Session cancellation requested.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Stop Resonance',exact:true}).click();assert(await page.getByRole('button',{name:'Start Resonance',exact:true}).isDisabled());
@@ -98,7 +99,7 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
   await page.getByLabel('Calendar time · include timezone',{exact:true}).fill('2026-10-20T15:00:00-05:00');await page.getByRole('button',{name:'Save post',exact:true}).click();
   await page.getByText('Post saved for manual publishing.',{exact:true}).waitFor();assert.deepEqual(posts[0].hashtags,['#original','#fixture']);
   await tab('Calendar');await page.getByText('Reviewed mobile draft',{exact:true}).waitFor();
-  await tab('Assets');await page.getByRole('button',{name:'Preview QuirkyCMD reference',exact:true}).click();await page.locator('audio').waitFor();
+  await tab('Assets');await page.getByRole('button',{name:'Preview QuirkyCMD reference',exact:true}).click();await page.locator('audio:visible').waitFor();
   await tab('Profiles');await page.getByLabel('instagram public profile URL',{exact:true}).fill('https://instagram.com/quirkycmd-fixture');await page.getByRole('button',{name:'Save client public links',exact:true}).click();
   await page.getByText('Public profiles saved for this client.',{exact:true}).waitFor();assert.equal(clients[1].public_handles.youtube,'https://youtube.com/@fixture-second');
   await page.getByRole('radio',{name:'Second client',exact:true}).click();await page.getByLabel('youtube public profile URL',{exact:true}).waitFor();

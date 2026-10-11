@@ -40,6 +40,7 @@ class OAuthManager:
         self.account_section = account_section
         self.callback_scope = callback_scope
         self._states: dict[str, tuple[str, float]] = {}
+        self._exchanging = 0
         self._locks = {p: asyncio.Lock() for p in PLATFORMS}
 
     def apply(self, settings: Settings) -> None:
@@ -67,6 +68,12 @@ class OAuthManager:
         entry = self._states.get(state)
         return bool(entry and entry[0] == platform)
 
+    def pending(self) -> bool:
+        """An unfinished sign-in must retain its original profile's token store."""
+        cutoff = time.time() - self.settings.app.session_hours * 3600
+        self._states = {state: entry for state, entry in self._states.items() if entry[1] >= cutoff}
+        return bool(self._states) or bool(self._exchanging)
+
     def redirect_uri(self, platform: str) -> str:
         if platform == "tiktok":
             return self.accounts.tiktok_redirect_uri
@@ -77,13 +84,16 @@ class OAuthManager:
                     or self.tokens.get(platform).get("access_token"))
 
     def start_url(self, platform: str) -> str:
+        if hasattr(self, "profile_hold") and (reason := self.profile_hold()):
+            raise PublishError(reason)
         a = self.accounts
         section = "Hollow accounts" if self.account_section == "story_accounts" else "Accounts"
         state = secrets.token_urlsafe(24)
-        self._states[state] = (platform, time.time())
         if platform == "youtube":
             if not (a.youtube_client_id and a.youtube_client_secret):
                 raise PublishError(f"Add the YouTube OAuth client ID and secret in Settings → {section}")
+            self.cancel_pending(platform)
+            self._states[state] = (platform, time.time())
             return GOOGLE_AUTH_URL + "?" + urlencode({
                 "client_id": a.youtube_client_id, "redirect_uri": self.redirect_uri(platform),
                 "response_type": "code", "scope": YOUTUBE_SCOPES, "access_type": "offline",
@@ -93,6 +103,8 @@ class OAuthManager:
                 raise PublishError(f"Add the TikTok client key and secret in Settings → {section}")
             if not a.tiktok_redirect_uri.startswith("https://"):
                 raise PublishError(f"TikTok needs an https redirect URI (Settings → {section})")
+            self.cancel_pending(platform)
+            self._states[state] = (platform, time.time())
             return TIKTOK_AUTH_URL + "?" + urlencode({
                 "client_key": a.tiktok_client_key, "scope": TIKTOK_SCOPES,
                 "response_type": "code", "redirect_uri": a.tiktok_redirect_uri, "state": state})
@@ -113,11 +125,15 @@ class OAuthManager:
                     "client_secret": a.tiktok_client_secret,
                     "redirect_uri": self.redirect_uri(platform), "grant_type": "authorization_code"}
             url = TIKTOK_TOKEN_URL
-        r = await self.http.post(url, data=data, timeout=self.settings.discovery.http_timeout_s)
-        body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-        if r.status_code != 200 or "access_token" not in body:
-            raise PublishError(f"{platform} token exchange failed: {r.text[:ERR_SNIPPET]}")
-        self._store(platform, body)
+        self._exchanging += 1
+        try:
+            r = await self.http.post(url, data=data, timeout=self.settings.discovery.http_timeout_s)
+            body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+            if r.status_code != 200 or "access_token" not in body:
+                raise PublishError(f"{platform} token exchange failed: {r.text[:ERR_SNIPPET]}")
+            self._store(platform, body)
+        finally:
+            self._exchanging -= 1
         logger.info("%s account connected", platform)
 
     async def callback_from_url(self, platform: str, landed_url: str) -> None:
@@ -143,6 +159,13 @@ class OAuthManager:
             "scope": body.get("scope", old.get("scope", ""))})
 
     async def access_token(self, platform: str) -> str:
+        self._exchanging += 1
+        try:
+            return await self._access_token(platform)
+        finally:
+            self._exchanging -= 1
+
+    async def _access_token(self, platform: str) -> str:
         async with self._locks[platform]:
             tok = self.tokens.get(platform)
             if not tok:
@@ -168,6 +191,9 @@ class OAuthManager:
             self._store(platform, body)
             return body["access_token"]
 
+    def cancel_pending(self, platform: str) -> None:
+        self._states = {state: entry for state, entry in self._states.items() if entry[0] != platform}
+
     def disconnect(self, platform: str) -> None:
         self.tokens.clear(platform)
-        self._states = {state: entry for state, entry in self._states.items() if entry[0] != platform}
+        self.cancel_pending(platform)

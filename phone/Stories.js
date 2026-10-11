@@ -4,6 +4,7 @@ import * as FileSystem from "expo-file-system";
 import { WebView } from "react-native-webview";
 import { call } from "./api";
 import { Button, C, Card, Empty, Field, MONO, Pill, Section, t } from "./theme";
+import Learning from "./Learning";
 
 const POLL_MS = 6000;
 const text = value => typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
@@ -130,12 +131,16 @@ function Preview({ host, token, project, onClose, onUnauthorized }) {
   </Card>;
 }
 
-function Project({ project, request, host, token, publishing, onUnauthorized, onError, onDirtyChange }) {
-  const [open, setOpen] = useState(false), [preview, setPreview] = useState(false), [busy, setBusy] = useState("");
-  const [title, setTitle] = useState(project.title || ""), [script, setScript] = useState(project.script || "");
-  const [publicTitle, setPublicTitle] = useState(project.public_copy?.youtube?.title || ""), [description, setDescription] = useState(project.public_copy?.youtube?.description || "");
-  const [sceneEdits, setSceneEdits] = useState(project.scenes || []);
-  const [dirty, setDirty] = useState(false);
+const projectBuffers = new Map();
+function Project({ project, request, host, token, publishing, onUnauthorized, onError, onDirtyChange, workspaceActive }) {
+  const bufferKey = `${host}:${token}:${project.id}`, buffer = projectBuffers.get(bufferKey);
+  const [open, setOpen] = useState(!!buffer), [preview, setPreview] = useState(false), [busy, setBusy] = useState("");
+  const [title, setTitle] = useState(buffer?.title ?? project.title ?? ""), [script, setScript] = useState(buffer?.script ?? project.script ?? "");
+  const [publicTitle, setPublicTitle] = useState(buffer?.publicTitle ?? project.public_copy?.youtube?.title ?? ""), [description, setDescription] = useState(buffer?.description ?? project.public_copy?.youtube?.description ?? "");
+  const [sceneEdits, setSceneEdits] = useState(buffer?.sceneEdits ?? project.scenes ?? []);
+  useEffect(() => { if (!workspaceActive) setPreview(false); }, [workspaceActive]);
+  const [dirty, setDirty] = useState(!!buffer);
+  useEffect(() => { if (dirty) projectBuffers.set(bufferKey, { title, script, publicTitle, description, sceneEdits }); else projectBuffers.delete(bufferKey); }, [bufferKey, dirty, title, script, publicTitle, description, sceneEdits]);
   useEffect(() => { onDirtyChange(project.id, dirty); return () => onDirtyChange(project.id, false); }, [dirty, project.id, onDirtyChange]);
   useEffect(() => {
     if (dirty) return;
@@ -195,20 +200,30 @@ function Project({ project, request, host, token, publishing, onUnauthorized, on
   </Card>;
 }
 
-export default function Stories({ screen = "stories", studio, host, token, onUnauthorized, onDirtyChange }) {
+export default function Stories({ screen = "stories", studio, host, token, onUnauthorized, onDirtyChange, active = true }) {
   const { data, publishing, error, loading, load, request } = studio;
   const [topic, setTopic] = useState(""), [genre, setGenre] = useState("paranormal"), [format, setFormat] = useState("still"), [duration, setDuration] = useState("60"), [voice, setVoice] = useState("");
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(""), [failure, setFailure] = useState("");
-  const initialized = useRef(false);
+  const [topicMode, setTopicMode] = useState("generated"), [direction, setDirection] = useState(""), [generatedTopic, setGeneratedTopic] = useState(""), [ideas, setIdeas] = useState([]);
+  const [ideaProfile, setIdeaProfile] = useState(""), [selectedIdeaProfile, setSelectedIdeaProfile] = useState("");
+  const initialized = useRef(false), formEdits = useRef(false), learningEdits = useRef(false);
   const edited = useRef(new Set());
-  const projectDirty = useCallback((id, dirty) => { if (dirty) edited.current.add(id); else edited.current.delete(id); onDirtyChange?.(edited.current.size > 0); }, [onDirtyChange]);
+  const reportDirty = useCallback(() => onDirtyChange?.({ dirty: formEdits.current || learningEdits.current || edited.current.size > 0, persistent: edited.current.size === 0 }), [onDirtyChange]);
+  const projectDirty = useCallback((id, dirty) => { if (dirty) edited.current.add(id); else edited.current.delete(id); reportDirty(); }, [reportDirty]);
+  const memoryDirty = useCallback(value => { learningEdits.current = value; reportDirty(); }, [reportDirty]);
+  const editForm = setter => value => { setter(value); formEdits.current = true; reportDirty(); };
+  const suggest = async () => {
+    setBusy(true); setFailure("");
+    try { const result = await request("/api/stories/ideas", { method: "POST", timeout: 300000, body: { genre, format, duration_s: Number(duration), direction } }); setIdeas(result.ideas || []); setIdeaProfile(result.account_profile_id || ""); }
+    catch (e) { setFailure(e.message); } finally { setBusy(false); }
+  };
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   useEffect(() => { if (data && !initialized.current) { initialized.current = true; setGenre(data.settings?.default_genre || "paranormal"); setFormat(data.settings?.default_format || "still"); setDuration(String(data.settings?.default_duration_s || 60)); } }, [data]);
   const create = async () => {
     const seconds = Number(duration), min = data?.settings?.min_duration_s || 30, max = data?.settings?.max_duration_s || 900;
-    if (!topic.trim() || !Number.isFinite(seconds) || seconds < min || seconds > max) { setFailure(`Enter a premise and a duration from ${min} to ${max} seconds.`); return; }
+    if ((topicMode === "given" && !topic.trim()) || !Number.isFinite(seconds) || seconds < min || seconds > max) { setFailure(`Enter a premise and a duration from ${min} to ${max} seconds.`); return; }
     setBusy(true); setFailure(""); setNotice("");
-    try { await request("/api/stories/projects", { method: "POST", body: { topic: topic.trim(), genre, format, duration_s: seconds, voice } }); setTopic(""); setNotice("Story production started on your PC. You can leave this screen while it works."); }
+    try { await request("/api/stories/projects", { method: "POST", timeout: 300000, body: { topic_mode: topicMode, topic: (topicMode === "given" ? topic : generatedTopic).trim(), direction: topicMode === "generated" ? direction : "", genre, format, duration_s: seconds, voice } }); formEdits.current = false; reportDirty(); setNotice("Story production started on your PC. You can leave this screen while it works."); }
     catch (e) { setFailure(e.message); } finally { setBusy(false); }
   };
   const capabilities = data?.capabilities || {};
@@ -218,21 +233,29 @@ export default function Stories({ screen = "stories", studio, host, token, onUna
     {!!notice && <Text accessibilityLiveRegion="polite" style={[t.muted, { marginBottom: 16 }]}>{notice}</Text>}
     {!data && loading && <ActivityIndicator accessibilityLabel="Loading story studio" color={C.ember} style={{ marginBottom: 16 }} />}
     {screen === "stories" && <Section title="New production"><Card style={{ gap: 20 }}>
-      <Field label="Story premise" multiline value={topic} maxLength={data?.settings?.max_topic_chars || 1200} onChangeText={setTopic} placeholder="A night-shift operator hears tomorrow’s emergency calls…" />
-      <Choices label="Genre" options={(data?.genres || []).map(g => [g.id, g.label])} value={genre} onChange={setGenre} />
-      <Choices label="Visual treatment" options={[["still", "Illustrated"], ["animated", "Animated"]]} value={format} onChange={setFormat} />
+      <Choices label="Premise source" options={[["generated", "Generate a premise"], ["given", "Use my premise"]]} value={topicMode} disabled={busy} onChange={editForm(setTopicMode)} />
+      {topicMode === "given" ? <Field label="Story premise" multiline value={topic} maxLength={data?.settings?.max_topic_chars || 1200} editable={!busy} onChangeText={editForm(setTopic)} placeholder="A night-shift operator hears tomorrow’s emergency calls…" /> : <>
+        <Field label="Story direction · optional" multiline value={direction} maxLength={1200} editable={!busy} onChangeText={editForm(setDirection)} placeholder="Leave empty for an original premise, or give it an angle" />
+        <Button label="Suggest story premises" busy={busy} disabled={!data || !!data?.busy} onPress={suggest} />
+        {ideas.map((idea, i) => <View key={i} style={{ gap: 8 }}><Text style={t.h2}>{idea.title}</Text><Text style={t.muted}>{idea.premise}</Text>{!!idea.reason && <Text style={t.faint}>{idea.reason}</Text>}<Button label={`Use premise ${i + 1}`} disabled={busy} onPress={() => { setSelectedIdeaProfile(ideaProfile); editForm(setGeneratedTopic)(idea.premise); }} /></View>)}
+        {!!generatedTopic && <Field label="Selected generated premise" value={generatedTopic} multiline editable={!busy} onChangeText={editForm(setGeneratedTopic)} />}
+        <Text style={t.faint}>Start with no premise to generate one automatically, or choose and refine a suggestion first.</Text>
+      </>}
+      <Choices label="Genre" options={(data?.genres || []).map(g => [g.id, g.label])} value={genre} disabled={busy} onChange={editForm(setGenre)} />
+      <Choices label="Visual treatment" options={[["still", "Illustrated"], ["animated", "Animated"]]} value={format} disabled={busy} onChange={editForm(setFormat)} />
       {!!capabilities.visual_provider?.label && <Text style={t.faint}>{capabilities.visual_provider.label}</Text>}
-      <Choices label="Length preset" options={[["60", "Short · 1 min"], ["300", "Episode · 5 min"], ["600", "Episode · 10 min"]]} value={duration} onChange={setDuration} />
-      <Field label="Target duration · seconds" value={duration} onChangeText={setDuration} keyboardType="number-pad" inputStyle={{ maxWidth: 160 }} />
-      {!!capabilities.voices?.length && <Choices label="Narrator" options={[["", "Default voice"], ...capabilities.voices.map(v => [v.id, v.label])]} value={voice} onChange={setVoice} />}
-      <Button label={data?.settings?.auto_render ? "Create story & video" : "Create story draft"} kind="primary" busy={busy} disabled={!data || !topic.trim() || !!data?.busy} onPress={create} />
+      <Choices label="Length preset" options={[["60", "Short · 1 min"], ["300", "Episode · 5 min"], ["600", "Episode · 10 min"]]} value={duration} disabled={busy} onChange={editForm(setDuration)} />
+      <Field label="Target duration · seconds" value={duration} editable={!busy} onChangeText={editForm(setDuration)} keyboardType="number-pad" inputStyle={{ maxWidth: 160 }} />
+      {!!capabilities.voices?.length && <Choices label="Narrator" options={[["", "Default voice"], ...capabilities.voices.map(v => [v.id, v.label])]} value={voice} disabled={busy} onChange={editForm(setVoice)} />}
+      <Button label={data?.settings?.auto_render ? "Create story & video" : "Create story draft"} kind="primary" busy={busy} disabled={!data || (topicMode === "given" && !topic.trim()) || !!data?.busy} onPress={create} />
       {!!data?.busy && <Text accessibilityLiveRegion="polite" style={t.faint}>PC production in progress · {data.job?.stage || "working"}. New productions wait until it finishes.</Text>}
       {capabilities.narrator_available === false && <Text style={t.faint}>Narration needs setup on the PC before a video can be rendered.</Text>}
       {(capabilities.reasons || []).map((reason, i) => <Text key={i} style={t.faint}>{text(reason)}</Text>)}
     </Card></Section>}
     {screen === "story-publishing" && <Publishing state={publishing} request={request} onError={setFailure} />}
     {screen === "story-library" && <Section title={`Production library${data?.projects ? ` · ${data.projects.length}` : ""}`} right={<Button small label="Refresh" busy={loading} onPress={load} />}>
-      {!data?.projects?.length ? <Card><Empty icon="moon-outline" title="Your first story starts here" body="Choose a premise, genre and narrator. Manuscripts, scenes, final videos and publishing history stay together." /></Card> : data.projects.map(project => <Project key={project.id} project={project} request={request} host={host} token={token} publishing={publishing} onUnauthorized={onUnauthorized} onError={setFailure} onDirtyChange={projectDirty} />)}
+      {!data?.projects?.length ? <Card><Empty icon="moon-outline" title="Your first story starts here" body="Choose a premise, genre and narrator. Manuscripts, scenes, final videos and publishing history stay together." /></Card> : data.projects.map(project => <Project key={project.id} project={project} request={request} host={host} token={token} publishing={publishing} onUnauthorized={onUnauthorized} onError={setFailure} onDirtyChange={projectDirty} workspaceActive={active} />)}
     </Section>}
+    <Learning active={active} host={host} token={token} onUnauthorized={onUnauthorized} business="stories" onDirtyChange={memoryDirty} example={screen === "stories" && topicMode === "generated" && generatedTopic ? { title: "Selected story premise", text: generatedTopic, account_profile_id: selectedIdeaProfile } : data?.projects?.[0] ? { title: data.projects[0].title, text: data.projects[0].script || data.projects[0].topic, account_profile_id: data.projects[0].account_profile_id } : undefined} />
   </ScrollView>;
 }

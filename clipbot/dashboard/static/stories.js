@@ -3,7 +3,7 @@
 (() => {
   const byId = id => document.getElementById(id);
   let data = null, selected = null, edited = false, manuscriptChanged = false;
-  let scenes = [], fetching = false, sending = false, initialized = false, publication = null, publicationEdited = false;
+  let scenes = [], fetching = false, sending = false, initialized = false, publication = null, publicationEdited = false, composeDirty = false, ideaBusy = false, ideas = [], currentIdea = null;
   const working = new Set(["queued","directing","writing","judging","narrating","rendering"]);
   const names = {queued:"Queued",directing:"Directing",writing:"Writing manuscript",judging:"Reviewing story",draft:"Draft ready",needs_review:"Needs review",narrating:"Recording narration",rendering:"Rendering scenes",ready:"Video ready",failed:"Needs attention",interrupted:"Interrupted",cancelled:"Cancelled"};
   function message(id, value) { const el=byId(id); el.textContent=value||""; el.hidden=!value; }
@@ -20,7 +20,8 @@
   function updateDirty(value=true) { edited=value; byId("storiesSave").disabled=!value||sending; byId("storiesDiscard").disabled=!value||sending; byId("storiesSaveMessage").textContent=value?"Unsaved changes":"Saved on this PC"; renderControls(); }
   function renderControls() {
     const p=project(), caps=data?.capabilities||{}, busy=active(p), canRender=!!caps.render_available;
-    byId("storiesCreate").disabled=!data||sending||!!data.busy;
+    byId("storiesCreate").disabled=!data||sending||ideaBusy||!!data.busy;
+    byId("storiesIdeasGenerate").disabled=!data||sending||ideaBusy||!!data.busy;
     byId("storiesCreate").textContent=sending?"Working…":data?.busy?"Another story is in production":"Create story draft";
     byId("storiesRender").disabled=!p||busy||!!data?.busy||sending||edited||!canRender||!p.script;
     byId("storiesRenderReason").textContent=edited?"Save your edits before rendering.":busy?"Production is running. You can cancel below.":data?.busy?"Another story is using the production engine.":!canRender?(caps.reasons?.join(" ")||"Configure a narrator and visual provider in Story settings."):!p?.script?"A completed manuscript is needed before rendering.":"Render this saved manuscript with its scene direction and chosen narrator.";
@@ -41,6 +42,7 @@
   function renderProject(fill=false) {
     const p=project(); byId("storiesEmpty").hidden=!!p; byId("storiesEditor").hidden=!p;
     if(!p){renderControls();return;}
+    storyDraftMemory.setScope({account_profile_id:p.account_profile_id||'default'});
     byId("storiesEditorHeading").textContent=p.title||"Untitled story";
     byId("storiesProjectStatus").textContent=label(p.status); byId("storiesProjectStatus").className=`stories-status ${p.status||""}`;
     byId("storiesProjectMeta").textContent=`${genreName(p.genre)} · ${p.format==="animated"?"Animated scenes":"Still illustrations"} · ${p.duration_s}s requested${p.voice?` · ${p.voice}`:""}`;
@@ -87,7 +89,7 @@
     catch(e){if(!quiet||!data){byId("storiesGlobalError").hidden=false;byId("storiesGlobalErrorText").textContent=e.message;} }
     finally{fetching=false;renderControls();}
   }
-  async function selectProject(id) {if(edited&&!await ask({title:"Discard unsaved story changes?",body:"Your saved draft stays intact. The changes currently in this editor will be discarded.",ok:"Discard changes",danger:true}))return;selected=id;edited=false;manuscriptChanged=false;renderLibrary();renderProject(true);updateDirty(false);if(innerWidth<980)byId("storiesEditor").scrollIntoView({block:"start",behavior:"instant"});}
+  async function selectProject(id) {if(edited&&!await ask({title:"Discard unsaved story changes?",navigation:true,body:"Your saved draft stays intact. The changes currently in this editor will be discarded.",ok:"Discard changes",danger:true}))return;selected=id;edited=false;manuscriptChanged=false;renderLibrary();renderProject(true);updateDirty(false);if(innerWidth<980)byId("storiesEditor").scrollIntoView({block:"start",behavior:"instant"});}
   async function save() {
     const p=project();if(!p)return;const split=id=>byId(id).value.split(",").map(x=>x.trim()).filter(Boolean);
     const payload={title:byId("storyTitle").value.trim(),script:byId("storyScript").value,public_copy:{youtube:{title:byId("storyPublicTitle").value.trim(),description:byId("storyPublicDescription").value,tags:split("storyPublicTags"),hashtags:split("storyPublicHashtags")}}};
@@ -106,7 +108,14 @@
       message("storiesPublishError","");renderControls();
     }catch(e){message("storiesPublishError",e.message);}
   }
-  byId("storiesCreateForm").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;if(edited&&!await ask({title:"Discard unsaved story changes?",body:"Starting a new story will replace the current editor. Save your edits first to keep them.",ok:"Discard and create",danger:true}))return;sending=true;renderControls();message("storiesCreateError","");try{const p=projectBody(await request("/api/stories/projects",{method:"POST",json:{topic:byId("storiesTopic").value.trim(),genre:byId("storiesGenre").value,format:document.querySelector('[name="story_format"]:checked').value,duration_s:Number(byId("storiesDuration").value),voice:byId("storiesVoice").value}}));putProject(p);selected=p.id;edited=false;manuscriptChanged=false;renderLibrary();renderProject(true);await refresh();}catch(err){message("storiesCreateError",err.message);}finally{sending=false;renderControls();}});
+  const ideaFeedback=window.creativeMemory.mount(byId('storiesIdeaFeedback'),{business:'stories',followAccount:false,label:'story ideas',example:()=>({title:currentIdea?.title||'',text:currentIdea?.premise||''})});
+  const storyDraftMemory=window.creativeMemory.mount(byId('storiesDraftFeedback'),{business:'stories',followAccount:false,label:'story drafts',example:()=>({title:project()?.title||'',text:byId('storyScript').value})});
+  function premiseMode(){const given=document.querySelector('[name="story_topic_mode"]:checked').value==='given';byId('storiesTopic').required=given;byId('storiesTopicModeHelp').textContent=given?'Write the premise you want the director to follow.':'Leave the premise empty to generate an original idea, or choose an idea below.';}
+  document.querySelectorAll('[name="story_topic_mode"]').forEach(input=>input.addEventListener('change',premiseMode));premiseMode();
+  byId('storiesCreateForm').addEventListener('input',()=>{composeDirty=true;});
+  byId('storiesIdeasGenerate').onclick=async()=>{if(ideaBusy||sending)return;ideaBusy=true;renderControls();message('storiesIdeasStatus','Finding original story directions…');try{const result=await request('/api/stories/ideas',{method:'POST',json:{genre:byId('storiesGenre').value,format:document.querySelector('[name="story_format"]:checked').value,duration_s:Number(byId('storiesDuration').value),direction:byId('storiesDirection').value}});ideas=(result.ideas||[]).map(idea=>({...idea,account_profile_id:result.account_profile_id||'default'}));byId('storiesIdeas').innerHTML=ideas.map((idea,index)=>`<article class="creative-idea"><h4>${esc(idea.title)}</h4><p>${esc(idea.premise)}</p><p>${esc(idea.reason||'')}</p><button class="btn" type="button" data-story-idea="${index}">Use this premise</button></article>`).join('');message('storiesIdeasStatus',ideas.length?'Choose an idea, edit it, or create with an empty premise.':'No ideas returned. Try a different direction.');}catch(error){message('storiesIdeasStatus',error.message);}finally{ideaBusy=false;renderControls();}};
+  byId('storiesIdeas').onclick=async event=>{const button=event.target.closest('[data-story-idea]');if(!button)return;const idea=ideas[Number(button.dataset.storyIdea)];if(byId('storiesTopic').value.trim()&&byId('storiesTopic').value!==idea.premise&&!await ask({title:'Replace this premise?',body:'The selected idea will replace the premise currently in Create.',ok:'Use premise',navigation:true}))return;currentIdea=idea;ideaFeedback.setScope({account_profile_id:idea.account_profile_id});byId('storiesTopic').value=idea.premise;composeDirty=true;byId('storiesIdeaFeedback').hidden=false;message('storiesIdeasStatus','Selected idea loaded. You can edit it before creating.');};
+  byId("storiesCreateForm").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;if(edited&&!await ask({title:"Discard unsaved story changes?",navigation:true,body:"Starting a new story will replace the current editor. Save your edits first to keep them.",ok:"Discard and create",danger:true}))return;sending=true;renderControls();message("storiesCreateError","");try{const p=projectBody(await request("/api/stories/projects",{method:"POST",json:{topic_mode:document.querySelector('[name="story_topic_mode"]:checked').value,direction:byId("storiesDirection").value.trim(),topic:byId("storiesTopic").value.trim(),genre:byId("storiesGenre").value,format:document.querySelector('[name="story_format"]:checked').value,duration_s:Number(byId("storiesDuration").value),voice:byId("storiesVoice").value}}));putProject(p);selected=p.id;edited=false;composeDirty=false;manuscriptChanged=false;renderLibrary();renderProject(true);await refresh();}catch(err){message("storiesCreateError",err.message);}finally{sending=false;renderControls();}});
   byId("storiesLibrary").addEventListener("click",e=>{const b=e.target.closest('[data-story-id]');if(b)selectProject(b.dataset.storyId);});
   byId("storiesLibrarySearch").addEventListener("input",renderLibrary);
   byId("storiesLength").addEventListener("change",()=>{const input=byId("storiesDuration");input.value=byId("storiesLength").value==="short"?Math.min(60,Number(input.max)):Math.min(480,Number(input.max));});
@@ -127,9 +136,9 @@
   byId("storiesDestinations").addEventListener("change",renderControls);
   byId("storiesPublishingForm").addEventListener("change",()=>{publicationEdited=true;});
   byId("storiesPublishNow").addEventListener("click",async()=>{const p=project();if(!p)return;sending=true;renderControls();try{await request(`/api/stories/projects/${encodeURIComponent(p.id)}/publish`,{method:"POST",json:{destinations:selectedDestinations()}});toast("Story submitted to the publishing queue.");await refresh();}catch(err){message("storiesPublishError",err.message);}finally{sending=false;renderControls();}});
-  window.addEventListener("beforeunload",e=>{if(edited||publicationEdited){e.preventDefault();e.returnValue="";}});
+  window.addEventListener("beforeunload",e=>{if(window.storyHasUnsavedChanges()){e.preventDefault();e.returnValue="";}});
   window.loadStories=()=>{refresh();loadPublishing();};
-  window.storyHasUnsavedChanges=()=>edited||publicationEdited;
+  window.storyHasUnsavedChanges=()=>edited||publicationEdited||composeDirty||window.creativeMemory.hasUnsaved('stories');
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&byId("view-stories").classList.contains("active"))refresh(true);});
   setInterval(()=>{if(!document.hidden&&byId("view-stories").classList.contains("active"))refresh(true);},4000);
   if(byId("view-stories").classList.contains("active"))window.loadStories();

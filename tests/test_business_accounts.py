@@ -122,6 +122,7 @@ def test_story_api_and_simultaneous_public_oauth_callbacks_are_isolated(tmp_path
 
                 async def commit(new):
                     ctx.settings = new
+                    pipeline.settings = new
                     pipeline.oauth.apply(new)
                     pipeline.story_oauth.apply(new)
                     pipeline.story_publishing.apply(new)
@@ -133,7 +134,10 @@ def test_story_api_and_simultaneous_public_oauth_callbacks_are_isolated(tmp_path
                     assert (await client.get("/api/stories/accounts")).status_code == 401
                     assert (await client.post(f"/api/stories/accounts/{platform}/open", headers={"X-ClipBot": "1"})).status_code == 401
                     auth = ProfileStore()
-                    profile = auth.create("Business tester", "safe-password-123", settings.app.min_password_len)
+                    setup = await client.post("/api/auth/setup", headers={"X-ClipBot": "1"},
+                                              json={"name": "Business tester", "password": "safe-password-123"})
+                    assert setup.status_code == 200
+                    profile = setup.json()["profile"]
                     session = auth.create_session(profile["id"], settings.app.session_hours)
                     client.headers["Authorization"] = f"Bearer {session}"
                     assert (await client.put("/api/stories/accounts", json={})).status_code == 403

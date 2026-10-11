@@ -25,7 +25,7 @@ def _work_business(path: str, method: str) -> str | None:
         return "clips"
     if path.startswith("/api/clips/") and path.endswith("/publish"):
         return "clips"
-    if path == "/api/stories" or (path.startswith("/api/stories/") and
+    if path in {"/api/stories", "/api/stories/projects", "/api/stories/ideas"} or (path.startswith("/api/stories/") and
             path.rsplit("/", 1)[-1] in {"render", "review", "retry", "publish"}):
         return "stories"
     return None

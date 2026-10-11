@@ -1,0 +1,15 @@
+.account-profiles{width:min(980px,calc(100vw - 32px));max-height:calc(100dvh - 40px);padding:0;border:1px solid var(--line);background:var(--bg,#0c1119);color:var(--text);border-radius:10px}
+.account-profiles::backdrop{background:rgb(0 0 0 / .72)}
+.account-profiles header{display:flex;align-items:flex-start;gap:16px;padding:24px;border-bottom:1px solid var(--line)}
+.account-profiles header h2{margin:0;font-size:24px}.account-profiles header p{margin:6px 0 0;color:var(--muted);font-size:13px;line-height:1.6}
+.account-profile-body{display:grid;grid-template-columns:250px minmax(0,1fr);gap:24px;padding:24px;overflow:auto}
+.account-profile-list{display:flex;flex-direction:column;gap:8px}.account-profile-list button{text-align:left;padding:14px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;min-height:44px}
+.account-profile-list button[aria-pressed=true]{background:var(--surface,#17212d);border-color:var(--accent,#d7ad71)}
+.account-profile-list strong,.account-profile-list small{display:block}.account-profile-list small{color:var(--muted);margin-top:5px}
+.account-profile-editor .field{margin-bottom:14px}.account-profile-editor textarea{min-height:80px}.account-profile-editor input,.account-profile-editor textarea{width:100%;max-width:100%;box-sizing:border-box}
+.account-profile-connections{margin:20px 0;border-top:1px solid var(--line)}.account-profile-connection{padding:14px 0;border-bottom:1px solid var(--line)}
+.account-profile-connection h4{margin:0 0 6px}.account-profile-connection p,.account-profile-editor .help{font-size:12px;line-height:1.6;color:var(--muted)}
+.account-profile-connection .row{flex-wrap:wrap}.account-profile-connection input{margin-top:12px}.account-profile-status{padding:0 24px 20px;font-size:13px;line-height:1.6;color:var(--muted)}
+.account-profile-status.error{color:var(--bad,#ffaca5)}.account-profile-editor details{margin:18px 0}.account-profile-editor summary{cursor:pointer;padding:10px 0;color:var(--muted)}
+.account-profile-editor .profile-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.account-profiles button:focus-visible{outline:2px solid var(--accent,#d7ad71);outline-offset:3px}
+@media(max-width:640px){.account-profiles{width:calc(100vw - 16px);max-height:calc(100dvh - 16px)}.account-profiles header{padding:16px}.account-profile-body{grid-template-columns:minmax(0,1fr);padding:16px;gap:20px}.account-profile-list{max-height:200px;overflow:auto}.account-profile-status{padding:0 16px 16px}.top-tools{flex-wrap:wrap}}

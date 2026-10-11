@@ -13,8 +13,10 @@ import os
 import site
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .config import AUTO_LANGUAGE, Settings, WhisperCfg
 from .models import Word
@@ -160,10 +162,17 @@ class Transcriber:
         self._verified = True
         return result
 
-    async def transcribe(self, path: Path) -> Transcript:
-        async with self._sem:
+    async def transcribe(self, path: Path, *, deadline: float | None = None,
+                         on_slot: Callable[[], None] | None = None) -> Transcript:
+        if deadline is None:
+            await self._sem.acquire()
+        else:
+            await asyncio.wait_for(self._sem.acquire(), max(0, deadline - time.time()))
+        try:
             self.jobs += 1
             try:
+                if on_slot is not None:
+                    on_slot()
                 worker = asyncio.create_task(asyncio.to_thread(self._transcribe_sync, str(path)))
                 try:
                     return await asyncio.shield(worker)
@@ -175,3 +184,5 @@ class Transcriber:
                     raise
             finally:
                 self.jobs -= 1
+        finally:
+            self._sem.release()

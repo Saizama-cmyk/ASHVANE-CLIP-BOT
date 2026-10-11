@@ -20,6 +20,7 @@ import logging
 import shutil
 import time
 from collections import Counter
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -122,6 +123,8 @@ class Pipeline:
         self._pending_candidates: dict[str, Candidate] = {}
         self._stage_of: dict[str, Stage] = {}
         self._audio_seen: dict[str, str] = {}
+        self._latency: dict[str, dict] = {}
+        self._queue_deadlines: dict[str, float] = {}
         self._discovery_wake = asyncio.Event()
         self._pause_lock = asyncio.Lock()
         self._review_locks: dict[str, asyncio.Lock] = {}
@@ -151,6 +154,8 @@ class Pipeline:
         self._assemble_limit = Limiter(settings.workers.pipelines)
         self._edit_limit = Limiter(settings.workers.editors)
         self._ai_limit = Limiter(settings.workers.ai_stage)
+        from .account_profiles import AccountProfiles
+        self.account_profiles = AccountProfiles(self)
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -181,6 +186,7 @@ class Pipeline:
         self.scheduler.media_locks = self._media_locks
         self.analytics = Analytics(s, self.store, self.publishers, self.paths)
         self.scheduler.analytics = self.analytics
+        self.account_profiles.bind()
         self.importer = ClipImporter(s, self.store, self.discovery, self.paths, self._launch,
                                      lambda: list(self.targets.values()))
         self._running = True
@@ -250,6 +256,7 @@ class Pipeline:
         self.oauth.apply(s)
         self.story_oauth.apply(s)
         self.scheduler.apply(s)
+        self.account_profiles.apply(s)
         loop = asyncio.get_running_loop()
         loop.create_task(self._assemble_limit.set_limit(s.workers.pipelines))
         loop.create_task(self._edit_limit.set_limit(s.workers.editors))
@@ -342,7 +349,8 @@ class Pipeline:
             # restart freshness cutoff; stopping a business must not discard its jobs.
             for candidate in await asyncio.to_thread(self.store.active_candidates):
                 if candidate.raw_path and Path(candidate.raw_path).exists():
-                    self._launch(candidate)
+                    candidate.source.setdefault("account_profile_id", "default")
+                    self._launch(candidate, resumed=True)
         self.scheduler.start()
         self.analytics.start()
         self.trends.start()
@@ -548,20 +556,41 @@ class Pipeline:
             await asyncio.sleep(self.settings.detector.audio_poll_s)
             if self.captures_paused:
                 continue
-            for key, cap in list(self.captures.captures.items()):
+            await self._poll_audio()
+
+    async def _poll_audio(self) -> None:
+        """Bound probe children without making one slow channel block all later channels."""
+        limit = asyncio.Semaphore(self.settings.capture.audio_probe_workers)
+
+        async def sample(key, cap):
+            async with limit:
                 try:
                     res = await cap.latest_audio_level()
                 except asyncio.CancelledError:
                     raise
                 except (OSError, CmdTimeout) as exc:
                     logger.debug("audio level %s failed: %s", key, exc)
-                    continue
+                    return
                 if not res:
-                    continue
+                    return
                 name, level = res
                 if level is not None and self._audio_seen.get(key) != name:
                     self._audio_seen[key] = name
-                    self.detector.add_audio(key, level, time.time())
+                    # Loudness describes that completed segment, not the later probe finish.
+                    # Old/stalled audio must not acquire a new freshness window every poll.
+                    sampled_at = cap.audio_sample_wall
+                    if sampled_at is not None and self.captures.get(key) is cap:
+                        self.detector.add_audio(key, level, sampled_at)
+
+        tasks = [asyncio.create_task(sample(key, cap))
+                 for key, cap in list(self.captures.captures.items())]
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _gpu_loop(self) -> None:
         exe = shutil.which("nvidia-smi")
@@ -600,10 +629,16 @@ class Pipeline:
                 logger.warning("housekeeping: %s", exc)
 
     # ------------------------------------------------------------------ candidates
-    def _launch(self, c: Candidate) -> None:
+    def _launch(self, c: Candidate, *, resumed: bool = False) -> None:
+        c.source.setdefault("account_profile_id", self.account_profiles.active_id("clips"))
         # The stop click may cancel this task before its first coroutine turn.
         # Retain the unsaved candidate until its first durable write or stop drain.
         self._pending_candidates[c.id] = c
+        self._latency[c.id] = {"id": c.id, "created_at": c.created_at, "phase": "queued",
+                               "phase_started_at": time.time(), "stages_s": {}}
+        # A deliberate business stop is not processing backlog. Give kept work its
+        # full configured queue lifetime when the user resumes, preserving its age/history.
+        self._queue_deadlines[c.id] = (time.time() if resumed else c.created_at) + self.settings.clip.abandon_after_h * 3600
         if not self.business_enabled("clips"):
             # Preserve imported work that finished concurrently with the stop click.
             return
@@ -617,6 +652,13 @@ class Pipeline:
     def _done(self, cid: str) -> None:
         self._inflight.pop(cid, None)
         self._stage_of.pop(cid, None)
+        self._queue_deadlines.pop(cid, None)
+        if cid in self._latency:
+            self._latency[cid]["finished_at"] = time.time()
+            self._latency[cid]["phase"] = "finished"
+        finished = [key for key, value in self._latency.items() if "finished_at" in value]
+        for key in finished[:-self.settings.dashboard.samples_limit]:
+            self._latency.pop(key, None)
         if self._running:
             self._update_failsafe(self.pressure)
             asyncio.get_running_loop().create_task(self._sync_capture_pause())
@@ -712,8 +754,90 @@ class Pipeline:
         await self._clear_work(c)
         logger.info("candidate %s %s: %s", c.id, stage, error)
 
+    @asynccontextmanager
+    async def _measure(self, c: Candidate, phase: str):
+        timing = self._latency.setdefault(c.id, {"id": c.id, "created_at": c.created_at,
+                                                "stages_s": {}})
+        timing.update(phase=phase, phase_started_at=time.time())
+        start = time.monotonic()
+        try:
+            yield
+        finally:
+            elapsed = time.monotonic() - start
+            timing["stages_s"][phase] = timing["stages_s"].get(phase, 0) + elapsed
+            logger.info("candidate %s phase=%s took %.2fs (age %.2fs)",
+                        c.id, phase, elapsed, max(0, time.time() - c.created_at))
+
+    @asynccontextmanager
+    async def _candidate_slot(self, c: Candidate, limiter: Limiter, phase: str):
+        # The existing unfinished-cut lifetime also bounds waiting behind busy workers.
+        # Previously the AI deadline started only after acquisition, allowing hours in queue.
+        remaining = self._candidate_deadline(c) - time.time()
+        if remaining <= 0:
+            raise RuntimeError("given up: unfinished cut exceeded its configured lifetime before " + phase)
+        try:
+            async with self._measure(c, phase + "_wait"):
+                await asyncio.wait_for(limiter.__aenter__(), remaining)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError("given up: unfinished cut exceeded its configured lifetime waiting for " + phase) from exc
+        try:
+            async with self._measure(c, phase):
+                yield
+        finally:
+            await limiter.__aexit__(None, None, None)
+
+    def _candidate_deadline(self, c: Candidate) -> float:
+        return self._queue_deadlines.get(c.id, c.created_at + self.settings.clip.abandon_after_h * 3600)
+
+    def latency_snapshot(self) -> dict:
+        now = time.time()
+        jobs = [{**value, "age_s": round(max(0, value.get("finished_at", now) - value["created_at"]), 2),
+                 "phase_age_s": round(max(0, now - value.get("phase_started_at", now)), 2)
+                 if "finished_at" not in value else 0,
+                 "stages_s": {key: round(seconds, 2) for key, seconds in value["stages_s"].items()}}
+                for value in self._latency.values()]
+        transcribing = sum(stage == Stage.TRANSCRIBE for stage in self._stage_of.values())
+        return {"source_latency_available": False, "unit": "seconds",
+                "active_jobs": [job for job in jobs if "finished_at" not in job],
+                "recent_jobs": [job for job in jobs if "finished_at" in job],
+                "transcription": {"active": self.transcriber.jobs,
+                                  "waiting": max(0, transcribing - self.transcriber.jobs)},
+                "ai_slots": {"active": self._ai_limit.active, "limit": self._ai_limit.limit},
+                "assembly_slots": {"active": self._assemble_limit.active, "limit": self._assemble_limit.limit},
+                "edit_slots": {"active": self._edit_limit.active, "limit": self._edit_limit.limit}}
+
+    async def _transcribe_candidate(self, c: Candidate):
+        started = time.monotonic()
+        acquired = None
+        async with self._measure(c, "transcribe_including_wait"):
+            timing = self._latency[c.id]
+            timing.update(phase="transcribe_wait", phase_started_at=time.time())
+
+            def on_slot():
+                nonlocal acquired
+                acquired = time.monotonic()
+                timing["stages_s"]["transcribe_wait"] = acquired - started
+                timing.update(phase="transcribe", phase_started_at=time.time())
+
+            try:
+                return await self.transcriber.transcribe(Path(c.raw_path),
+                    deadline=self._candidate_deadline(c),
+                    on_slot=on_slot)
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError("given up: unfinished cut exceeded its configured lifetime waiting for transcription") from exc
+            finally:
+                if acquired is not None:
+                    timing["stages_s"]["transcribe"] = time.monotonic() - acquired
+                else:
+                    timing["stages_s"]["transcribe_wait"] = time.monotonic() - started
+
     async def _run_candidate(self, c: Candidate) -> None:
         s = self.settings
+        resumed_stage = c.stage
+        has_saved_transcript = (resumed_stage in (Stage.CLIPABILITY, Stage.EDIT)
+                                and bool(c.raw_path) and Path(c.raw_path).is_file())
+        ready_to_edit = (has_saved_transcript and resumed_stage == Stage.EDIT
+                         and c.verdict.get("passed") and bool(c.post_copy))
         try:
             if not c.raw_path or not Path(c.raw_path).exists():
                 await self._save(c, Stage.QUEUED)
@@ -721,20 +845,23 @@ class Pipeline:
                 if cap is None:
                     await self._finish(c, Stage.FAILED, "capture no longer running")
                     return
-                async with self._assemble_limit:
+                async with self._candidate_slot(c, self._assemble_limit, "assemble"):
                     cut = await assemble(c.event, cap, s, self.paths.work)
                 c.raw_path, c.start_wall, c.end_wall = cut.raw_path, cut.start_wall, cut.end_wall
-            await self._save(c, Stage.QC)
+            if not has_saved_transcript:
+                await self._save(c, Stage.QC)
             expected = c.end_wall - c.start_wall
-            qc = await quality_check(Path(c.raw_path), expected, s)
+            async with self._measure(c, "qc"):
+                qc = await quality_check(Path(c.raw_path), expected, s)
             if not qc.ok:
                 await self._finish(c, Stage.REJECTED, f"qc: {qc.reason}")
                 return
             duration = qc.duration or expected
 
-            await self._save(c, Stage.TRANSCRIBE)
-            tr = await self.transcriber.transcribe(Path(c.raw_path))
-            c.transcript, c.words = tr.text, tr.words
+            if not has_saved_transcript:
+                await self._save(c, Stage.TRANSCRIBE)
+                tr = await self._transcribe_candidate(c)
+                c.transcript, c.words = tr.text, tr.words
             said = Filter(s).slurs_in(c.transcript) if s.safety.enabled and s.safety.skip_slur_clips else []
             if said:
                 await self._finish(c, Stage.REJECTED, f"unsafe: slur in speech ({len(said)}x)")
@@ -748,31 +875,33 @@ class Pipeline:
 
             # one clip at a time through vision + judge + writer: frames are grabbed only when it's
             # this clip's turn (a restart with a big backlog used to launch hundreds of ffmpegs)
-            async with self._ai_limit:
-                try:
-                    await asyncio.wait_for(self._think(c, duration),
-                                           timeout=s.ai.stage_deadline_s)
-                except asyncio.TimeoutError:
-                    await self._finish(c, Stage.REJECTED,
-                                       "gave up: the AI stage passed its deadline, so the "
-                                       "queue moved on")
-                    return
-                if not c.verdict or not c.verdict.get("passed"):
-                    return                       # _think already recorded why
+            if not ready_to_edit:
+                async with self._candidate_slot(c, self._ai_limit, "ai"):
+                    try:
+                        await asyncio.wait_for(self._think(c, duration),
+                                               timeout=s.ai.stage_deadline_s)
+                    except asyncio.TimeoutError:
+                        await self._finish(c, Stage.REJECTED,
+                                           "gave up: the AI stage passed its deadline, so the "
+                                           "queue moved on")
+                        return
+                    if not c.verdict or not c.verdict.get("passed"):
+                        return                       # _think already recorded why
             await self._save(c, Stage.EDIT)
             out = clips_target(self.settings, self.paths) / f"{c.event.target.login}_{c.id}.mp4"
             facecam = await self._auto_facecam(c)
             verdict = c.verdict or {}
             check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
-            async with self._edit_limit:
+            async with self._candidate_slot(c, self._edit_limit, "edit"):
                 await render(Path(c.raw_path), out, verdict["trim_start"], verdict["trim_end"],
                              c.words, c.event.target.login, self.settings, self.paths.work,
                              self.settings.brand.watermark, hook=c.post_copy.get("hook", ""),
                              spike_at=verdict.get("peak_at", c.event.t_wall - c.start_wall),
                              facecam_auto=facecam)
             c.final_path = str(out)
-            if not await self._review_final(c):
-                return
+            async with self._measure(c, "final_review"):
+                if not await self._review_final(c):
+                    return
             await self._save(c, Stage.SCHEDULED)
             await self._discard_raw(c)
             await self._clear_work(c)
@@ -972,6 +1101,7 @@ class Pipeline:
                 continue
             if c.raw_path and Path(c.raw_path).exists():
                 logger.info("resuming candidate %s from %s", c.id, c.stage)
+                c.source.setdefault("account_profile_id", "default")
                 self._launch(c)
             else:
                 c.error = "interrupted by restart before the cut was saved"
@@ -1014,6 +1144,7 @@ class Pipeline:
                         "pressure": round(self.pressure, 3), "pause_at": s.backlog.pause_at,
                         "resume_at": s.backlog.resume_at},
             "gpu": self.gpu, "monitors": monitors,
+            "latency": self.latency_snapshot(),
             "stages": {"window_h": s.dashboard.stage_window_h, "counts": counts,
                        "live": dict(live)},
             "spikes": {"total": self.spikes_total, "ignored": self.spikes_ignored},

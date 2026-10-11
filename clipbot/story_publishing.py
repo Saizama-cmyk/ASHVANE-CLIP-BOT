@@ -76,6 +76,11 @@ class StoryPublishing:
         self._tick_lock = asyncio.Lock()
         self._publishing = False
         self._settings_generation = 0
+        self.account_profiles = None
+
+    def _profile_hold(self, project):
+        return (self.account_profiles.held_reason("stories", project.get("account_profile_id", "default"))
+                if self.account_profiles else "")
 
     def _publisher_settings(self):
         settings = self.settings.model_copy(deep=True)
@@ -268,6 +273,8 @@ class StoryPublishing:
         project = self.studio.get(project_id)
         if project is None:
             raise KeyError("Story not found")
+        if reason := self._profile_hold(project):
+            raise ValueError(reason)
         targets = self.settings.stories.publish_destinations if destinations is None else destinations
         if not isinstance(targets, list) or not targets or any(not isinstance(name, str) or name not in PLATFORMS for name in targets):
             raise ValueError("Choose supported story destinations")
@@ -336,6 +343,9 @@ class StoryPublishing:
         return post, outgoing
 
     async def _publish_one(self, project, name):
+        if reason := self._profile_hold(project):
+            self.errors[name] = reason
+            return
         pid, identity = project["id"], self.studio.content_fingerprint(project["id"])
         destination = self._destination(name)
         prior = project.get("publishing", {}).get(name, {})
@@ -400,6 +410,8 @@ class StoryPublishing:
             await self.initialize()
             cfg = self.settings.stories
             for project in sorted(self.studio.projects, key=lambda row: row.get("created_at", 0)):
+                if self._profile_hold(project):
+                    continue
                 identity = self.studio.content_fingerprint(project["id"])
                 approved = project.get("review", {}).get("passed") is True and project["review"].get("content_hash") == identity
                 if cfg.auto_render and approved and project.get("status") == "draft" and not self.studio.busy:

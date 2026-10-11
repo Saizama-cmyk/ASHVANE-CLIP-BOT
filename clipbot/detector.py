@@ -176,7 +176,7 @@ class Detector:
         tr.spark.append((round(rate, 3), round(mean, 3)))
 
         warm = (now - tr.first_seen) >= cfg.min_history_s and bool(past)
-        audio_fresh = (now - tr.audio_z_t) <= cfg.window_s
+        audio_fresh = 0 <= (now - tr.audio_z_t) <= cfg.window_s
         audio_z = tr.audio_z if audio_fresh else 0.0
 
         chat_fire = warm and z >= cfg.z_threshold and rate >= cfg.min_msgs_per_s
@@ -213,7 +213,8 @@ class Detector:
         uniq_hits = list(dict.fromkeys(hits))
         logger.info("spike %s kind=%s z=%.2f kw=%.2f audio_z=%.2f", target.key, kind, z,
                     kw_score, audio_z)
-        return SpikeEvent(target=target, t_wall=now, kind=kind, score=round(score, 3),
+        event_time = tr.audio_z_t if kind == "audio" else now
+        return SpikeEvent(target=target, t_wall=event_time, kind=kind, score=round(score, 3),
                           chat_rate=round(rate, 3), baseline=round(mean, 3),
                           keywords_hit=uniq_hits, chat_sample=list(tr.chat_tail),
                           chat_z=round(z, 3), keyword_score=round(kw_score, 3),

@@ -116,6 +116,12 @@ def create_app(ctx) -> FastAPI:
     app = FastAPI(title="Ashvane", docs_url=None, redoc_url=None,
                   openapi_url=None)
     profiles = ProfileStore()
+    # This process retains the data loaded for its starting profile until restart.
+    # Updating profiles.last() selects the next process, never the current data owner.
+    runtime_profile_id = profiles.last()
+    runtime_switching = False
+    runtime_mutations = 0
+    auth_transition = asyncio.Lock()
     from ..story_api import install_story_routes
     install_story_routes(app, ctx)
     from ..music_api import install_music_routes
@@ -123,7 +129,11 @@ def create_app(ctx) -> FastAPI:
     from ..business_runtime import install_business_runtime_routes
     install_music_routes(app, ctx)
     install_social_routes(app, ctx)
+    from ..creative_memory import install_creative_memory_routes
+    install_creative_memory_routes(app, ctx)
     install_business_runtime_routes(app, ctx)
+    from ..account_profiles import install_account_profile_routes
+    install_account_profile_routes(app, ctx)
 
     def a_cfg():
         return ctx.settings.app
@@ -147,25 +157,30 @@ def create_app(ctx) -> FastAPI:
                                        a_cfg().auto_lock_min)
         return {"setup": profiles.needs_setup(), "profiles": profiles.profiles(),
                 "active": profiles.last(),
-                "signed_in": bool(sess and sess.profile_id == profiles.last()),
+                "signed_in": bool(sess and not runtime_switching and sess.profile_id == runtime_profile_id == profiles.last()),
+                "restarting": runtime_switching or bool(runtime_profile_id and runtime_profile_id != profiles.last()),
                 "auto_lock_min": a_cfg().auto_lock_min,
                 "min_password_len": a_cfg().min_password_len}
 
     @app.post("/api/auth/setup")
     async def auth_setup(request: Request):
-        if not profiles.needs_setup():
-            raise HTTPException(409, "already set up")
+        nonlocal runtime_profile_id
         b = await _json(request)
-        try:
-            prof = await asyncio.to_thread(profiles.create, str(b.get("name", "")),
-                                           str(b.get("password", "")), a_cfg().min_password_len)
-        except AuthError as exc:
-            return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
-        token = await asyncio.to_thread(profiles.create_session, prof["id"], a_cfg().session_hours)
+        async with auth_transition:
+            if not profiles.needs_setup():
+                raise HTTPException(409, "already set up")
+            try:
+                prof = await asyncio.to_thread(profiles.create, str(b.get("name", "")),
+                                               str(b.get("password", "")), a_cfg().min_password_len)
+            except AuthError as exc:
+                return JSONResponse({"ok": False, "error": str(exc)}, status_code=422)
+            runtime_profile_id = prof["id"]
+            token = await asyncio.to_thread(profiles.create_session, prof["id"], a_cfg().session_hours)
         return _login_response(token, {"ok": True, "profile": prof})
 
     @app.post("/api/auth/login")
     async def auth_login(request: Request):
+        nonlocal runtime_switching
         b = await _json(request)
         pid = str(b.get("profile_id") or profiles.last())
         try:
@@ -178,15 +193,29 @@ def create_app(ctx) -> FastAPI:
         phone = _is_app(request, b)
         hours = a_cfg().phone_session_days * HOURS_PER_DAY if phone else a_cfg().session_hours
         token = await asyncio.to_thread(profiles.create_session, pid, hours, phone)
-        switch = pid != profiles.last()
-        if switch:            # another profile has its own settings/data: restart into it
-            await asyncio.to_thread(profiles.set_last, pid)
-            asyncio.get_running_loop().call_later(0, ctx.request_quit, True)
+        async with auth_transition:
+            switch = pid != profiles.last()
+            if runtime_switching and switch:
+                await asyncio.to_thread(profiles.revoke, token)
+                raise HTTPException(409, "A profile change is already restarting Ashvane")
+            if switch:
+                if runtime_mutations:
+                    await asyncio.to_thread(profiles.revoke, token)
+                    raise HTTPException(409, "Wait for the current save or action to finish before changing profiles")
+                runtime_switching = True
+                try:
+                    await asyncio.to_thread(profiles.set_last, pid)
+                except Exception:
+                    runtime_switching = False
+                    await asyncio.to_thread(profiles.revoke, token)
+                    raise
+                asyncio.get_running_loop().call_later(0, ctx.request_quit, True)
+            switch = switch or runtime_switching
         return _login_response(token, {"ok": True, "restarting": switch, "token": token})
 
     @app.post("/api/auth/logout")
     async def auth_logout(request: Request):
-        await asyncio.to_thread(profiles.revoke, request.cookies.get(COOKIE))
+        await asyncio.to_thread(profiles.revoke, _token(request))
         resp = JSONResponse({"ok": True})
         resp.delete_cookie(COOKIE, path="/")
         return resp
@@ -215,15 +244,19 @@ def create_app(ctx) -> FastAPI:
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
+        nonlocal runtime_mutations
         d = ctx.settings.dashboard
         host = (request.headers.get("host") or "").lower()
         allowed = {f"{d.host}:{d.port}", f"localhost:{d.port}", d.host, "localhost"}
         if host not in allowed and not (d.remote and _private_host(host, d.port)):
             return JSONResponse({"error": "forbidden host"}, status_code=403)
-        if request.method in ("POST", "PUT", "DELETE") and \
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and \
                 request.headers.get(ACTION_HEADER) != "1":
             return JSONResponse({"error": f"missing {ACTION_HEADER} header"}, status_code=403)
         path = request.url.path
+        if ((runtime_switching or (runtime_profile_id and runtime_profile_id != profiles.last()))
+                and path not in _PUBLIC_EXACT and not path.startswith(_PUBLIC)):
+            return JSONResponse({"error": "Profile change is restarting Ashvane", "locked": True, "restarting": True}, status_code=401)
         if path == "/pet" or path.startswith("/api/pet/"):
             key = request.query_params.get("k") or request.headers.get("x-pet-key") or ""
             if not secrets.compare_digest(key, ctx.pet_token):
@@ -234,9 +267,16 @@ def create_app(ctx) -> FastAPI:
                 return JSONResponse({"error": "setup", "setup": True}, status_code=401)
             sess = await asyncio.to_thread(profiles.check, _token(request),
                                            ctx.settings.app.auto_lock_min)
-            if sess is None or sess.profile_id != profiles.last():
+            if runtime_switching or sess is None or sess.profile_id != runtime_profile_id or runtime_profile_id != profiles.last():
                 return JSONResponse({"error": "locked", "locked": True}, status_code=401)
-        return await call_next(request)
+        mutation = request.method in ("POST", "PUT", "PATCH", "DELETE") and path not in _PUBLIC_EXACT and not path.startswith(_PUBLIC)
+        if mutation:
+            runtime_mutations += 1
+        try:
+            return await call_next(request)
+        finally:
+            if mutation:
+                runtime_mutations -= 1
 
     app.mount("/static", StaticFiles(directory=str(static_dir())), name="static")
 
@@ -640,12 +680,13 @@ def create_app(ctx) -> FastAPI:
 
     @app.get("/api/setup")
     async def setup():
-        return await run_checklist(ctx.settings, ctx.pipeline.http)
+        return await run_checklist(ctx.settings, ctx.pipeline.http, ctx)
 
     # ------------------------------------------------------------------ settings
     @app.get("/api/settings")
     async def get_settings():
         return {"settings": masked_dump(ctx.settings),
+                "account_profile_ids": {business: ctx.pipeline.account_profiles.active_id(business) for business in ("clips", "stories")},
                 "restart_pending": sorted(ctx.restart_pending)}
 
     @app.get("/api/settings/schema")
@@ -655,11 +696,23 @@ def create_app(ctx) -> FastAPI:
                 "secret": [".".join(p) for p in sorted(SECRET_FIELDS)],
                 "restart": [".".join(p) for p in sorted(RESTART_FIELDS)]}
 
-    async def _save(new: Settings) -> dict:
-        restart = await ctx.commit_settings(new)
-        return {"ok": True, "restart_required": restart,
-                "restart_pending": sorted(ctx.restart_pending),
-                "settings": masked_dump(ctx.settings)}
+    async def _save(new: Settings, request: Request | None = None) -> dict:
+        service = getattr(ctx.pipeline, "account_profiles", None)
+        async def persist():
+            if service:
+                for business, section, header in (("clips", "accounts", "X-Surge-Profile"), ("stories", "story_accounts", "X-Hollow-Profile")):
+                    if getattr(new, section) != getattr(ctx.settings, section):
+                        service.require_current(business, request.headers.get(header, "") if request else "")
+                        if service._busy(business):
+                            raise HTTPException(409, "Finish current work and sign-in before changing account credentials")
+            restart = await ctx.commit_settings(new)
+            return {"ok": True, "restart_required": restart,
+                    "restart_pending": sorted(ctx.restart_pending),
+                    "settings": masked_dump(ctx.settings)}
+        if service:
+            async with service._lock:
+                return await persist()
+        return await persist()
 
     @app.put("/api/settings")
     async def put_settings(request: Request):
@@ -675,15 +728,15 @@ def create_app(ctx) -> FastAPI:
             new = merge_incoming(ctx.settings, body.get("settings", body))
         except ValidationError as exc:
             return JSONResponse({"ok": False, "errors": validation_errors(exc)}, status_code=422)
-        return await _save(new)
+        return await _save(new, request)
 
     @app.post("/api/settings/reset/{section}")
-    async def reset(section: str):
+    async def reset(section: str, request: Request):
         try:
             new = reset_section(ctx.settings, section)
         except KeyError:
             raise HTTPException(404, f"unknown section {section}")
-        return await _save(new)
+        return await _save(new, request)
 
     @app.get("/api/settings/export")
     async def export(include_secrets: bool = False):
@@ -702,7 +755,7 @@ def create_app(ctx) -> FastAPI:
                                 status_code=400)
         except ValidationError as exc:
             return JSONResponse({"ok": False, "errors": validation_errors(exc)}, status_code=422)
-        return await _save(new)
+        return await _save(new, request)
 
     @app.get("/api/ai/models")
     async def ai_models():
@@ -861,7 +914,8 @@ def create_app(ctx) -> FastAPI:
         b = await _json(request)
         hw = await detect(ctx.settings, ctx.pipeline.paths, ctx.pipeline.http,
                           ctx.pipeline.transcriber.status, bool(b.get("network", True)))
-        return {"hardware": hw.to_dict(), "recommendations": recommend(hw, ctx.settings)}
+        return {"hardware": hw.to_dict(), "recommendations": recommend(hw, ctx.settings),
+                "readiness": await run_checklist(ctx.settings, ctx.pipeline.http, ctx)}
 
     @app.post("/api/system/apply")
     async def system_apply(request: Request):
@@ -893,21 +947,25 @@ def create_app(ctx) -> FastAPI:
 
     # ------------------------------------------------------------------ oauth
     @app.get("/oauth/{platform}/start")
-    async def oauth_start(platform: str):
+    async def oauth_start(platform: str, request: Request):
         if platform not in _OAUTH_PLATFORMS:
             raise HTTPException(404)
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("clips", request.headers.get("X-Account-Profile", ""))
         try:
             return RedirectResponse(ctx.pipeline.oauth.start_url(platform))
         except PublishError as exc:
             return _page("Can't connect yet", str(exc))
 
     @app.post("/api/oauth/{platform}/open")
-    async def oauth_open(platform: str):
+    async def oauth_open(platform: str, request: Request):
         """Open the provider's sign-in page in the system browser. The signed-in dashboard
         asks for it, so the browser never needs an Ashvane session; the callback is public
         and guarded by the one-time state."""
         if platform not in _OAUTH_PLATFORMS:
             raise HTTPException(404)
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("clips", request.headers.get("X-Account-Profile", ""))
         try:
             url = ctx.pipeline.oauth.start_url(platform)
         except PublishError as exc:
@@ -930,6 +988,7 @@ def create_app(ctx) -> FastAPI:
         if len(owners) != 1:
             return _page("Connection failed", "OAuth state mismatch — start the connection again")
         if error or not code:
+            owners[0]._states.pop(state, None)
             return _page("Connection cancelled", "The provider did not authorize this connection.")
         try:
             await owners[0].callback(platform, code, state)
@@ -947,6 +1006,7 @@ def create_app(ctx) -> FastAPI:
         if manager is None or not manager.owns_state(platform, state):
             return _page("Connection failed", "OAuth state mismatch — start the Hollow connection again")
         if error or not code:
+            manager._states.pop(state, None)
             return _page("Connection cancelled", "The provider did not authorize this connection.")
         try:
             await manager.callback(platform, code, state)
@@ -959,6 +1019,8 @@ def create_app(ctx) -> FastAPI:
     async def oauth_paste(platform: str, request: Request):
         if platform not in _OAUTH_PLATFORMS:
             raise HTTPException(404)
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("clips", request.headers.get("X-Account-Profile", ""))
         try:
             landed = str((await request.json()).get("url", ""))
             await ctx.pipeline.oauth.callback_from_url(platform, landed)
@@ -969,10 +1031,12 @@ def create_app(ctx) -> FastAPI:
         return {"ok": True}
 
     @app.post("/oauth/{platform}/disconnect")
-    async def oauth_disconnect(platform: str):
+    async def oauth_disconnect(platform: str, request: Request):
         if platform not in _OAUTH_PLATFORMS:
             raise HTTPException(404)
-        await asyncio.to_thread(ctx.pipeline.oauth.disconnect, platform)
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("clips", request.headers.get("X-Account-Profile", ""))
+        ctx.pipeline.oauth.disconnect(platform)
         return {"ok": True}
 
     return app

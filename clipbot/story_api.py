@@ -26,6 +26,8 @@ def install_story_routes(app, ctx) -> None:
         result = getattr(ctx.pipeline, "stories", None)
         if result is None:
             raise HTTPException(503, "Stories is still starting")
+        from .creative_memory import creative_memory
+        result.creative_context = lambda project: creative_memory(ctx).context("stories", account_profile_id=project.get("account_profile_id") or "default")
         return result
 
     def publisher():
@@ -66,6 +68,7 @@ def install_story_routes(app, ctx) -> None:
             apps[name] = {"configured": configured,
                           "inherited": configured and not getattr(own, identity) and not getattr(own, secret)}
         return {"accounts": masked_dump(ctx.settings)["story_accounts"],
+                "account_profile_id": getattr(ctx.pipeline, "account_profiles", None).active_id("stories") if getattr(ctx.pipeline, "account_profiles", None) else "default",
                 "oauth": {name: manager.connected(name) for name in OAUTH_PLATFORMS},
                 "redirects": {name: manager.redirect_uri(name) for name in OAUTH_PLATFORMS},
                 "app_credentials": apps,
@@ -81,6 +84,8 @@ def install_story_routes(app, ctx) -> None:
 
     @router.put("/accounts")
     async def save_accounts(request: Request):
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("stories", request.headers.get("X-Account-Profile", ""))
         data = await body(request, set(AccountsCfg.model_fields))
         if any(not isinstance(value, str) for value in data.values()):
             raise HTTPException(422, "Account values must be text")
@@ -88,11 +93,16 @@ def install_story_routes(app, ctx) -> None:
             settings = merge_incoming(ctx.settings, {"story_accounts": data})
         except ValidationError as exc:
             raise HTTPException(422, "Invalid Hollow account settings") from exc
-        await ctx.commit_settings(settings)
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            await service.edit("stories", service.active_id("stories"), {"accounts": data})
+        else:
+            await ctx.commit_settings(settings)
         return account_state()
 
     @router.post("/accounts/{platform}/open")
-    async def open_account(platform: str):
+    async def open_account(platform: str, request: Request):
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("stories", request.headers.get("X-Account-Profile", ""))
         manager = oauth(platform)
         try:
             url = manager.start_url(platform)
@@ -103,6 +113,8 @@ def install_story_routes(app, ctx) -> None:
 
     @router.post("/accounts/{platform}/paste")
     async def paste_account(platform: str, request: Request):
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("stories", request.headers.get("X-Account-Profile", ""))
         manager = oauth(platform)
         data = await body(request, {"url"})
         if not isinstance(data.get("url"), str):
@@ -116,8 +128,10 @@ def install_story_routes(app, ctx) -> None:
         return {"ok": True}
 
     @router.post("/accounts/{platform}/disconnect")
-    async def disconnect_account(platform: str):
-        await asyncio.to_thread(oauth(platform).disconnect, platform)
+    async def disconnect_account(platform: str, request: Request):
+        if service := getattr(ctx.pipeline, "account_profiles", None):
+            service.require_current("stories", request.headers.get("X-Account-Profile", ""))
+        oauth(platform).disconnect(platform)
         account_changed(platform)
         return {"ok": True}
 
@@ -159,11 +173,24 @@ def install_story_routes(app, ctx) -> None:
         await ctx.commit_settings(settings)
         return publisher().state()
 
+    @router.post("/ideas")
+    async def ideas(request: Request):
+        from .creative_tools import creative_tools
+        return await creative_tools(ctx).story_ideas(await body(request, {"genre", "format", "duration_s", "direction"}))
+
     @router.post("/projects")
     async def create(request: Request):
-        data = await body(request, {"topic", "genre", "format", "duration_s", "voice"})
+        from .creative_tools import creative_tools, text
+        data = await body(request, {"topic", "topic_mode", "direction", "genre", "format", "duration_s", "voice"})
         cfg = ctx.settings.stories
-        return operation(studio().create, data.get("topic"), data.get("genre", cfg.default_genre),
+        mode = data.get("topic_mode", "given")
+        if mode not in {"given", "generated"}:
+            raise HTTPException(422, "Choose Generate or Use mine for the premise")
+        topic = text(data.get("topic", ""), "Story premise", cfg.max_topic_chars)
+        if mode == "generated" and not topic:
+            suggested = await creative_tools(ctx).story_ideas({key: data[key] for key in ("genre", "format", "duration_s", "direction") if key in data})
+            topic = suggested["ideas"][0]["premise"]
+        return operation(studio().create, topic, data.get("genre", cfg.default_genre),
                          data.get("format", cfg.default_format), data.get("duration_s", cfg.default_duration_s), data.get("voice", cfg.voice))
 
     @router.get("/projects/{project_id}")

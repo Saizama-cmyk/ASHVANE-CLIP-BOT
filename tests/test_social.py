@@ -2,6 +2,7 @@
 import asyncio
 import json
 import threading
+from urllib.parse import quote
 from types import SimpleNamespace
 
 import httpx
@@ -65,6 +66,21 @@ def test_clients_and_content_persist_without_starting_work(ctx):
         assert loaded.state()["publishing_available"] is False
         await loaded.delete_content(item["id"])
         assert not SocialStudio(ctx).items
+    asyncio.run(run())
+
+
+def test_social_stop_cancels_shared_learning_task_and_reports_busy(ctx):
+    from clipbot.creative_tools import CreativeTools
+    async def run():
+        studio = SocialStudio(ctx)
+        ctx.creative_tools = CreativeTools(ctx)
+        task = asyncio.create_task(asyncio.Event().wait())
+        ctx.creative_tools.tasks["social"].add(task)
+        assert studio.state()["busy"]
+        await studio.stop()
+        assert task.cancelled()
+        ctx.creative_tools.tasks["social"].discard(task)
+        assert not studio.state()["busy"]
     asyncio.run(run())
 
 
@@ -225,3 +241,212 @@ def test_social_http_crud_works_stopped_and_ai_requires_run(ctx):
 def test_client_validation_cannot_inject_roots_or_unsafe_links(ctx, data):
     with pytest.raises(ValueError):
         asyncio.run(SocialStudio(ctx).create_client(data))
+
+
+def test_legacy_styles_migrate_to_saved_profiles_and_custom_profiles_stay_isolated(ctx):
+    async def run():
+        studio = SocialStudio(ctx)
+        first = await studio.create_client({"name": "First", "style_notes": {"A": "Vertical", "B": "Horizontal", "C": "Short meme captions"}})
+        second = await studio.create_client({"name": "Second", "style_notes": {"A": "Second style"}})
+        assert {row["id"] for row in studio.style_profiles if row["client_id"] == first["id"]} == {"A", "B", "C"}
+        await studio.update_profile(first["id"], "C", {"instructions": "Keep captions synchronized"})
+        assert studio._client(first["id"])["style_notes"]["C"] == "Keep captions synchronized"
+        assert studio._profile(second["id"], "A")["instructions"] == "Second style"
+        profile = await studio.create_profile(first["id"], {"name": "Product graphics", "description": "Custom style", "instructions": "Use calm title reveals"})
+        with pytest.raises(KeyError):
+            studio._profile(second["id"], profile["id"])
+        loaded = SocialStudio(ctx)
+        assert loaded._profile(first["id"], profile["id"])["instructions"] == "Use calm title reveals"
+        raw = json.loads(studio.path.read_text(encoding="utf-8"))
+        raw.pop("style_profiles")
+        studio.path.write_text(json.dumps(raw), encoding="utf-8")
+        legacy = SocialStudio(ctx)
+        assert legacy._profile(first["id"], "C")["instructions"] == "Keep captions synchronized"
+    asyncio.run(run())
+
+
+def test_ideas_allow_empty_brief_and_use_only_client_profile_memory(ctx, monkeypatch):
+    async def run():
+        from clipbot.creative_memory import creative_memory
+        import clipbot.creative_tools as creative_module
+        ctx.settings.businesses.social_enabled = True
+        studio = ctx.social_studio = SocialStudio(ctx)
+        first = await studio.create_client({"name": "First", "platforms": ["youtube"], "style_notes": {"B": "Serious product trailer"}})
+        second = await studio.create_client({"name": "Second"})
+        await creative_memory(ctx).guidance("social", first["id"], "B", "Keep the opening concise")
+        await creative_memory(ctx).guidance("social", second["id"], "", "Private unrelated preference")
+        calls = []
+
+        async def chat(business, contract, payload):
+            calls.append(payload)
+            return {"ideas": [{"title": "Product reveal", "hook": "A clear new opening", "brief": "Introduce the actual product with original feature graphics", "reason": "Fits the saved trailer direction"}]}
+        monkeypatch.setattr(creative_module, "creative_tools", lambda ctx: SimpleNamespace(chat=chat))
+        result = await studio.ideas(first["id"], {"style_profile_id": "B", "reference_notes": "Study the pacing"})
+        assert result["ideas"][0]["brief"]
+        assert "not researched" in result["source_basis"]
+        assert "Serious product trailer" in json.dumps(calls)
+        assert "Keep the opening concise" in json.dumps(calls)
+        assert "Private unrelated preference" not in json.dumps(calls)
+        assert not studio.items
+        ctx.settings.businesses.social_enabled = False
+        with pytest.raises(HTTPException) as error:
+            await studio.ideas(first["id"], {})
+        assert error.value.status_code == 409
+    asyncio.run(run())
+
+
+def test_uploaded_reference_is_owned_bounded_and_persists_as_shared_pending_evidence(ctx):
+    async def run():
+        from clipbot.creative_memory import creative_memory
+        app = FastAPI()
+        install_social_routes(app, ctx)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost") as http:
+            client = (await http.post("/api/social/clients", json={"name": "First", "style_notes": {"A": "Vertical product edits"}})).json()["client"]
+            path = f"/api/social/clients/{client['id']}/references"
+            result = await http.post(path, content=b"Original example with deliberate caption rhythm.", headers={
+                "X-Filename": quote("Example style.txt"), "Content-Type": "text/plain", "X-Style-Profile": "A", "X-Reference-Notes": quote("Keep this pacing")})
+            assert result.status_code == 200, result.text
+            payload = result.json()
+            assert payload["asset"]["reference"] and not payload["asset"]["historical"]
+            assert payload["analysis"]["status"] == "complete"
+            assert payload["asset"]["sha256"]
+            saved = (await http.get(f"/api/social/clients/{client['id']}/assets")).json()["assets"]
+            assert any(asset["id"] == payload["asset"]["id"] for asset in saved)
+            response = await http.get(payload["asset"]["url"])
+            assert response.content.startswith(b"Original example")
+            assert response.headers["x-content-type-options"] == "nosniff"
+            memory = creative_memory(ctx).context("social", client["id"], "A")
+            assert memory["reference_guidance"][0]["asset_id"] == payload["asset"]["id"]
+            assert memory["reference_guidance"][0]["status"] == "pending"
+            assert (await http.post(path, content=b"bad", headers={"X-Filename": "..%2Fsecret.txt"})).status_code == 422
+            assert (await http.post(path, content=b"<script>bad</script>", headers={"X-Filename": "fake.png", "Content-Type": "image/png"})).status_code == 415
+            assert (await http.post(path, content=b"unsupported", headers={"X-Filename": "payload.html"})).status_code == 415
+    asyncio.run(run())
+
+
+def test_streaming_reference_limit_and_cancel_remove_partial_files(ctx):
+    async def run():
+        studio = SocialStudio(ctx)
+        client = await studio.create_client({"name": "Client"})
+        ctx.settings.social.max_asset_bytes = 1048576
+
+        async def excessive():
+            yield b"x" * 1048576
+            yield b"x"
+        request = SimpleNamespace(headers={"x-filename": "too-large.txt"}, stream=excessive)
+        with pytest.raises(HTTPException) as error:
+            await studio.upload_reference(client["id"], request)
+        assert error.value.status_code == 413
+        root = studio.root / "references" / client["id"]
+        assert not list(root.iterdir())
+        entered = asyncio.Event()
+
+        async def interrupted():
+            yield b"partial reference"
+            entered.set()
+            await asyncio.Event().wait()
+        request = SimpleNamespace(headers={"x-filename": "interrupted.txt"}, stream=interrupted)
+        task = asyncio.create_task(studio.upload_reference(client["id"], request))
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not list(root.iterdir())
+        assert not studio.assets
+    asyncio.run(run())
+
+
+def test_reference_analysis_records_actual_sampled_evidence_and_learns_profile(ctx, monkeypatch, tmp_path):
+    async def run():
+        import clipbot.editor as editor
+        import clipbot.vision as vision
+        from clipbot.creative_memory import creative_memory
+        import clipbot.creative_tools as creative_module
+        ctx.settings.businesses.social_enabled = True
+        studio = ctx.social_studio = SocialStudio(ctx)
+        client = await studio.create_client({"name": "Client", "style_notes": {"C": "Short original showcase"}})
+        observed = []
+
+        async def probe(*args):
+            return SimpleNamespace(duration=8, width=1920, height=1080)
+        async def frames(*args):
+            return [b"actual sampled JPEG"]
+        async def look(prompt, images):
+            observed.append(images)
+            return "Large centered captions; dark background; changing framing in sampled frames."
+        async def chat(business, contract, payload):
+            assert payload["actual_analysis"]["audio_analyzed"] is False
+            return {"summary": "Use deliberate large captions", "rules": ["Keep captions readable over the dark framing"]}
+        monkeypatch.setattr(editor, "probe_media", probe)
+        monkeypatch.setattr(vision, "extract_frames", frames)
+        monkeypatch.setattr(creative_module, "creative_tools", lambda ctx: SimpleNamespace(chat=chat))
+        ctx.pipeline.vision = SimpleNamespace(look=look)
+        ctx.creative_tools = SimpleNamespace(chat=chat)
+        async def stream():
+            yield b"....ftypmp42 media reference"
+        request = SimpleNamespace(headers={"x-filename": "example.mp4", "content-type": "video/mp4", "x-style-profile": "C"}, stream=stream)
+        result = await studio.upload_reference(client["id"], request)
+        assert result["analysis"]["status"] == "partial"
+        assert result["analysis"]["audio_analyzed"] is False
+        assert observed
+        memory = creative_memory(ctx).context("social", client["id"], "C")
+        assert memory["reference_guidance"][0]["status"] == "learned"
+        assert "readable" in memory["reference_guidance"][0]["rules"][0]
+        other = await studio.create_client({"name": "Other"})
+        assert not creative_memory(ctx).context("social", other["id"], "")["reference_guidance"]
+        with pytest.raises(KeyError):
+            await studio.analyze_reference(other["id"], result["asset"]["id"], {})
+    asyncio.run(run())
+
+
+def test_pending_reference_can_be_reanalyzed_without_reupload_and_guides_next_draft(ctx):
+    async def run():
+        from clipbot.creative_memory import creative_memory
+        studio = ctx.social_studio = SocialStudio(ctx)
+        client = await studio.create_client({"name": "Client", "style_notes": {"A": "Original informative video"}})
+        async def stream():
+            yield b"Example reference describes a quiet opening and spaced readable captions."
+        request = SimpleNamespace(headers={"x-filename": "pacing.txt", "x-style-profile": "A", "x-reference-notes": "Keep%20the%20quiet%20opening"}, stream=stream)
+        uploaded = await studio.upload_reference(client["id"], request)
+        identifier = uploaded["asset"]["id"]
+        assert creative_memory(ctx).context("social", client["id"], "A")["reference_guidance"][0]["status"] == "pending"
+        ctx.settings.businesses.social_enabled = True
+        async def chat(business, contract, payload):
+            assert "quiet opening" in payload["reference_text"]
+            assert payload["creator_notes"] == "Keep the quiet opening"
+            return {"summary": "Favor a quiet opening", "rules": ["Use spaced, readable captions"]}
+        ctx.creative_tools = SimpleNamespace(chat=chat)
+        retried = await studio.analyze_reference(client["id"], identifier, {})
+        assert retried["asset"]["id"] == identifier
+        assert len(studio.assets) == 1
+        context = creative_memory(ctx).context("social", client["id"], "A")
+        assert context["reference_guidance"][0]["status"] == "learned"
+        calls = []
+        async def model(http, base, body, cfg):
+            calls.append(body)
+            return {"title": "Original draft", "script": "A complete original product explanation.", "caption": "Original caption",
+                    "hashtags": [], "pinned_comment": "Read more", "notes": "Ready to review", "requires_fresh_footage": False}
+        studio._model_request = model
+        draft = await studio.draft(client["id"], {"brief": "Create original feature graphics", "style_profile_id": "A",
+                                                "reference_notes": "Emphasize clarity", "asset_ids": [identifier]})
+        assert "spaced, readable captions" in json.dumps(calls)
+        assert "Emphasize clarity" in json.dumps(calls)
+        assert draft["asset_ids"] == [identifier]
+        assert draft["style"] == "A"
+        assert draft["style_profile_id"] == "A"
+        assert SocialStudio(ctx)._item(draft["id"])["style_profile_id"] == "A"
+    asyncio.run(run())
+
+
+def test_content_keeps_custom_style_id_after_rename_and_rejects_another_client_profile(ctx):
+    async def run():
+        studio = SocialStudio(ctx)
+        first = await studio.create_client({"name": "First"})
+        second = await studio.create_client({"name": "Second"})
+        profile = await studio.create_profile(first["id"], {"name": "Slow cinematic", "instructions": "Measured timing"})
+        item = await studio.create_content(first["id"], {"title": "Saved idea", "style_profile_id": profile["id"]})
+        await studio.update_profile(first["id"], profile["id"], {"name": "New style name"})
+        assert SocialStudio(ctx)._item(item["id"])["style_profile_id"] == profile["id"]
+        with pytest.raises(KeyError):
+            await studio.create_content(second["id"], {"title": "Wrong scope", "style_profile_id": profile["id"]})
+    asyncio.run(run())

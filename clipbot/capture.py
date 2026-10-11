@@ -89,6 +89,21 @@ def newest_segment_time(folder: Path) -> float | None:
     return max(times) if times else None
 
 
+def streamlink_args(settings: Settings, target: StreamTarget) -> list[str]:
+    """Explicit transport policy; ringbuffer capacity is not a latency measurement."""
+    c = settings.capture
+    args = [*streamlink_cmd(settings), "--stdout", "--loglevel", "warning",
+            "--hls-live-edge", str(c.hls_live_edge), "--stream-segment-threads",
+            str(c.hls_segment_threads), "--stream-timeout", str(c.stream_timeout_s)]
+    if c.hls_segment_stream_data:
+        args.append("--hls-segment-stream-data")
+    if target.platform == Platform.TWITCH and c.twitch_low_latency:
+        args.append("--twitch-low-latency")
+    if target.platform == Platform.KICK and c.kick_low_latency:
+        args.append("--kick-low-latency")
+    return [*args, target.url, c.quality]
+
+
 async def mean_volume_db(ffmpeg: str, path: Path, timeout_s: float) -> float | None:
     """volumedetect mean volume of a media file, None if it has no audio."""
     res = await run_cmd([ffmpeg, "-hide_banner", "-nostats", "-i", str(path), "-map", "0:a:0?",
@@ -116,6 +131,8 @@ class Capture:
         self.last_error = ""
         self.started_at = 0.0
         self._audio_cache: tuple[str, float, float | None] = ("", 0.0, None)
+        self.audio_sample_wall: float | None = None
+        self.audio_probe_s: float | None = None
         self._cleared = False
         self._last_lines: dict[str, str] = {}
 
@@ -211,8 +228,7 @@ class Capture:
             self.status = "capturing (direct)"
         else:
             # streamlink >= 7 filters Twitch ads itself (--twitch-disable-ads is a no-op now)
-            sl_args = [*streamlink_cmd(s), "--stdout", "--loglevel", "warning",
-                       self.target.url, s.capture.quality]
+            sl_args = streamlink_args(s, self.target)
             r_fd, w_fd = os.pipe()
             try:
                 sl = await spawn(*sl_args, stdin=asyncio.subprocess.DEVNULL, stdout=w_fd,
@@ -308,17 +324,28 @@ class Capture:
         if not ffmpeg:
             return None
         try:
+            started = time.monotonic()
             level = await mean_volume_db(ffmpeg, newest.path, self.settings.capture.probe_timeout_s)
         except CmdTimeout as exc:
             logger.debug("audio level %s: %s", self.key, exc)
             level = None
+        self.audio_probe_s = time.monotonic() - started
+        self.audio_sample_wall = newest.end
         self._audio_cache = (newest.path.name, time.time(), level)
         return newest.path.name, level
 
     def snapshot(self) -> dict:
         segs = self.segments()
+        newest = newest_segment_time(self.folder)
+        now = time.time()
         return {"key": self.key, "status": self.status, "restarts": self.restarts,
                 "error": self.last_error, "segments": len(segs),
+                "latest_segment_wall": newest,
+                "segment_open_age_s": round(max(0, now - newest), 2) if newest is not None else None,
+                "complete_segment_age_s": round(max(0, now - segs[-1].end), 2) if segs else None,
+                "source_latency_s": None,  # Local filenames cannot measure provider/broadcaster delay.
+                "audio_sample_age_s": round(max(0, now - self.audio_sample_wall), 2) if self.audio_sample_wall is not None else None,
+                "audio_probe_s": round(self.audio_probe_s, 2) if self.audio_probe_s is not None else None,
                 "buffered_s": round(segs[-1].end - segs[0].start) if segs else 0}
 
 

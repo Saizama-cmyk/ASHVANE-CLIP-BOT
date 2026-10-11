@@ -120,3 +120,19 @@ serve that directory at `127.0.0.1:8140`, then run `node scripts/verify_phone_wo
 The verifier uses fixture endpoints only and covers both 320px and 390px layouts, runtime isolation,
 music transactions, client-scoped social editing and authenticated media. Native release version
 1.0.24 is assigned by the existing release workflow when the integrated change is published.
+
+### Creative inputs and learning
+
+Hollow starts with generated premises and Resonance with generated lyrics; neither needs manual text. Switch to your own premise or lyrics without losing either buffer. Instrumental takes send empty given lyrics. Workspace forms stay in memory during navigation; manuscript edits retain a session buffer. The manuscript leave warning offers a persisted AsyncStorage “Don't show again” choice; account and destructive confirmations remain separate.
+
+Social Studio supports client-scoped saved style profiles, empty-brief idea suggestions, and a native reference file picker (web uses the browser file chooser). Uploads send bearer authorization in headers, enforce the server file limits, and show actual analysis status. Unavailable or partial references can be analyzed again. Learning guidance is editable; derived reference rules remain separate and read-only. Feedback is scoped to the business, selected client and style profile. No upload or idea action publishes content.
+
+Verification: `node scripts/verify_phone_creative.cjs` against the Expo web export exercises generated/given buffers, instrumental payloads, scoped profiles/feedback, authenticated reference uploads, manuscript navigation preference and existing music/social transactions at 320px and 390px. Fixtures contact no real engines or publishing services.
+
+### Named destination profiles
+
+Surge and Hollow Accounts use named profiles with isolated credentials and profile-scoped PC sign-in. Resonance Accounts stores public artist links only. Select a profile to edit it, save edits, then activate it; activation never drops an unsaved credential draft. Saves target the selected profile ID even if another device changes the active profile. Account buffers remain in memory during navigation, and account/destructive confirmations remain enabled. Legacy Surge settings exclude the old account editor.
+
+Learning loads the active account profile and binds unsaved guidance/feedback to that ID. Save before loading another profile. Social learning continues to use the selected client and style. Tools includes a four-business model/tool checker; stopped businesses are labeled stopped and native REAPER verification remains distinct from executable detection.
+
+`node scripts/verify_phone_profiles.cjs` checks profiles, rejected/busy activation, explicit-ID saves after an external active-profile change, scoped OAuth fixture requests, bound learning, public-only artist links and checker groups alongside the creative transactions. No real sign-in, upload, generation or publication occurs.

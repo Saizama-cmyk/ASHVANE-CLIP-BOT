@@ -362,6 +362,13 @@ class CaptureCfg(Section):
     """The rolling stream buffer every clip is cut from."""
     quality: str = F("1080p60,1080p,720p60,720p,best", "Stream quality",
                      "streamlink quality list, first available wins.")
+    hls_live_edge: int = F(2, "HLS distance from live (segments)", "Start this many provider segments behind live. Two balances latency and buffering; one may stall on slower connections. Applied on the next capture start.", ge=1, le=10)
+    hls_segment_stream_data: bool = F(True, "Stream HLS data while downloading", "Send downloaded segment bytes to ffmpeg immediately rather than waiting for the whole provider segment. Applied on the next capture start.")
+    hls_segment_threads: int = F(2, "HLS download workers", "Parallel provider-segment downloads per capture. More workers help slow segment requests but use more connections. Applied on the next capture start.", ge=1, le=10)
+    stream_timeout_s: float = F(60.0, "Stream read timeout (s)", "Streamlink stops an unfiltered stream that produces no output for this long. Applied on the next capture start.", ge=5, le=600)
+    twitch_low_latency: bool = F(False, "Twitch low-latency prefetch", "Opt into Streamlink's Twitch prefetch mode. The broadcaster must enable low latency; ordinary streams may buffer. Applied on the next capture start.")
+    kick_low_latency: bool = F(False, "Kick low-latency prefetch", "Opt into Streamlink's Kick prefetch mode. The broadcaster must enable low latency; ordinary streams may buffer. Does not affect the direct ffmpeg fallback.")
+    audio_probe_workers: int = F(4, "Audio probe workers", "Maximum streams sampled concurrently. A slow stream no longer holds every later stream behind it; ffmpeg children remain bounded.", ge=1, le=16)
     segment_s: int = F(6, "Segment length (s)", "Length of each buffer file.", ge=2, le=30)
     buffer_s: int = F(150, "Buffer length (s)", "How much of each stream is kept on disk.", ge=60, le=900)
     kick_ffmpeg_fallback: bool = F(True, "Kick direct fallback",
@@ -1132,6 +1139,16 @@ class PostingCfg(Section):
                              ge=1, le=1000)
 
 
+class AccountProfilesCfg(Section):
+    """Named destination profiles within each business."""
+    max_profiles: int = F(100, "Profiles per business", "Maximum saved account profiles in each business.", ge=1, le=1000)
+    max_name_chars: int = F(120, "Profile name length", "Maximum account profile name length.", ge=1, le=1000)
+    max_description_chars: int = F(4000, "Profile notes length", "Maximum account profile description length.", ge=1, le=12000)
+    max_handle_chars: int = F(2000, "Profile link length", "Maximum length of a public account handle or link.", ge=1, le=12000)
+    request_max_bytes: int = F(65536, "Profile request limit", "Maximum bytes accepted by account profile edits.", ge=1024, le=1048576)
+    store_max_bytes: int = F(4194304, "Profile storage limit", "Maximum encrypted account profile registry size.", ge=1024, le=16777216)
+
+
 class AccountsCfg(Section):
     """Posting account keys and tokens. Stored only in settings.json on this PC."""
     youtube_client_id: str = F("", "YouTube OAuth client ID", "Google Cloud OAuth client (Desktop or Web app).")
@@ -1549,7 +1566,30 @@ class SocialCfg(BaseModel):
     temperature: float = F(0.5, "Social writing creativity", "Higher allows more varied wording, constrained by each client's brand guide.", ge=0, le=2)
 
 
+class CreativeCfg(BaseModel):
+    music_duration_s: int = F(60, "Suggested music length (s)", "Length used when requesting lyrics without a duration.", ge=10, le=360)
+    music_min_duration_s: int = F(10, "Shortest music suggestion (s)", "Minimum length accepted by the local workstation.", ge=10, le=360)
+    music_max_duration_s: int = F(360, "Longest music suggestion (s)", "Maximum length accepted by the local workstation.", ge=10, le=360)
+    music_title_max_chars: int = F(120, "Music title limit", "Maximum title passed to the local workstation.", ge=1, le=120)
+    music_style_max_chars: int = F(2000, "Music direction limit", "Maximum musical direction accepted by the local workstation.", ge=100, le=2000)
+    music_lyrics_max_chars: int = F(24000, "Supplied music lyrics limit", "Maximum creator lyrics passed unchanged to the local workstation.", ge=1000, le=24000)
+    model: str = F("", "Creative assistant model", "Installed local Ollama model for ideas, lyrics and reference learning. Blank uses the configured local judge.")
+    timeout_s: float = F(240, "Creative response timeout (s)", "Maximum time for one local creative response.", ge=10, le=1800)
+    max_tokens: int = F(4096, "Creative response tokens", "Bound the length of generated ideas, lyrics and learned guidance.", ge=256, le=16384)
+    temperature: float = F(0.7, "Idea creativity", "Sampling for original ideas and lyrics; output still requires validation.", ge=0, le=2)
+    response_max_bytes: int = F(262144, "Creative response limit (bytes)", "Maximum JSON response accepted from the local model.", ge=4096, le=1048576)
+    request_max_bytes: int = F(131072, "Creative request limit (bytes)", "Maximum request for creative guidance and feedback.", ge=4096, le=1048576)
+    idea_count: int = F(3, "Ideas per suggestion", "Number of original ideas to propose for one request.", ge=1, le=5)
+    max_text_chars: int = F(12000, "Creative text length", "Maximum creator direction, example or generated lyric length.", ge=1000, le=50000)
+    guidance_max_chars: int = F(8000, "Saved guidance length", "Maximum editable guidance in one business/client/style memory.", ge=1000, le=30000)
+    feedback_max_chars: int = F(6000, "Feedback note length", "Maximum explanation of what worked or should change.", ge=100, le=20000)
+    max_history: int = F(30, "Learning history per scope", "Number of recent feedback and reference records retained independently.", ge=1, le=200)
+    max_scopes: int = F(1000, "Saved creative memories", "Maximum business, client and style memories per Ashvane profile.", ge=10, le=10000)
+    store_max_bytes: int = F(16777216, "Creative memory storage limit (bytes)", "Maximum saved guidance, feedback and reference history file size.", ge=1048576, le=268435456)
+
+
 class Settings(BaseModel):
+    creative: CreativeCfg = Field(default_factory=CreativeCfg)
     model_config = ConfigDict(extra="ignore", validate_assignment=True)
 
     app: AppCfg = Field(default_factory=AppCfg, title="App")
@@ -1569,6 +1609,7 @@ class Settings(BaseModel):
     backlog: BacklogCfg = Field(default_factory=BacklogCfg, title="Backlog")
     edit: EditCfg = Field(default_factory=EditCfg, title="Editor")
     posting: PostingCfg = Field(default_factory=PostingCfg, title="Posting")
+    account_profiles: AccountProfilesCfg = Field(default_factory=AccountProfilesCfg, title="Account profiles")
     accounts: AccountsCfg = Field(default_factory=AccountsCfg, title="Accounts")
     story_accounts: AccountsCfg = Field(default_factory=AccountsCfg, title="Hollow accounts",
                                        description="Separate Stories destination accounts. Blank OAuth app credentials can use the shared app; account tokens are never shared.")

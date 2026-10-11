@@ -110,7 +110,7 @@ def test_a_passed_clip_reaches_render_with_its_trim(pipeline, monkeypatch, tmp_p
     async def qc(*_a, **_kw):
         return types.SimpleNamespace(ok=True, duration=20.0, reason="")
 
-    async def transcribe(_path):
+    async def transcribe(_path, **_kwargs):
         return types.SimpleNamespace(text="that was insane", words=[])
 
     async def think(cand, _duration):

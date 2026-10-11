@@ -31,7 +31,10 @@ are not mixed with credentials from the other business.
 
 The black-hole transition happens when switching businesses. Navigation inside a
 business uses ordinary section changes, and each business remembers its last section.
-Unsaved story edits still require saving or discarding before leaving their editor.
+Warnings appear only when replacing editor work that could be lost. Switching between
+retained business panels does not discard their forms. Navigation warnings have a
+persisted **Don't show again** choice; deletion and account-security confirmations
+remain separate.
 
 On a phone, **Connect on PC** opens account approval in the PC browser so the local
 callback can reach Ashvane. The callback-address paste option remains available if
@@ -85,3 +88,63 @@ a manual calendar; it has no connected publishing credentials or automatic posti
 Nothing is copied from Surge/Hollow accounts. Individual drafts can be deleted;
 there is no destructive client-wide cascade. Phone playback caches authenticated
 music media locally and clears that cache when the paired identity changes.
+
+## Ideas and creative memory
+
+Hollow offers **Generate** and **Use mine** for its premise. Generate can create an
+original premise from the selected genre, treatment and duration with no mandatory
+creator text. Suggested ideas remain editable. A given or explicitly selected
+premise is preserved. Resonance offers generated lyrics, supplied lyrics and
+instrumental takes. Blank generated lyrics and musical direction can be suggested
+locally; supplied lyrics are never replaced by that suggestion.
+
+Social Studio proposes ideas against the selected client's documented facts and
+saved video-style profile. Each client can save custom styles, upload bounded
+references and retry reference analysis later. Video analysis samples actual frames;
+it does not establish that every frame or the soundtrack was examined. Audio and PDF
+references currently use creator notes rather than claiming full listening/reading.
+
+Feedback, editable production guidance and reference-derived style rules are stored
+locally in `creative-memory.json`, scoped to each business account profile or Social
+client/style. Feedback on generated ideas and lyrics stays with the profile that
+produced them, even if the selected account changes later.
+Future prompts retrieve this guidance; model weights are not trained. Pending or
+failed analysis is labeled explicitly. Current-trend research and better performance
+are not inferred from a saved reference or a positive rating. Private feedback and
+evaluation notes are production context and must remain outside public content.
+
+## Account profiles
+
+Surge and Hollow have named account profiles with their own destination credentials
+and encrypted token files. Existing connections remain in each business's main
+profile and retain the legacy token paths. A new profile may reuse developer app
+registration, but it never inherits a signed-in channel, Meta token or webhook.
+Profile links are descriptive and do not establish publishing authorization.
+Resonance saves artist profiles and public links; music distribution is not connected.
+Social Studio continues to use its existing client and video-style profiles.
+
+Clips and stories remain bound to the profile that created them. Legacy queued items
+belong to the main profile. Selecting another profile holds the original queue; it
+does not send those videos to the new channel. An upload, generation job, or pending
+sign-in must finish or be stopped before profiles can change. Pending sign-in can be
+canceled without revoking an already connected channel.
+
+The profile account panel uses explicit profile IDs for edits and OAuth actions.
+After multiple profiles exist, older account forms require a matching profile
+precondition and otherwise direct the user to that panel. Unreadable profile data
+is preserved and publication is held rather than resetting destination ownership.
+
+## Business readiness and clip latency
+
+System and Setup report Surge, Hollow, Resonance and Social Studio separately.
+An intentionally stopped business does not fail overall readiness. Installed models,
+shared GPU activity, native REAPER health and measured export evidence are reported
+separately; these checks do not start models or claim production quality.
+
+Surge bounds concurrent audio probes, timestamps detected audio against the segment
+that supplied it, and reuses a persisted transcript when recovering work beyond that
+stage. Waiting for transcription and performing transcription have separate timing
+fields. Stream capture exposes segment-write freshness; this is not a measurement of
+delay behind the actual Twitch/Kick broadcast. Live edge, segment streaming and
+platform low-latency modes remain configurable. A live comparison is needed before
+claiming a measured end-to-end latency reduction.

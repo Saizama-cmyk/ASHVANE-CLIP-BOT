@@ -107,6 +107,8 @@ class MusicBridge:
 
     async def stop(self):
         async with self.lock:
+            if getattr(self.ctx, "creative_tools", None):
+                await self.ctx.creative_tools.cancel_business("music")
             if self.producer:
                 await self.producer.close()
             try:
@@ -132,7 +134,8 @@ async def music_runtime_state(ctx):
     service = bridge(ctx)
     try:
         state = await service.call("GET", "/api/status")
-        busy = bool(state.get("busy")) or bool(service.producer and service.producer.busy)
+        creative = getattr(ctx, "creative_tools", None)
+        busy = bool(state.get("busy")) or bool(service.producer and service.producer.busy) or bool(creative and creative.tasks["music"])
         enabled = ctx.settings.businesses.resonance_enabled
         if service.producer and service.producer.error:
             return {"running": False, "busy": busy, "message": service.producer.error}
@@ -182,6 +185,12 @@ def install_music_routes(app, ctx):
     service = bridge(ctx)
     from .music_producer import MusicProducer
     service.producer = MusicProducer(ctx, service)
+
+    @router.post("/lyrics")
+    async def lyrics(request: Request):
+        from .creative_tools import creative_tools
+        require_running(ctx)
+        return await creative_tools(ctx).lyrics(await read_body(request, ctx.settings.creative.request_max_bytes))
 
     @router.post("/produce", status_code=202)
     async def produce(request: Request):
@@ -234,7 +243,26 @@ def install_music_routes(app, ctx):
         if request.method == "POST" and WRITE.fullmatch(path):
             if not path.endswith(("/cancel", "/validate", "/open")):
                 require_running(ctx)
-            result = await service.call("POST", "/api/" + path, await read_body(request, service.cfg.request_max_bytes))
+            data = await read_body(request, service.cfg.request_max_bytes)
+            if path == "create":
+                from .creative_tools import creative_tools, text
+                mode = data.pop("lyrics_mode", "given")
+                direction = data.pop("lyrics_direction", "")
+                if mode not in {"given", "generated"}:
+                    raise HTTPException(422, "Choose Generate or Use mine for lyrics")
+                original = text(data.get("lyrics", ""), "Lyrics", ctx.settings.creative.music_lyrics_max_chars)
+                style = text(data.get("style", ""), "Musical direction", ctx.settings.creative.music_style_max_chars)
+                if (mode == "generated" and not original) or not style:
+                    generated = await creative_tools(ctx).lyrics({"style": style, "direction": direction,
+                        "duration_seconds": data.get("duration_seconds", ctx.settings.creative.music_duration_s),
+                        "mode": data.get("mode", "general") if mode == "generated" else "instrumental"})
+                    if mode == "generated" and not original:
+                        data["lyrics"] = generated["lyrics"]
+                    if not style:
+                        data["style"] = generated["style"]
+                    if not data.get("title", "").strip():
+                        data["title"] = generated["title"]
+            result = await service.call("POST", "/api/" + path, data)
             return JSONResponse(service.rewrite(result), status_code=HTTPStatus.ACCEPTED if path.endswith(("/edit", "/export", "/listen")) or path in {"create", "process"} else HTTPStatus.OK)
         raise HTTPException(404, "Unknown music operation")
 

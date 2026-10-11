@@ -173,6 +173,8 @@ class ClipBotApp:
             from .music_api import close_music
             from .social_api import close_social
             await close_business_runtime(self)
+            if getattr(self, "creative_tools", None):
+                await self.creative_tools.close()
             await close_social(self)
             await close_music(self)
             await self.pipeline.stop()

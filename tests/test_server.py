@@ -99,6 +99,7 @@ def test_restart_fields_reported(running_app):
 def test_guards(running_app):
     _, c = running_app
     assert c.put("/api/settings", json={}).status_code == 403                 # no action header
+    assert c.patch("/api/social/clients/missing", json={}).status_code == 403
     assert c.get("/api/state", headers={"Host": "evil.example"}).status_code == 403
 
 
