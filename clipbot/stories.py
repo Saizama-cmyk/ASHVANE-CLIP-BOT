@@ -340,6 +340,8 @@ class StoryStudio:
         if not isinstance(script, str) or "\x00" in script:
             raise ValueError("Narration must be plain story text")
         script = script.strip()
+        from .story_voice import validate_spoken_text
+        validate_spoken_text(script)
         word_count = len(_words(script))
         if not cfg.min_script_words <= word_count <= cfg.max_script_words:
             raise ValueError(f"The story must contain {cfg.min_script_words} to {cfg.max_script_words} spoken words")

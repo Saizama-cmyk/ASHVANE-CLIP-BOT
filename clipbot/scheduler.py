@@ -26,6 +26,7 @@ from .publishers import PLATFORMS, PostText, Publisher
 from .publishers.base import PublishResult
 from .publishers.youtube import upload_metadata
 from .public_copy import check_public_text, require_public_copy, UnsafePublicCopy
+from .sweeper import remove_rejected_media
 
 logger = logging.getLogger("clipbot.scheduler")
 
@@ -111,11 +112,15 @@ class Scheduler:
         self._busy: dict[str, asyncio.Task] = {}
         self.last_error: dict[str, str] = {}
         self._last_cleanup = 0.0
+        self._last_rejected_cleanup = time.time()
+        self._rejected_cleanup_lock = asyncio.Lock()
+        self.rejected_cleanup_result: dict = {}
         self._task: asyncio.Task | None = None
         self._cand_lock = asyncio.Lock()
         self.analytics = None        # set by the pipeline: steers picks and caps flooding
         self.quality_guard = None    # pipeline's final-cut gate, including older scheduled clips
         self.media_locks: dict[str, asyncio.Lock] = {}
+        self.media_in_use = None     # pipeline owns active candidate processing
         self.account_profiles = None
 
     def _profile_hold(self, candidate):
@@ -169,6 +174,10 @@ class Scheduler:
 
     async def tick(self) -> None:
         now = time.time()
+        interval = self.settings.clip.rejected_cleanup_min
+        if interval > 0 and now - self._last_rejected_cleanup >= interval * 60:
+            self._last_rejected_cleanup = now
+            await self.delete_rejected_media()
         if now - self._last_cleanup >= self.settings.posting.cleanup_interval_s:
             self._last_cleanup = now
             await self.cleanup()
@@ -363,24 +372,70 @@ class Scheduler:
             await asyncio.to_thread(self.store.delete_candidate, c.id)
             if self.paths:
                 await asyncio.to_thread(delete_candidate_media, self.paths, c.id)
-        await self._expire_rejected_cuts()
         if expired:
             logger.info("expired %d clip(s) older than %d days", len(expired),
                         self.settings.posting.retention_days)
         return len(expired)
 
-    async def _expire_rejected_cuts(self) -> None:
-        """Rejected/failed cuts are kept ``clip.keep_rejected_hours`` for preview, then deleted."""
-        horizon = time.time() - self.settings.clip.keep_rejected_hours * 3600
-        for stage in (Stage.REJECTED, Stage.FAILED):
-            for c in await asyncio.to_thread(self.store.candidates_in_stage, stage):
-                if c.created_at >= horizon or not c.raw_path:
+    async def delete_rejected_media(self, *, manual: bool = False) -> dict:
+        """Remove only owned rejected media. Keep decisions and never interrupt an edit/upload."""
+        async with self._rejected_cleanup_lock:
+            result = {"clips_cleaned": 0, "files_deleted": 0, "bytes_freed": 0,
+                      "files_skipped": 0, "clips_skipped": 0, "manual": manual}
+            horizon = time.time() - self.settings.clip.keep_rejected_hours * 3600
+            candidates = await asyncio.to_thread(self.store.candidates_in_stage, Stage.REJECTED)
+            for original in candidates:
+                if not self.paths or (not manual and original.created_at >= horizon):
+                    result["clips_skipped"] += 1
                     continue
-                await asyncio.to_thread(Path(c.raw_path).unlink, True)
-                if self.paths:
-                    await asyncio.to_thread(delete_candidate_media, self.paths, c.id)
-                c.raw_path = ""
-                await asyncio.to_thread(self.store.upsert_candidate, c)
+                lock = self.media_locks.setdefault(original.id, asyncio.Lock())
+                if lock.locked() or (self.media_in_use and self.media_in_use(original.id)):
+                    result["clips_skipped"] += 1
+                    continue
+                async with lock:
+                    candidate = await asyncio.to_thread(self.store.get_candidate, original.id)
+                    if (candidate is None or candidate.stage != Stage.REJECTED
+                            or self._profile_hold(candidate)
+                            or any(status == "ok" for status in candidate.posted_to.values())
+                            or (self.media_in_use and self.media_in_use(original.id))):
+                        result["clips_skipped"] += 1
+                        continue
+                    posts = await asyncio.to_thread(self.store.posts_for_candidate, candidate.id)
+                    if any(post["status"] == "ok" for post in posts):
+                        result["clips_skipped"] += 1
+                        continue
+                    references = await asyncio.to_thread(self.store.candidate_media_references)
+                    protected = {Path(row[field]).resolve() for row in references
+                                 if row["id"] != candidate.id for field in ("raw_path", "final_path")
+                                 if row[field]}
+                    deletion = asyncio.create_task(asyncio.to_thread(
+                        remove_rejected_media, self.settings, self.paths, candidate, protected))
+                    try:
+                        removed = await asyncio.shield(deletion)
+                    except asyncio.CancelledError:
+                        # A worker thread cannot be cancelled. Retain the media lock until its
+                        # deletions finish so shutdown/retry never races an edit or upload.
+                        await deletion
+                        raise
+                    for key in ("files_deleted", "bytes_freed", "files_skipped"):
+                        result[key] += removed[key]
+                    if not removed["files_deleted"]:
+                        continue
+                    result["clips_cleaned"] += 1
+                    deleted = {Path(path).resolve() for path in removed["removed"]}
+                    if candidate.raw_path and Path(candidate.raw_path).resolve() in deleted:
+                        candidate.raw_path = ""
+                    if candidate.final_path and Path(candidate.final_path).resolve() in deleted:
+                        candidate.final_path = ""
+                    candidate.source = {**candidate.source, "rejected_media_cleanup": {
+                        "at": time.time(), "files_deleted": removed["files_deleted"],
+                        "bytes_freed": removed["bytes_freed"]}}
+                    await asyncio.to_thread(self.store.upsert_candidate, candidate)
+            self.rejected_cleanup_result = {**result, "finished_at": time.time()}
+            if result["files_deleted"]:
+                logger.info("deleted %d rejected-media files (%d bytes); decisions kept",
+                            result["files_deleted"], result["bytes_freed"])
+            return dict(self.rejected_cleanup_result)
 
     # ------------------------------------------------------------------ dashboard
     async def snapshot(self) -> dict:

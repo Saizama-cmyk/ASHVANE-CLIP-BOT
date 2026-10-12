@@ -854,7 +854,16 @@ def create_app(ctx) -> FastAPI:
     async def clips():
         d = ctx.settings.dashboard
         return {"clips": await asyncio.to_thread(ctx.pipeline.store.recent_candidates, d.samples_limit),
-                "posts": await asyncio.to_thread(ctx.pipeline.store.recent_posts, d.posts_limit)}
+                "posts": await asyncio.to_thread(ctx.pipeline.store.recent_posts, d.posts_limit),
+                "rejected_cleanup": {"interval_min": ctx.settings.clip.rejected_cleanup_min,
+                    "review_hours": ctx.settings.clip.keep_rejected_hours,
+                    "last": getattr(getattr(ctx.pipeline, "scheduler", None), "rejected_cleanup_result", {})}}
+
+    @app.post("/api/clips/rejected/delete-media")
+    async def delete_rejected_media(request: Request):
+        if (await _json(request)).get("confirm") != "delete-rejected-media":
+            raise HTTPException(400, "Confirm deletion of rejected clip media")
+        return {"ok": True, **await ctx.pipeline.scheduler.delete_rejected_media(manual=True)}
 
     @app.get("/api/publishing/batch")
     async def publishing_batch():

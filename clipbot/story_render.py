@@ -8,6 +8,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ from PIL import Image
 
 from .config import Settings, ffmpeg_exe, ffprobe_exe, is_frozen, resolve_paths
 from .story_art import scene_layers
+from .story_voice import spoken_text, validate_spoken_text
 from .util import ERR_SNIPPET, run_cmd
 
 logger = logging.getLogger("clipbot.story_render")
@@ -67,19 +69,36 @@ def _stamp(seconds: float) -> str:
 
 
 def write_captions(text: str, duration: float, target: Path, words_per_caption: int,
-                   width: int, height: int, font: str, font_size: float) -> None:
-    words = text.split()
-    groups = [words[i:i + words_per_caption] for i in range(0, len(words), words_per_caption)]
+                   width: int, height: int, font: str, font_size: float,
+                   timings: list[dict] | None = None, bottom_margin: int | None = None) -> None:
+    text = spoken_text(text)
+    segments = timings or [{"text": text, "start": 0, "end": duration}]
+    cues = []
+    for segment in segments:
+        # Respect measured sentence boundaries and stop captions at punctuation.
+        # Inside a sentence, character-weighted timings are estimates, not alignment.
+        words = spoken_text(segment["text"]).split()
+        groups, group = [], []
+        for word in words:
+            group.append(word)
+            if len(group) >= words_per_caption or re.search(r'[.!?,;:][”’"\']?$', word):
+                groups.append(group)
+                group = []
+        if group:
+            groups.append(group)
+        total = sum(len(word) for word in words)
+        offset = 0
+        for group in groups:
+            start = segment["start"] + (segment["end"] - segment["start"]) * offset / max(1, total)
+            offset += sum(len(word) for word in group)
+            end = segment["start"] + (segment["end"] - segment["start"]) * offset / max(1, total)
+            cues.append((start, end, group))
     font = font.replace(",", " ").replace("\n", " ").replace("\r", " ")
     lines = [f"[Script Info]\nScriptType: v4.00+\nPlayResX: {width}\nPlayResY: {height}\nWrapStyle: 0\n\n"
              "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-             f"Style: Default,{font},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,1,2,0,2,{round(font_size)},{round(font_size)},{round(font_size * 2)},1\n\n"
+             f"Style: Default,{font},{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,1,2,0,2,{round(font_size)},{round(font_size)},{bottom_margin if bottom_margin is not None else round(font_size * 2)},1\n\n"
              "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"]
-    offset = 0
-    for index, group in enumerate(groups):
-        start = duration * offset / max(1, len(words))
-        offset += len(group)
-        end = duration * offset / max(1, len(words))
+    for start, end, group in cues:
         # SRT markup is not allowed to become subtitle styling or an injection.
         public_text = " ".join(group).replace("<", "‹").replace(">", "›").replace("{", "(").replace("}", ")").replace("\\", "＼")
         def ass_time(value):
@@ -165,8 +184,9 @@ class StoryRenderer:
                 "render_available": narrator and video, "voices": voices, "reasons": reasons,
                 "narrator_label": "Windows offline narration" if cfg.narrator_backend == "windows" else ("Kokoro local neural narration" if cfg.narrator_backend == "kokoro_local" else "Local speech server (connection checked on render)"),
                 "visual_provider": {"id": "local_image" if cfg.image_provider_url else "shadow_theatre",
-                                    "label": "Local AI illustrations + animated shadow layers" if cfg.image_provider_url else "Original illustrated shadow theatre",
-                                    "available": video}}
+                                    "label": "Local AI illustrations with camera movement" if cfg.image_provider_url else "Original illustrated shadow theatre",
+                                    "available": video,
+                                    "limitation": "Camera/layer animation; no generated character acting. Review the finished video before publishing."}}
 
     async def _command(self, args: list[str], settings: Settings, cwd: Path | None = None):
         result = await run_cmd(args, settings.stories.render_timeout_s, str(cwd) if cwd else None,
@@ -185,6 +205,8 @@ class StoryRenderer:
 
     async def _narrate(self, project: dict, folder: Path, settings: Settings) -> list[Path]:
         cfg = settings.stories
+        for scene in project["scenes"]:
+            validate_spoken_text(scene["narration"])
         paths = [folder / f"narration-{index}.wav" for index in range(len(project["scenes"]))]
         voice = project.get("voice") or cfg.voice
         if cfg.narrator_backend == "windows":
@@ -206,6 +228,7 @@ class StoryRenderer:
             plan = folder / "narration-plan.json"
             plan.write_text(json.dumps({"model_path": str(model.resolve()), "voices_path": str(voices.resolve()),
                                       "root": str(folder.resolve()), "voice": voice, "speed": cfg.kokoro_speed, "lang": cfg.kokoro_lang, "threads": cfg.kokoro_threads,
+                                      "sentence_pause_s": cfg.narration_sentence_pause_s, "clause_pause_s": cfg.narration_clause_pause_s,
                                       "scenes": [{"path": str(path.resolve()), "text": scene["narration"]} for path, scene in zip(paths, project["scenes"])]}), encoding="utf-8")
             args = [sys.executable] + ([] if is_frozen() else ["-m", "clipbot"]) + ["--story-voice", str(plan)]
             await self._command(args, settings)
@@ -229,9 +252,23 @@ class StoryRenderer:
         return bytes(output)
 
     async def _illustrate(self, scene: dict, folder: Path, width: int, height: int, settings: Settings) -> dict:
-        layers = await asyncio.to_thread(scene_layers, scene, folder, width, height)
         cfg = settings.stories
-        if cfg.image_provider_url:
+        supplied = scene.get("asset_path")
+        # A complete illustration already contains its subjects; generic paper
+        # people pasted over it can contradict the narrated scene.
+        art_scene = {**scene, "visual": {**(scene.get("visual") or {}), "subject": "none"}} if supplied or cfg.image_provider_url else scene
+        layers = await asyncio.to_thread(scene_layers, art_scene, folder, width, height)
+        if supplied:
+            source = Path(supplied).resolve(strict=True)
+            project_folder = folder.parent.resolve(strict=True)
+            if not source.is_relative_to(project_folder) or not source.is_file():
+                raise ValueError("Story scene artwork must remain inside this project")
+            def use_image():
+                from PIL import ImageOps
+                with Image.open(source) as image:
+                    ImageOps.fit(image.convert("RGB"), (width, height), method=Image.Resampling.LANCZOS).save(layers["background"])
+            await asyncio.to_thread(use_image)
+        elif cfg.image_provider_url:
             async with self.gpu_lock:
                 raw_response = await self._local_request(local_service_url(cfg.image_provider_url) + "/sdapi/v1/txt2img",
                     {"prompt": scene["visual_prompt"], "width": width, "height": height,
@@ -258,6 +295,7 @@ class StoryRenderer:
             self.progress(project["id"], "narrating", 0)
         audio_paths = await self._narrate(project, folder, settings)
         parts = []
+        measured_captions = True
         for index, (scene, audio) in enumerate(zip(project["scenes"], audio_paths)):
             if self.progress:
                 self.progress(project["id"], "rendering", index / len(audio_paths))
@@ -266,8 +304,11 @@ class StoryRenderer:
             layers = await self._illustrate(scene, folder / f"scene-{index}", width, height, settings)
             scene_folder = layers["background"].parent
             font_size = cfg.caption_font_size / (2 if landscape else 1)
+            timing_path = audio.with_suffix(".timings.json")
+            timings = json.loads(timing_path.read_text(encoding="utf-8")).get("segments") if cfg.narrator_backend == "kokoro_local" and timing_path.is_file() else None
+            measured_captions = measured_captions and bool(timings)
             write_captions(scene["narration"], spoken_duration, scene_folder / "narration.ass", cfg.caption_words,
-                           width, height, cfg.caption_font, font_size)
+                           width, height, cfg.caption_font, font_size, timings, round(height * cfg.caption_bottom_fraction))
             animated = project["format"] == "animated"
             action = (scene.get("visual") or {}).get("action", "approach")
             # Character and fog move independently of the camera. Stills remain still.
@@ -285,7 +326,9 @@ class StoryRenderer:
                 start = duration / 2 if action == "vanish" else 0
                 character = f"[1:v]format=rgba,fade=t={direction}:st={start:.6f}:d={duration / 2:.6f}:alpha=1[character];"
             fog_x = f"-{motion}*t/{duration:.6f}" if animated else "0"
-            filters = character + f"[0:v][character]overlay=x='{x}':y='{y}':eval=frame[stage];[stage][2:v]overlay=x='{fog_x}':y=0:eval=frame"
+            camera = (f"[0:v]zoompan=z='1+{cfg.scene_motion}*on/{max(1, round(duration * cfg.fps))}':"
+                      f"x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s={width}x{height}:fps={cfg.fps}[background];") if animated else "[0:v]null[background];"
+            filters = camera + character + f"[background][character]overlay=x='{x}':y='{y}':eval=frame[stage];[stage][2:v]overlay=x='{fog_x}':y=0:eval=frame"
             if cfg.captions:
                 filters += ",ass=narration.ass"
             filters += "[video]"
@@ -294,9 +337,9 @@ class StoryRenderer:
             for name in ("background", "figure", "fog"):
                 args += ["-loop", "1", "-framerate", str(cfg.fps), "-i", str(layers[name])]
             args += ["-i", str(audio), "-filter_complex", filters, "-map", "[video]", "-map", "3:a:0",
-                     "-af", f"apad=pad_dur={cfg.narration_gap_s}", "-t", str(duration),
+                     "-af", f"loudnorm=I={cfg.narration_lufs}:TP={cfg.narration_peak_db}:LRA={cfg.narration_lra},apad=pad_dur={cfg.narration_gap_s}", "-t", str(duration),
                      "-c:v", "libx264", "-preset", settings.edit.preset, "-crf", str(cfg.crf),
-                     "-pix_fmt", "yuv420p", "-r", str(cfg.fps), "-c:a", "aac", "-b:a", cfg.audio_bitrate,
+                     "-pix_fmt", "yuv420p", "-r", str(cfg.fps), "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", str(settings.edit.audio_sample_rate),
                      "-movflags", "+faststart", str(out)]
             await self._command(args, settings, scene_folder)
             parts.append(out)
@@ -316,4 +359,5 @@ class StoryRenderer:
                 "width": width, "height": height, "fps": cfg.fps,
                 "visual_mode": "Animated shadow theatre" if project["format"] == "animated" else "Illustrated stills",
                 "narrator": project.get("voice") or cfg.voice or (self.neural_voices[0]["id"] if cfg.narrator_backend == "kokoro_local" and self.neural_voices else cfg.narrator_backend),
-                "warnings": ["Subtitle timing is estimated within each measured scene reading."] if cfg.captions else []}
+                "warnings": (["Sentence caption boundaries follow synthesized audio; individual word timing is estimated." if measured_captions else "Subtitle timing is estimated within each measured scene reading."] if cfg.captions else [])
+                            + (["Procedural shadow theatre uses a limited set of drawn settings and moving layers; it does not generate character acting or depict every described event."] if not cfg.image_provider_url and not all(scene.get("asset_path") for scene in project["scenes"]) else ["Illustrations use camera motion, not generated character animation."])}

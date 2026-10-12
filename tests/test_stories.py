@@ -446,3 +446,20 @@ def test_writer_ending_is_appended_once_to_exact_public_narration(tmp_path):
             assert "ending" in calls[1]["format"]["required"]
             assert "ending" not in project
     asyncio.run(run())
+
+
+def test_writer_repairs_production_directions_before_independent_jury(tmp_path):
+    async def run():
+        s = settings()
+        s.stories.role_max_attempts = 2
+        answers = replies()
+        bad = story("The camera pulls back. " + SCRIPT)
+        calls = []
+        async with client([answers[0], bad, story(), answers[-1]], calls) as http:
+            instance = studio(tmp_path, http, s)
+            project = await draft(instance)
+            assert project["status"] == "draft"
+            assert project["script"] == SCRIPT
+            repair = json.loads(calls[2]["messages"][-1]["content"])
+            assert "Production directions" in repair["repair_required"]
+    asyncio.run(run())

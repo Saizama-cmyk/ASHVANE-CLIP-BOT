@@ -14,7 +14,8 @@ import time
 from pathlib import Path
 
 from .config import AppPaths, Settings
-from .models import ID_LEN
+from .models import Candidate, ID_LEN
+from .storage import clip_drives
 
 logger = logging.getLogger("clipbot.sweeper")
 
@@ -176,6 +177,73 @@ def _mtime(path: Path) -> float:
         return path.stat().st_mtime
     except OSError:
         return 0.0
+
+
+def rejected_media_paths(settings: Settings, paths: AppPaths, candidate: Candidate) -> list[Path]:
+    """Recognize this candidate's generated files; never traverse a media tree recursively.
+
+    Stored paths alone are not ownership evidence: they must also match the expected generated
+    basename and sit directly in an approved clip/work directory. Buffer segments are shared
+    source material and are never part of rejected-candidate cleanup.
+    """
+    cid = candidate.id
+    if not _CANDIDATE_NAME.fullmatch(cid):
+        return []
+    out: list[Path] = []
+    if _cleanup_root(paths, "work"):
+        work = paths.work.absolute()
+        raw_names = {f"{cid}_raw.mp4"}
+        imported_id = candidate.source.get("clip_id", "")
+        if (candidate.source.get("type") == "twitch_clip" and isinstance(imported_id, str)
+                and re.fullmatch(r"[A-Za-z0-9_-]+", imported_id)):
+            raw_names.add(f"clip_{imported_id}.mp4")
+        if candidate.raw_path:
+            raw = Path(candidate.raw_path).absolute()
+            if raw.parent == work and raw.name in raw_names:
+                out.append(raw)
+        stem = f"{candidate.event.target.login}_{cid}"
+        if re.fullmatch(r"[A-Za-z0-9_.-]+", stem):
+            out += [work / f"{stem}.ass", work / f"{stem}_main.mp4"]
+        out += [work / f"{cid}_concat.txt", work / "posters" / f"{cid}.jpg",
+                work / "posters" / f"{cid}.tmp.jpg", work / "studio" / f"{cid}.mp4"]
+        folder = work / "frames" / cid
+        if safe_cleanup_path(folder) and folder.is_dir():
+            out += [p for p in folder.iterdir() if re.fullmatch(r"\d+\.jpg", p.name)]
+    if candidate.final_path:
+        final = Path(candidate.final_path).absolute()
+        basename = f"{candidate.event.target.login}_{cid}.mp4"
+        # Overflow folders can contain personal files too: select only the exact saved output.
+        roots = clip_drives(settings, paths)
+        if final.name == basename and any(final.parent == root.absolute() for root in roots):
+            out.append(final)
+    return list(dict.fromkeys(out))
+
+
+def remove_rejected_media(settings: Settings, paths: AppPaths, candidate: Candidate,
+                          protected: set[Path]) -> dict:
+    """Delete checked individual files and report observed results, including partial failures."""
+    removed, skipped, freed = [], 0, 0
+    for path in rejected_media_paths(settings, paths, candidate):
+        if not safe_cleanup_path(path) or path.resolve() in protected:
+            if path.exists() or _linked(path):
+                skipped += 1
+            continue
+        if not path.is_file():
+            continue
+        try:
+            info = path.stat()
+            if info.st_nlink > 1:
+                skipped += 1
+                continue
+            size = info.st_size
+            path.unlink()
+            freed += size
+            removed.append(str(path))
+        except OSError as exc:
+            skipped += 1
+            logger.warning("could not delete rejected media %s: %s", path, exc)
+    return {"removed": removed, "files_deleted": len(removed), "bytes_freed": freed,
+            "files_skipped": skipped}
 
 
 def oldest_segments(paths: AppPaths, want_bytes: int) -> list[Path]:

@@ -1009,6 +1009,11 @@ nav button:hover .i3{transform:scale(1.08)}
             <button data-f="all" class="on">All</button><button data-f="scheduled">Scheduled</button>
             <button data-f="posted">Posted</button><button data-f="rejected">Rejected</button>
             <button data-f="working">Working</button></div>
+          <div class="rejected-cleanup-tools">
+            <button class="btn ghost" id="deleteRejectedMedia" type="button">Delete all rejected</button>
+            <p class="small dim" id="rejectedCleanupHint">Checking rejected-media cleanup…</p>
+            <p class="small" id="rejectedCleanupResult" role="status" aria-live="polite" hidden></p>
+          </div>
           <div class="gallery" id="gallery"></div>
         </section>
         <aside class="program-monitor" aria-label="Selected clip preview">
@@ -1915,7 +1920,29 @@ let clipFilter = "all", clipsCache = [];
 async function loadClips() {
   const r = await api("/api/clips"); if (!r.ok) return;
   clipsCache = r.body.clips; renderGallery();
+  const cleanup = r.body.rejected_cleanup || {}, interval = Number(cleanup.interval_min) || 0;
+  $("#rejectedCleanupHint").textContent = interval > 0
+    ? `Automatic media cleanup every ${interval} min · ${Number(cleanup.review_hours || 0) * 60} min review period · decisions kept`
+    : "Automatic media cleanup is off · decisions are kept when media is deleted";
 }
+$("#deleteRejectedMedia").addEventListener("click", async () => {
+  if (!window.confirm("Permanently delete available local videos and previews for all rejected clips? Decisions and transcripts stay saved. Active, shared and successfully posted media are protected.")) return;
+  const button = $("#deleteRejectedMedia"), result = $("#rejectedCleanupResult");
+  button.disabled = true; button.textContent = "Deleting rejected media…";
+  button.setAttribute("aria-busy", "true"); result.hidden = true;
+  try {
+    const response = await api("/api/clips/rejected/delete-media", {method: "POST", json: {confirm: "delete-rejected-media"}});
+    if (!response.ok || !response.body?.ok) throw new Error(response.body?.detail || response.body?.error || "Rejected media could not be deleted. Try again.");
+    const data = response.body, skipped = Number(data.clips_skipped || 0) + Number(data.files_skipped || 0);
+    result.textContent = data.files_deleted
+      ? `Deleted ${data.files_deleted} files from ${data.clips_cleaned} clips · freed ${(Number(data.bytes_freed) / (1024 * 1024)).toFixed(1)} MB. Decisions kept.`
+      : "No eligible rejected media to delete. Decision records kept.";
+    if (skipped) result.textContent += ` ${skipped} protected, active or unavailable items skipped.`;
+    result.hidden = false;
+    await loadClips();
+  } catch (error) { result.textContent = error.message || "Cleanup failed. Reload clips and try again."; result.hidden = false; }
+  finally { button.disabled = false; button.textContent = "Delete all rejected"; button.removeAttribute("aria-busy"); }
+});
 function renderGallery() {
   const working = ["queued", "qc", "transcribe", "clipability", "edit"];
   const WORKING_LABEL = {queued: "waiting for a slot", qc: "checking the capture",
@@ -1928,7 +1955,7 @@ function renderGallery() {
     return `<div class="card${busy ? " working" : ""}" tabindex="0" data-id="${esc(c.id)}"><div class="pic" style="background-image:url('/media/${esc(c.id)}/poster.jpg')">
       ${busy ? `<span class="wk"><i></i>${esc(WORKING_LABEL[c.stage] || c.stage)}</span>` : ""}
       <span class="badge ${c.stage} b">${c.stage}</span>${v.score !== undefined ? `<span class="sc">${Number(v.score).toFixed(0)}</span>` : ""}</div>
-      <div class="meta"><b>${esc(v.title || t.display_name)}</b><span class="dim">${esc(t.display_name)} · ${ago(c.created_at)}</span></div></div>`;
+      <div class="meta"><b>${esc(v.title || t.display_name)}</b><span class="dim">${esc(t.display_name)} · ${ago(c.created_at)}${c.source?.rejected_media_cleanup && !c.raw_path && !c.final_path ? " · media deleted" : ""}</span></div></div>`;
   }).join("") : `<div class="empty"><strong>No clips here yet</strong>They appear as soon as spikes are cut.</div>`;
 }
 $("#clipFilters").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; clipFilter = b.dataset.f; $$("#clipFilters button").forEach(x => x.classList.toggle("on", x === b)); renderGallery(); });

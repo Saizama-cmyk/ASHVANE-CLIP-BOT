@@ -131,7 +131,8 @@ def test_a_passed_clip_reaches_render_with_its_trim(pipeline, monkeypatch, tmp_p
     monkeypatch.setattr(mod, "assemble", cut)
     monkeypatch.setattr(mod, "quality_check", qc)
     monkeypatch.setattr(mod, "render", render)
-    monkeypatch.setattr(mod, "looks_like_dead_air", lambda *_a: False)
+    # Quiet gameplay still reaches the visual judge; sparse speech is not a quality verdict.
+    monkeypatch.setattr(mod, "looks_like_dead_air", lambda *_a: True)
     monkeypatch.setattr(pipeline.transcriber, "transcribe", transcribe)
     monkeypatch.setattr(pipeline, "_think", think)
     monkeypatch.setattr(pipeline, "_auto_facecam", nothing)

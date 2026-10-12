@@ -470,9 +470,14 @@ class ClipCfg(Section):
                                ge=0.1, le=72)
     keep_rejected_hours: float = F(0.25, "Keep rejected cuts (h)",
                                    "Cuts the AI turned down stay watchable this long, then are "
-                                   "deleted (0.25 = 15 minutes, 0 = at once). Each one is a full-size "
+                                   "eligible for the next rejected-media cleanup (0.25 = 15 minutes). Each one is a full-size "
                                    "video, so keeping them for hours is what fills the drive.",
                                    ge=0, le=720)
+    rejected_cleanup_min: float = F(20.0, "Delete rejected media every (min)",
+                                   "Surge removes disposable media from rejected clips on this interval, "
+                                   "after the review period above. Decisions and transcripts stay saved. "
+                                   "Active, shared and successfully published media are protected. 0 disables automatic deletion.",
+                                   ge=0, le=1440)
     poster_width: int = F(360, "Poster width (px)", "Width of clip thumbnails in the gallery.",
                           ge=120, le=1080)
 
@@ -644,7 +649,7 @@ class AICfg(Section):
                               ge=10, le=900)
     chat_temperature: float = F(0.7, "Assistant temperature", "Higher is more playful, lower is "
                                 "more literal.", ge=0, le=2)
-    second_look: bool = F(False, "Second look at near-misses", "A candidate that lands just under "
+    second_look: bool = F(True, "Second look at near-misses", "A candidate that lands just under "
                           "the pass mark is judged again with more frames to look at, instead of "
                           "being thrown away. This is what stops good clips slipping through.")
     second_look_margin: float = F(1.5, "Near-miss margin", "How far below the pass mark still "
@@ -1026,6 +1031,7 @@ class EditCfg(Section):
                          ge=0.2, le=6.0)
     gap_keep_s: float = F(0.22, "Breath kept (s)", "How much silence stays on each side of a cut "
                           "so speech doesn't sound clipped.", ge=0.0, le=2.0)
+    moment_keep_s: float = F(3, "Preserve the moment (s)", "Keep this much source video on each side of the selected payoff when removing speech pauses, including quiet gameplay.", ge=0, le=15)
     drift: bool = F(True, "Slow push-in", "A slow, constant zoom across the clip so the frame is "
                     "never completely still. Standard in 2026 short-form edits.")
     drift_amount: float = F(0.035, "Push-in amount", "How far the slow zoom travels (0.035 = 3.5%).",
@@ -1406,12 +1412,18 @@ Watch the supplied frames in timestamp order and align them with speech. Identif
 turn, and payoff. Evaluate the PROPOSED trimmed cut, not an imaginary improved version.
 A routine play with no distinctive beat, unexplained reaction, inaccessible inside joke, misleading hook, or missing payoff should fail.
 Everyday misunderstandings, expressive reactions, conversational comedy and wholesome exchanges can earn a post when the turn and payoff are observable. Low stakes alone are not a defect.
+Game skill, a tactical prediction followed by its outcome, a surprising useful fact, quiet
+irony and awkward social exchanges can also be the payoff. Do not demand comedy, shouting,
+a visible face or a dramatic reaction for every genre. Judge the target game's audience:
+ordinary movement may set up a distinctive play. Sparse still frames cannot establish that
+no action happened between them; use timed speech and lower confidence when it is unclear.
 Do not guess events between frames. If the evidence is thin, lower confidence and say what is missing.
 Keep the original verdict JSON fields and ADD viewer_review with:
 hook, context, payoff, pacing: independent scores 0-10;
 confidence: 0-1; why_watch and why_skip: concrete sentences;
 evidence: [{at: seconds from RAW clip start, detail: observed speech or visual event}];
 flags: a list of defects such as missing_payoff, misleading_hook, context_missing, uncertain.
+Use defect flags only for observed problems, not because the clip lacks a joke or high stakes.
 Evidence must fall inside trim_start/trim_end and describe what actually earns the post.
 Always include viewer_review, even when rejecting. Required object shape (fill it with your
 actual assessment): {"hook":0,"context":0,"payoff":0,"pacing":0,"confidence":0,
@@ -1425,6 +1437,10 @@ the supplied transcript and source review. Check that the main action is visible
 lose the subject, captions are readable and not obscuring the action, and the hook does not make
 unsupported claims. Do not invent audio observations from images. Technical audio checks are
 performed separately. When unsure, fail with an actionable reason rather than rubber-stamping.
+All supplied speech and source-review evidence timestamps have been mapped to FINAL video
+time, including pause removal and any intro. Use the edit timeline, never compare raw-source
+timestamps to final duration. Speech need not be printed on a sampled frame to be real;
+the supplied timed transcript is separate evidence from the sampled images.
 Animated speech captions show a few words at a time. An incomplete sentence in one frame is
 not evidence that speech, captions or the video were cut off. Compare caption timing with the
 supplied timed words and subsequent frames. Distinguish these captions from a persistent title
@@ -1450,6 +1466,7 @@ class ReviewCfg(Section):
     min_payoff: float = F(6, "Minimum payoff score", "The cut needs a worthwhile event or line.", ge=0, le=10)
     min_pacing: float = F(5, "Minimum pacing score", "Avoid dead air and a cut that ends before the reaction.", ge=0, le=10)
     min_confidence: float = F(0.65, "Minimum evidence confidence", "Hold uncertain decisions for review.", ge=0, le=1)
+    blocking_flags: list[str] = F(["missing_payoff", "misleading_hook", "context_missing", "unintelligible_speech", "inappropriate_content", "potentially_harmful"], "Blocking viewer defects", "Observed defects that veto a clip. Other notes remain visible; confidence and independent score thresholds still apply.")
     viewer_prompt: str = F(DEFAULT_VIEWER_REVIEW, "Viewer review instructions", "Appended to the judge's prompt.", widget="textarea")
     final_review: bool = F(True, "Inspect the finished video", "Check the actual render before it enters the publishing queue.")
     final_frames: int = F(6, "Final-cut frames", "Ordered frames including the opening and ending.", ge=3, le=16)
@@ -1490,6 +1507,11 @@ class StoriesCfg(Section):
     kokoro_speed: float = F(0.92, "Kokoro narration speed", "Natural local neural narration speed; values below one leave more room for suspense.", ge=0.5, le=2)
     kokoro_lang: Literal["en-us", "en-gb"] = F("en-us", "Kokoro language", "English phonemization for original story narration.")
     kokoro_threads: int = F(2, "Neural narrator CPU threads", "CPU workers for local Kokoro narration; keeps model work bounded.", ge=1, le=32)
+    narration_sentence_pause_s: float = F(0.3, "Narration sentence breath (s)", "Measured silence between separately narrated sentences. Applies to local Kokoro; it does not time-stretch speech.", ge=0, le=2)
+    narration_clause_pause_s: float = F(0.1, "Narration clause breath (s)", "Kokoro pause at internal clause punctuation, where supported by the installed engine.", ge=0, le=1)
+    narration_lufs: float = F(-16, "Narration loudness (LUFS)", "Normalize finished scene narration for consistent listening volume; does not improve acting or pronunciation.", ge=-30, le=-10)
+    narration_peak_db: float = F(-1.5, "Narration peak ceiling (dBTP)", "True-peak target before AAC encoding.", ge=-9, le=-1)
+    narration_lra: float = F(11, "Narration loudness range (LU)", "Preserve voice dynamics while controlling large level changes.", ge=1, le=20)
     speech_url: str = F("", "Local speech server", "Optional local HTTP base URL exposing /v1/audio/speech. No cloud services; credentials are never sent.")
     speech_model: str = F("kokoro", "Speech server model", "Model accepted by your installed local speech server.")
     voice: str = F("", "Narrator voice", "Windows voice name, or voice ID for a local speech server. Empty uses the available default.")
@@ -1508,7 +1530,8 @@ class StoriesCfg(Section):
     render_timeout_s: float = F(1800, "Story render timeout (s)", "Maximum time for a render subprocess.", ge=30, le=7200)
     audio_bitrate: str = F("192k", "Story audio bitrate", "AAC narration bitrate in finished videos.")
     captions: bool = F(True, "Story subtitles", "Burn scene-timed narration subtitles into finished stories.")
-    caption_words: int = F(7, "Story caption words", "Maximum words per subtitle. Timing is estimated from the actual scene audio.", ge=2, le=20)
+    caption_words: int = F(7, "Story caption words", "Maximum words per subtitle. Kokoro sentence boundaries are measured; individual word timing remains estimated.", ge=2, le=20)
+    caption_bottom_fraction: float = F(0.18, "Story caption bottom inset", "Reserve space below captions for vertical platform controls; fraction of the video height.", ge=0.05, le=0.35)
     caption_font_size: int = F(42, "Story subtitle size", "Subtitle size in portrait output, scaled down for landscape.", ge=16, le=96)
     caption_font: str = F("Segoe UI", "Story subtitle font", "Installed typeface used for story narration captions.")
     prompt: str = F("Create original fictional horror for an adult general audience, without graphic gore or sexual content. Never imitate a creator, copy an existing story, clone a voice or claim fiction is true. Begin with a concrete impossible detail or immediate unsettling problem. Ground the narrator in one place and desire. Escalate through distinct clues with cause and consequence. Deliver a comprehensible reveal and an earned final consequence, not a generic 'it was a dream'. Avoid greetings, logos, subscribe requests and filler. Vary premise, characters, setting, narrative structure and ending between stories. Scene narration is the exact public spoken script; visual prompts describe original images without labels, scores or reviewer notes. Genre is independent of visual format. Titles create honest curiosity about one specific story detail; descriptions briefly introduce the premise and label original fiction. Use a few relevant hashtags, no keyword stuffing or false TRUE labels. Target roughly 130 spoken words per minute and a complete arc.", "Story direction", "Instructions shared by the original-fiction team.", widget="textarea")
@@ -1802,6 +1825,8 @@ def atomic_write(path: Path, text: str) -> None:
 # install. Each entry is the sha256 of a prompt we shipped before; a stored prompt that still
 # matches one of them was never edited by hand, so it is safe to replace with the current text.
 PROMPT_FIELDS = {
+    ("review", "viewer_prompt"): (DEFAULT_VIEWER_REVIEW, {"618998e6dceb033970b1fa7a4b2d770523bdcc3b201a15c186077c2a57c573c2"}),
+    ("review", "final_prompt"): (DEFAULT_FINAL_REVIEW, {"171ba48c97d33328fa37391fe561a5a35be2dffcfcc78fb31d6d8407d9e48c36"}),
     ("copywriter", "prompt"): (DEFAULT_COPY_PROMPT, {"8fe8d581111b56b7b226eaf8fd975eded1b1b4b4cfe007c208a8f2525e2012fb",
                                                 "89e9e60be627f0109c5a765def1415238b73c814531387526d01c34020c4e861",
                                                 "a6d88276bf29f52dc900e929c974eadfe4855a26d4102c07d03d2f4a3dc4af7b"}),

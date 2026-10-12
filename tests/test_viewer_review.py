@@ -127,6 +127,7 @@ def test_final_review_aligns_speech_to_the_rendered_cut(tmp_path, monkeypatch):
     settings = Settings()
     candidate = cand()
     candidate.final_path = str(tmp_path / "final.mp4")
+    settings.edit.tighten = False
     candidate.verdict = {"trim_start": 9, "trim_end": 34}
     candidate.words = [Word(8.8, 9.3, "hello"), Word(12, 12.5, "there"), Word(35, 36, "outside")]
     captured = {}
@@ -189,6 +190,7 @@ def test_finished_review_repairs_missing_evidence_within_retry_budget(monkeypatc
     assert result["passed"] is correct_on_retry
     if not correct_on_retry:
         assert "no timestamped evidence" in result["reason"]
+        assert result["status"] == "unavailable"
 
 
 def test_final_review_requires_real_booleans_and_all_checks():

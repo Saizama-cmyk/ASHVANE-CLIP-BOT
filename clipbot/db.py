@@ -175,6 +175,14 @@ class Store:
                                       (older_than_ts,)).fetchall()
         return [Candidate.from_dict(json.loads(r["json"])) for r in rows]
 
+    def candidate_media_references(self) -> list[dict]:
+        """All saved media references, without loading transcripts or judge evidence."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, json_extract(json, '$.raw_path') raw_path, "
+                "json_extract(json, '$.final_path') final_path FROM candidates").fetchall()
+        return [dict(row) for row in rows]
+
     def delete_candidate(self, candidate_id: str) -> None:
         with self._lock, self._conn:
             self._conn.execute("DELETE FROM candidates WHERE id=?", (candidate_id,))

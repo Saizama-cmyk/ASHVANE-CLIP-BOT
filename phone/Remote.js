@@ -245,15 +245,33 @@ export function Clips({ host, token, onError, state, toast, refreshVersion }) {
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState("");
   const [selected, setSelected] = useState([]);
+  const [cleanup, setCleanup] = useState(null);
+  const [cleanupConfirm, setCleanupConfirm] = useState(false);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState("");
   const platforms = Object.entries(state?.scheduler?.platforms || {}).filter(([, p]) => p.enabled && p.configured);
   const load = useCallback(async () => {
     try {
       const r = await call(host, "/api/clips", { token });
       if (!r.ok) throw new Error(r.data.error || `Could not load clips (${r.status}).`);
-      setClips((r.data.clips || []).slice(0, CLIP_LIMIT)); setError("");
+      setClips((r.data.clips || []).slice(0, CLIP_LIMIT)); setCleanup(r.data.rejected_cleanup || null); setError("");
     } catch (e) { setError(e.message || "Could not load clips."); onError(); }
   }, [host, token, onError]);
   useEffect(() => { load(); }, [load, refreshVersion]);
+  const deleteRejected = async () => {
+    setCleanupBusy(true); setCleanupResult(""); setError("");
+    try {
+      const r = await call(host, "/api/clips/rejected/delete-media", { token, method: "POST", timeout: PUBLISH_TIMEOUT_MS, body: { confirm: "delete-rejected-media" } });
+      if (!r.ok || !r.data.ok) throw new Error(r.data.detail || r.data.error || "Rejected media could not be deleted. Try again.");
+      const skipped = Number(r.data.clips_skipped || 0) + Number(r.data.files_skipped || 0);
+      setCleanupResult((r.data.files_deleted
+        ? `Deleted ${r.data.files_deleted} files from ${r.data.clips_cleaned} clips · freed ${(Number(r.data.bytes_freed) / (1024 * 1024)).toFixed(1)} MB. Decisions kept.`
+        : "No eligible rejected media to delete. Decision records kept.") + (skipped ? ` ${skipped} protected, active or unavailable items skipped.` : ""));
+      setCleanupConfirm(false);
+      await load();
+    } catch (e) { setError(e.name === "AbortError" ? "Cleanup has not returned yet. Reload clips before retrying." : e.message || "Cleanup failed. Reload clips and try again."); }
+    finally { setCleanupBusy(false); }
+  };
   const publish = async (id) => {
     setBusyId(id);
     let answered = false;
@@ -276,6 +294,18 @@ export function Clips({ host, token, onError, state, toast, refreshVersion }) {
   const tone = { posted: "good", rejected: "bad", scheduled: "live" };
   return (
     <Section title="Latest clips">
+      <Card style={{ marginBottom: 16 }}>
+        <Text style={t.label}>Rejected media</Text>
+        <Text style={[t.muted, { marginTop: 6 }]}>{cleanup ? Number(cleanup.interval_min) > 0
+          ? `Automatic cleanup every ${cleanup.interval_min} min after a ${Number(cleanup.review_hours || 0) * 60} min review period. Decisions stay saved.`
+          : "Automatic cleanup is off. Decisions stay saved when media is deleted." : "Reload clips to check the automatic cleanup settings."}</Text>
+        {cleanupConfirm ? <View style={{ marginTop: 12, gap: 10 }}>
+          <Text style={t.body}>Permanently delete available local videos and previews for all rejected clips? Active, shared and successfully posted media are protected. Decisions and transcripts stay saved.</Text>
+          <Button label="Delete rejected media now" kind="danger" onPress={deleteRejected} busy={cleanupBusy} disabled={!!busyId} />
+          <Button label="Cancel" kind="ghost" disabled={cleanupBusy} onPress={() => setCleanupConfirm(false)} />
+        </View> : <Button label="Delete all rejected" icon="trash-outline" onPress={() => setCleanupConfirm(true)} disabled={!!busyId} style={{ marginTop: 12 }} />}
+        {!!cleanupResult && <Text accessibilityLiveRegion="polite" style={[t.muted, { marginTop: 12 }]}>{cleanupResult}</Text>}
+      </Card>
       {!!error && <Card style={{ marginBottom: 16 }}><Text accessibilityRole="alert" style={t.error}>{error}</Text><Button label="Reload clips" onPress={load} style={{ marginTop: 10 }} /></Card>}
       <Card pad={false}>
         {clips.length === 0 ? <Empty icon="film-outline" title="No clips yet" body="They appear here as soon as one is cut." />
@@ -290,6 +320,7 @@ export function Clips({ host, token, onError, state, toast, refreshVersion }) {
                   <Text style={[t.faint, { flex: 1 }]} numberOfLines={1}>{target.display_name || ""} · {ago(c.created_at)}</Text>
                 </View>
                 {!!v.reason && <Text style={t.muted}>{v.reason}</Text>}
+                {!!c.source?.rejected_media_cleanup && !c.raw_path && !c.final_path && <Text style={t.faint}>Media deleted · decision kept</Text>}
                 <Button label={expanded === c.id ? "Close review" : "Review decision"} small onPress={() => { setExpanded(expanded === c.id ? "" : c.id); setSelected([]); }} />
                 {expanded === c.id && <View style={{ gap: 12, marginTop: 6 }}>
                   <Text style={t.label}>Judge’s decision</Text>

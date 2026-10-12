@@ -13,12 +13,43 @@ from time import perf_counter
 from .assembler import quality_check
 from .clipability import BadModelOutput, _extract_json
 from .config import Settings
-from .editor import probe_media
+from .editor import probe_media, remap_time
 from .models import Candidate
 from .vision import Vision, extract_frames, sequence_times
 
 logger = logging.getLogger("clipbot.review")
 FINAL_CHECKS = ("opening", "payoff", "ending", "crop", "captions", "honest_hook")
+
+
+def final_timeline(c: Candidate, settings: Settings) -> dict:
+    """Use the renderer's saved edit map, including deliberate pause removal."""
+    start = c.verdict.get("trim_start", 0)
+    duration = max(0, c.verdict.get("trim_end", start) - start)
+    saved = c.verdict.get("render_timeline")
+    if saved:
+        return saved
+    # Historical edit settings are unknown: never reconstruct a cut using today's settings.
+    keeps = [(0, duration)]
+    return {"source_start": start, "keeps": keeps, "intro_s": 0, "outro_s": 0,
+            "expected_duration_s": sum(b - a for a, b in keeps)}
+
+
+def final_evidence(c: Candidate, timeline: dict) -> tuple[str, dict]:
+    start, keeps, intro = timeline["source_start"], timeline["keeps"], timeline["intro_s"]
+    spoken = []
+    for word in c.words:
+        if not any(word.end - start > a and word.start - start < b for a, b in keeps):
+            continue
+        a = intro + remap_time(word.start - start, keeps)
+        b = intro + remap_time(word.end - start, keeps)
+        if b > a:
+            spoken.append(f"[{a:.2f}-{b:.2f}] {word.text}")
+    source = c.verdict.get("viewer_review", {})
+    observations = [{**item, "at": round(intro + remap_time(item["at"] - start, keeps), 2)}
+                    for item in source.get("evidence", [])
+                    if any(a <= item["at"] - start <= b for a, b in keeps)]
+    return "\n".join(spoken), {**source, "evidence": observations,
+                             "timestamp_basis": "final rendered video seconds"}
 
 
 @contextmanager
@@ -73,7 +104,12 @@ async def review_final(c: Candidate, settings: Settings, vision: Vision) -> dict
         path = Path(c.final_path)
         with _review_stage(c.id, "media probe"):
             info = await probe_media(path, settings)
-        expected = max(0, c.verdict.get("trim_end", 0) - c.verdict.get("trim_start", 0))
+        timeline = final_timeline(c, settings)
+        expected = timeline["expected_duration_s"]
+        if not c.verdict.get("render_timeline") and abs(info.duration - expected) > 1 / settings.edit.fps:
+            return {"passed": False, "status": "unavailable",
+                    "reason": "This older export has no saved edit timeline. Re-render it in Studio before final review.",
+                    "checks": {}, "issues": ["The original and edited durations cannot be aligned safely."], "evidence": []}
         with _review_stage(c.id, "technical checks"):
             qc = await quality_check(path, expected, settings)
         if not qc.ok:
@@ -88,13 +124,10 @@ async def review_final(c: Candidate, settings: Settings, vision: Vision) -> dict
         with _review_stage(c.id, "frame extraction"):
             frames = await extract_frames(path, times, settings)
         images = [base64.b64encode(frame).decode("ascii") for frame in frames]
-        start = c.verdict.get("trim_start", 0)
-        end = c.verdict.get("trim_end", info.duration)
-        spoken = "\n".join(f"[{max(0, w.start - start):.2f}-{min(info.duration, w.end - start):.2f}] {w.text}"
-                           for w in c.words if w.end >= start and w.start <= end)
+        spoken, source_review = final_evidence(c, timeline)
         context = {"duration": info.duration, "frame_times": times,
                    "hook": c.post_copy.get("hook", ""),
-                   "source_review": c.verdict.get("viewer_review", {}),
+                   "source_review": source_review, "edit_timeline": timeline,
                    "speech_in_cut": spoken[:settings.ai.transcript_max_chars],
                    "technical": {"audio": "present, above silence threshold",
                                  "black_fraction": qc.black_frac}}
@@ -118,6 +151,8 @@ async def review_final(c: Candidate, settings: Settings, vision: Vision) -> dict
                 prompt = base_prompt + "\nValidation failed: no timestamped evidence was supplied." + repair_note
                 continue
             break
+        if out["needs_repair"]:
+            out["status"] = "unavailable"
         out["checks"]["technical"] = True
         out["model"] = settings.ai.vision_model
         return out

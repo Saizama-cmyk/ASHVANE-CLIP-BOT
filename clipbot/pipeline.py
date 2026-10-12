@@ -184,6 +184,7 @@ class Pipeline:
         self.scheduler = Scheduler(s, self.store, self.publishers, self.paths)
         self.scheduler.quality_guard = self._review_final
         self.scheduler.media_locks = self._media_locks
+        self.scheduler.media_in_use = lambda cid: cid in self._inflight
         self.analytics = Analytics(s, self.store, self.publishers, self.paths)
         self.scheduler.analytics = self.analytics
         self.account_profiles.bind()
@@ -738,7 +739,8 @@ class Pipeline:
             for leftover in self.paths.work.glob(f"{c.id}*"):
                 if leftover.is_dir():
                     shutil.rmtree(leftover, ignore_errors=True)
-                elif leftover.suffix.lower() != RAW_SUFFIX or not self.settings.edit.keep_raw:
+                elif (leftover.suffix.lower() != RAW_SUFFIX
+                      or not (self.settings.edit.keep_raw or c.stage == Stage.REJECTED)):
                     leftover.unlink(missing_ok=True)
 
         try:
@@ -749,7 +751,7 @@ class Pipeline:
     async def _finish(self, c: Candidate, stage: Stage, error: str) -> None:
         c.error = error
         await self._save(c, stage)
-        if not self.settings.clip.keep_rejected_hours:   # else kept for preview, cleaned up later
+        if stage != Stage.REJECTED and not self.settings.clip.keep_rejected_hours:
             await self._discard_raw(c)
         await self._clear_work(c)
         logger.info("candidate %s %s: %s", c.id, stage, error)
@@ -867,7 +869,7 @@ class Pipeline:
                 await self._finish(c, Stage.REJECTED, f"unsafe: slur in speech ({len(said)}x)")
                 return
 
-            if looks_like_dead_air(c, s.ai):
+            if looks_like_dead_air(c, s.ai) and not (s.review.enabled and s.ai.vision_enabled):
                 await self._finish(c, Stage.REJECTED,
                                    "dead_air: nobody spoke, the sound never jumped and no keyword "
                                    "fired (skipped before the AI)")
@@ -881,7 +883,7 @@ class Pipeline:
                         await asyncio.wait_for(self._think(c, duration),
                                                timeout=s.ai.stage_deadline_s)
                     except asyncio.TimeoutError:
-                        await self._finish(c, Stage.REJECTED,
+                        await self._finish(c, Stage.FAILED,
                                            "gave up: the AI stage passed its deadline, so the "
                                            "queue moved on")
                         return
@@ -892,12 +894,14 @@ class Pipeline:
             facecam = await self._auto_facecam(c)
             verdict = c.verdict or {}
             check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
+            timeline = {}
             async with self._candidate_slot(c, self._edit_limit, "edit"):
                 await render(Path(c.raw_path), out, verdict["trim_start"], verdict["trim_end"],
                              c.words, c.event.target.login, self.settings, self.paths.work,
                              self.settings.brand.watermark, hook=c.post_copy.get("hook", ""),
                              spike_at=verdict.get("peak_at", c.event.t_wall - c.start_wall),
-                             facecam_auto=facecam)
+                             facecam_auto=facecam, timeline=timeline)
+            verdict["render_timeline"] = timeline
             c.final_path = str(out)
             async with self._measure(c, "final_review"):
                 if not await self._review_final(c):
@@ -965,6 +969,9 @@ class Pipeline:
                 await asyncio.sleep(self.settings.ai.unavailable_retry_s)
         verdict = await self._second_look(c, verdict, duration)
         c.verdict, c.error = verdict, ""
+        if verdict.get("category") == "model_error":
+            await self._finish(c, Stage.FAILED, "viewer review unavailable: " + verdict["reason"])
+            return
         if not c.visual and verdict.get("viewer_review"):
             c.visual = "Viewer observations from video frames:\n" + "\n".join(
                 f"[{item['at']:.2f}s] {item['detail']}" for item in verdict["viewer_review"].get("evidence", []))
@@ -1034,26 +1041,36 @@ class Pipeline:
         moments (a good line over static gameplay, a reaction the frames missed). Only clips that
         land within ``ai.second_look_margin`` of the pass mark pay for this."""
         s = self.settings
-        pass_mark = s.ai.min_score
+        pass_mark = (s.clip_import.min_score if c.source.get("type") == "twitch_clip" else s.ai.min_score)
         if (not s.ai.second_look or verdict["passed"] or not s.ai.vision_enabled
-                or verdict["category"] == "keyword_false"
-                or verdict["score"] < pass_mark - s.ai.second_look_margin):
+                or verdict["category"] in {"keyword_false", "model_error"}):
+            return verdict
+        threshold = pass_mark + self.clipability.plan().score_bonus
+        if verdict["score"] < threshold - s.ai.second_look_margin:
             return verdict
         try:
-            seen = await self.vision.describe(
-                Path(c.raw_path), duration, c.event.t_wall - c.start_wall,
-                c.event.target.display_name, c.event.target.category,
-                save_dir=frames_dir(self.paths, c.id), frames=s.ai.second_look_frames)
-            if not seen.text:
+            direct = s.review.enabled and s.review.direct_frames and self.clipability.one_model()
+            if direct:
+                seen = await self.vision.prepare(Path(c.raw_path), duration, c.event.t_wall - c.start_wall,
+                    frames_dir(self.paths, c.id), frames=s.ai.second_look_frames)
+            else:
+                seen = await self.vision.describe(
+                    Path(c.raw_path), duration, c.event.t_wall - c.start_wall,
+                    c.event.target.display_name, c.event.target.category,
+                    save_dir=frames_dir(self.paths, c.id), frames=s.ai.second_look_frames)
+            if not seen.text and not (direct and seen.times):
                 return verdict
             c.visual, c.frame_times = seen.text, seen.times or []
-            second = await self.clipability.judge(c, duration, images=await self._judge_images(c),
+            second = await self.clipability.judge(c, duration, pass_mark, images=await self._judge_images(c),
                                                   require_review=s.review.enabled)
         except (AIUnavailable, OSError) as exc:
             logger.debug("second look on %s skipped: %s", c.id, exc)
             return verdict
         logger.info("candidate %s second look: %s -> %s", c.id, verdict["score"], second["score"])
-        return second if second["score"] >= verdict["score"] else verdict
+        if second.get("category") == "model_error":
+            return verdict
+        return {**second, "second_look": {"first_score": verdict["score"],
+                "first_reason": verdict["reason"], "frames": len(c.frame_times)}}
 
     async def _auto_facecam(self, c: Candidate) -> list[int] | None:
         """Webcam box for this streamer: cached, else found by the vision model (best effort)."""
@@ -1313,6 +1330,12 @@ class Pipeline:
                             hook: str, apply: bool) -> dict:
         """Render ``cid`` with a Studio style. Preview = fast encode into work/studio;
         apply = full-quality re-render of the real clip, saving trim, hook and style."""
+        lock = self._media_locks.setdefault(cid, asyncio.Lock())
+        async with lock:
+            return await self._studio_render_locked(cid, style, trim_start, trim_end, hook, apply)
+
+    async def _studio_render_locked(self, cid: str, style: dict, trim_start: float, trim_end: float,
+                                    hook: str, apply: bool) -> dict:
         c = await asyncio.to_thread(self.store.get_candidate, cid)
         if c is None:
             return {"ok": False, "error": "clip not found"}
@@ -1333,26 +1356,26 @@ class Pipeline:
         else:
             out = tmp = self.studio_preview_path(cid)
         tmp.parent.mkdir(parents=True, exist_ok=True)
+        timeline = {}
         async with self._edit_limit:
             await render(Path(c.raw_path), tmp, start, end, c.words, c.event.target.login,
                          settings, self.paths.work, self.settings.brand.watermark, hook=hook,
-                         spike_at=c.event.t_wall - c.start_wall)
+                         spike_at=c.verdict.get("peak_at", c.event.t_wall - c.start_wall), timeline=timeline)
         if apply:
-            lock = self._media_locks.setdefault(cid, asyncio.Lock())
-            async with lock:
-                # Reload after any upload in progress has finished, retaining its results.
-                c = await asyncio.to_thread(self.store.get_candidate, cid)
-                if c is None:
-                    return {"ok": False, "error": "clip was removed while rendering"}
-                await asyncio.to_thread(tmp.replace, out)
-                c.final_path = str(out)
-                c.verdict = {**(c.verdict or {}), "trim_start": round(start, 2), "trim_end": round(end, 2)}
-                c.post_copy = {**c.post_copy, "hook": hook, "style": clean_style(style)}
-                if not await self._review_final(c):
-                    return {"ok": False, "error": c.error, "url": f"/media/{cid}"}
-                if c.stage in (Stage.REJECTED, Stage.FAILED):
-                    c.stage = Stage.SCHEDULED
-                await self._save(c)
+            # The lock covers source probing and the complete render, not just final replacement.
+            c = await asyncio.to_thread(self.store.get_candidate, cid)
+            if c is None:
+                return {"ok": False, "error": "clip was removed while rendering"}
+            await asyncio.to_thread(tmp.replace, out)
+            c.final_path = str(out)
+            c.verdict = {**(c.verdict or {}), "trim_start": round(start, 2), "trim_end": round(end, 2),
+                         "render_timeline": timeline}
+            c.post_copy = {**c.post_copy, "hook": hook, "style": clean_style(style)}
+            if not await self._review_final(c):
+                return {"ok": False, "error": c.error, "url": f"/media/{cid}"}
+            if c.stage in (Stage.REJECTED, Stage.FAILED):
+                c.stage = Stage.SCHEDULED
+            await self._save(c)
         stamp = int(time.time())
         return {"ok": True, "url": f"/media/{cid}?t={stamp}" if apply else f"/media/studio/{cid}.mp4?t={stamp}"}
 

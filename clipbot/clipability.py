@@ -219,8 +219,9 @@ def enforce_viewer_review(verdict: dict, settings: Settings) -> dict:
                 reasons.append(f"{key} {review[key]:g} below {threshold:g}")
         if not review["evidence"] or not review["why_watch"]:
             reasons.append("no concrete evidence explaining why to watch")
-        if review["flags"]:
-            reasons.append("; ".join(review["flags"]))
+        defects = [flag for flag in review["flags"] if flag in settings.review.blocking_flags]
+        if defects:
+            reasons.append("; ".join(defects))
     if reasons:
         return {**verdict, "passed": False, "verdict": "reject",
                 "reason": "viewer review: " + "; ".join(reasons)}

@@ -161,7 +161,7 @@ def build_ass(words: list[Word], trim_start: float, trim_end: float, edit: EditC
 
 # --------------------------------------------------------------------------- probing
 def tighten_spans(words: list[Word], trim_start: float, duration: float,
-                  edit: EditCfg) -> list[tuple[float, float]]:
+                  edit: EditCfg, spike_at: float | None = None) -> list[tuple[float, float]]:
     """Clip-relative spans to keep, with the long silences between words removed.
 
     Returns [(0, duration)] when there is nothing worth cutting, so callers can treat one span
@@ -170,6 +170,10 @@ def tighten_spans(words: list[Word], trim_start: float, duration: float,
         return [(0.0, duration)]
     spoken = sorted((max(0.0, w.start - trim_start), min(duration, w.end - trim_start))
                     for w in words if w.end > trim_start and w.start < trim_start + duration)
+    if spike_at is not None and edit.moment_keep_s and trim_start <= spike_at <= trim_start + duration:
+        spoken.append((max(0, spike_at - trim_start - edit.moment_keep_s),
+                       min(duration, spike_at - trim_start + edit.moment_keep_s)))
+        spoken.sort()
     if not spoken:
         return [(0.0, duration)]
     keeps: list[tuple[float, float]] = []
@@ -325,7 +329,7 @@ def audio_filter(edit: EditCfg, bleeps: list[tuple[float, float]] | None = None,
 async def render(raw_path: Path, out_path: Path, trim_start: float, trim_end: float,
                  words: list[Word], login: str, settings: Settings, work_dir: Path,
                  watermark: str, hook: str = "", spike_at: float | None = None,
-                 facecam_auto: list[int] | None = None) -> Path:
+                 facecam_auto: list[int] | None = None, timeline: dict | None = None) -> Path:
     """Render ``raw_path`` [trim_start, trim_end] to a vertical clip at ``out_path``."""
     s, edit = settings, settings.edit
     ffmpeg = ffmpeg_exe(s)
@@ -346,7 +350,7 @@ async def render(raw_path: Path, out_path: Path, trim_start: float, trim_end: fl
             facecam = None
 
     # pace: drop the long silences, then work in tightened time from here on
-    keeps = tighten_spans(words, trim_start, duration, edit)
+    keeps = tighten_spans(words, trim_start, duration, edit, spike_at)
     tightened = len(keeps) > 1
     if tightened:
         kept = sum(b - a for a, b in keeps)
@@ -399,6 +403,11 @@ async def render(raw_path: Path, out_path: Path, trim_start: float, trim_end: fl
         ass_path.unlink(missing_ok=True)
         if has_extras:
             main_out.unlink(missing_ok=True)
+    if timeline is not None:
+        intro_s = (await probe_media(Path(edit.intro_path), settings)).duration if edit.intro_path else 0
+        outro_s = (await probe_media(Path(edit.outro_path), settings)).duration if edit.outro_path else 0
+        timeline.update(source_start=trim_start, keeps=keeps if tightened else [(0, raw_len)],
+                        intro_s=intro_s, outro_s=outro_s, expected_duration_s=duration + intro_s + outro_s)
     return out_path
 
 

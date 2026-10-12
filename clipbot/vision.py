@@ -171,10 +171,10 @@ class Vision:
                 self.busy = False
 
     async def prepare(self, video: Path, duration: float, spike_at: float | None,
-                      save_dir: Path) -> VisionResult:
+                      save_dir: Path, frames: int | None = None) -> VisionResult:
         """Save actual timed frames for a multimodal judge without a redundant AI description."""
         ai = self.settings.ai
-        times = sequence_times(duration, ai.vision_frames, spike_at,
+        times = sequence_times(duration, frames or ai.vision_frames, spike_at,
                                self.settings.review.frame_end_margin_s)
         frames = await extract_frames(video, times, self.settings)
         await asyncio.to_thread(_save_frames, save_dir, frames)

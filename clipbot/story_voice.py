@@ -15,6 +15,25 @@ from pathlib import Path
 logger = logging.getLogger("clipbot.story_voice")
 
 
+def spoken_text(text: str) -> str:
+    """Remove formatting delimiters, without turning directions into spoken prose."""
+    text = re.sub(r"(?<!\w)(\*{1,2}|_{1,2}|`)(.+?)\1(?!\w)", r"\2", text)
+    return text.strip()
+
+
+def validate_spoken_text(text: str) -> None:
+    """Reject unmistakable film directions; retain narrative mentions of cameras."""
+    if re.search(r"<\s*/?\s*(?:speak|voice|prosody|audio|phoneme|break)\b", text, re.I):
+        raise ValueError("Narration accepts plain text, not SSML instructions")
+    if re.search(r"(?:^|[.!?]\s+|\n)\s*(?:the\s+camera\s+(?:pulls?\s+back|pans?|zooms?|cuts?|fades?)\b|(?:the\s+)?(?:final|next|opening)\s+shot\s+(?:reveals?|shows?|cuts?)\b|(?:cut|fade)\s+to\s+black\b|(?:scene|shot)\s+\d+\s*:)", text, re.I):
+        raise ValueError("Production directions belong in scene visuals, not spoken narration. Rewrite this as the character's experience.")
+
+
+def narration_sentences(text: str) -> list[str]:
+    """Keep sentence punctuation and quoted dialogue together for neural readings."""
+    return [part.strip() for part in re.split(r'(?<=[.!?])\s+(?=[A-Z“‘"\'])', spoken_text(text)) if part.strip()]
+
+
 def voice_metadata(voices_path: str | Path, lang: str = "") -> list[dict]:
     """Read NPZ member names without loading a model or allowing pickle data."""
     import numpy as np
@@ -58,6 +77,10 @@ def narrate(plan: dict | str | Path) -> dict:
     threads = int(plan.get("threads", 2))
     if not math.isfinite(speed) or speed <= 0 or threads < 1:
         raise ValueError("Narration speed and worker threads must be positive")
+    for key in ("sentence_pause_s", "clause_pause_s"):
+        pause = float(plan.get(key, 0))
+        if not math.isfinite(pause) or pause < 0:
+            raise ValueError("Narration pauses must be finite and nonnegative")
     scenes = plan.get("scenes")
     if not isinstance(scenes, list) or not scenes:
         raise ValueError("Narration needs at least one scene")
@@ -66,12 +89,14 @@ def narrate(plan: dict | str | Path) -> dict:
         text = scene.get("text")
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Every narration scene needs plain spoken text")
-        if re.search(r"<\s*/?\s*(?:speak|voice|prosody|audio|phoneme|break)\b", text, re.I):
-            raise ValueError("Narration accepts plain text, not SSML instructions")
+        validate_spoken_text(text)
         target = _inside(scene["path"], root)
         if any(target == old[1] for old in prepared):
             raise ValueError("Narration scenes must have separate output files")
-        prepared.append((text.strip(), target))
+        cleaned = spoken_text(text)
+        if not cleaned:
+            raise ValueError("Every narration scene needs plain spoken text")
+        prepared.append((cleaned, target))
     import numpy as np
     import onnxruntime as ort
     import soundfile as sf
@@ -83,7 +108,22 @@ def narrate(plan: dict | str | Path) -> dict:
     narrator = Kokoro.from_session(session, str(voices))
     outputs = []
     for text, target in prepared:
-        samples, rate = narrator.create(text, voice=voice, speed=speed, lang=lang)
+        chunks, timings, offset = [], [], 0
+        sentences = narration_sentences(text)
+        for index, sentence in enumerate(sentences):
+            samples, rate = narrator.create(sentence, voice=voice, speed=speed, lang=lang,
+                                           sentence_pause=float(plan.get("sentence_pause_s", 0)),
+                                           clause_pause=float(plan.get("clause_pause_s", 0)))
+            if not len(samples) or not np.isfinite(samples).all() or not np.any(samples):
+                raise RuntimeError("The local narrator returned empty or invalid audio")
+            timings.append({"text": sentence, "start": offset / rate, "end": (offset + len(samples)) / rate})
+            chunks.append(samples)
+            offset += len(samples)
+            if index < len(sentences) - 1:
+                silence = np.zeros(round(float(plan.get("sentence_pause_s", 0)) * rate), dtype=samples.dtype)
+                chunks.append(silence)
+                offset += len(silence)
+        samples = np.concatenate(chunks)
         if not len(samples) or not np.isfinite(samples).all() or not np.any(samples):
             raise RuntimeError("The local narrator returned empty or invalid audio")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +131,7 @@ def narrate(plan: dict | str | Path) -> dict:
         try:
             sf.write(str(temporary), samples, int(rate), format="WAV", subtype="PCM_16")
             temporary.replace(target)
+            target.with_suffix(".timings.json").write_text(json.dumps({"basis": "measured_sentence_audio", "segments": timings}), encoding="utf-8")
         finally:
             temporary.unlink(missing_ok=True)
         outputs.append({"path": str(target), "duration_s": len(samples) / rate, "sample_rate": int(rate)})
