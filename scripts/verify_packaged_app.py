@@ -66,6 +66,13 @@ def main():
                                     json={"name": "Packaged preview", "password": "packaged-preview-2026"})
                 login.raise_for_status()
                 report["checks"]["sign_in"] = True
+                rejected = client.get("/api/clips").json()["rejected_cleanup"]
+                report["checks"]["rejected_cleanup_cadence"] = rejected["interval_min"] == 20
+                cleanup = client.post("/api/clips/rejected/delete-media", headers={"X-ClipBot": "1"},
+                                      json={"confirm": "delete-rejected-media"})
+                cleanup.raise_for_status()
+                cleaned = cleanup.json()
+                report["checks"]["empty_rejected_cleanup"] = cleaned["files_deleted"] == 0 and cleaned["bytes_freed"] == 0
                 reference_options = client.get("/api/music/references/options")
                 reference_options.raise_for_status()
                 report["checks"]["reference_upload_limits"] = reference_options.json()["max_upload_bytes"] == settings.music.reference_upload_max_bytes

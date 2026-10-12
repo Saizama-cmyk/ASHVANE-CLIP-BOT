@@ -60,7 +60,7 @@ audio evaluation was available.
 ## Keep, measure, and improve
 
 Keep readable captions and the reaction/source split when both matter. The
-[streamer benchmark](SURGE-QUALITY-BENCHMARK-20261011.md) compared ten popular
+[streamer benchmark](SURGE-QUALITY-BENCHMARK-20261011.md) compared fifteen popular
 Shorts, a popular TikTok, an Instagram contrast and two actual ChatSpiked uploads.
 It supports quiet banter, prediction, skill and useful information as legitimate
 viewer value, and identifies crowded hook overlays and source cropping as
