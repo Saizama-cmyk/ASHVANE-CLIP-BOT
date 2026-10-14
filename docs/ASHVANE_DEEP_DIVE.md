@@ -349,10 +349,7 @@ app stops relevant polling. Authenticated media uses private temporary caches.
 
 Expo exports and browser fixtures verify bundling and selected flows, including
 narrow layouts and reduced-motion fallback. They are not physical-device tests.
-A new IPA for the Interstellar revision is pending the native CI workflow at this
-snapshot. Existing release/feed addresses remain stable, but their existence is
-not proof that the latest source is installed or signed. No physical iPhone
-rendering, new IPA installation or end-to-end device validation is claimed.
+[Phone 1.0.28](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-v1.0.28) passed native iPhone/Android CI and is published as IPA/APK, with installation-package and permissions reports. The IPA is version 1.0.28/build 28, arm64, with its JavaScript bundle. Existing release/feed addresses remain stable; the feed references this release. The IPA is unsigned for the owner’s sideloader. Physical iPhone rendering, installation and end-to-end device validation remain untested.
 
 Windows source, staged frozen build and installed runtime are also different
 states. A passing source suite does not mean an older installed executable includes

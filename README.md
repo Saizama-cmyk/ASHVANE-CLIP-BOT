@@ -56,9 +56,7 @@ py -3.12 -m venv .venv
 ```
 
 The phone connects to your running PC through the existing authenticated remote interface.
-The Interstellar source has Expo export and browser-fixture evidence. **A new IPA awaits native
-CI; physical iPhone validation is not claimed.** Stable [phone release/feed links](phone/README.md)
-remain unchanged. An Expo export is not an installable phone package.
+The Interstellar phone passed native iPhone and Android CI. **[Phone 1.0.28](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-v1.0.28) is published** with IPA/APK and package-verification reports; the stable AltStore feed now references it. Physical iPhone installation remains untested. [Phone setup/feed links](phone/README.md).
 
 ## Evidence before promises
 

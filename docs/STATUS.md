@@ -18,7 +18,7 @@ production behavior are distinct. This page records the scope of each claim.
 | Core repair demonstration | Local coder + independent reviewer; Docker reproduction/regressions; disposable source applied and reversible overlay; one eligible example | Disposable UUID example, not a production Ashvane repair or proof of general reliability |
 | Core learning | Outcome memory and provenance/eligibility-aware JSONL datasets | No implemented model-weight training or consciousness |
 | Interstellar desktop/phone | Shared original palette, bundled fonts, observatory and native controls | Decorative scenes are not neural telemetry |
-| Phone checks | Expo exports and browser fixtures, including 320/390px Core states and token-free scene boundary | Native IPA for this revision pending CI; no physical iPhone validation claimed |
+| Phone checks | Expo exports and browser fixtures, including 320/390px Core states and token-free scene boundary | Native iPhone/Android CI passed; IPA/APK 1.0.28 published; physical device installation untested |
 
 The 14 October release verification recorded **1,110 passed, five skipped**, plus
 **70 frozen application checks passed**. This includes a real seven-second
@@ -34,8 +34,7 @@ See [the compilation contract and limits](HOLLOW_COMPILATIONS.md).
 
 Phone web/iOS/Android exports and five browser-fixture suites passed at 320px and
 390px, covering compilations, Core, workspaces, creative controls and profiles.
-Native IPA publication for this revision remains pending CI; a physical iPhone
-installation has not been tested. The tested package is installed. Public story/Core assets match the tested source,
+Native iPhone and Android builds passed and [phone 1.0.28 is published](https://github.com/Saizama-cmyk/ASHVANE-CLIP-BOT/releases/tag/phone-v1.0.28), with a verified IPA version/build and refreshed AltStore feed. Physical iPhone installation has not been tested. The tested package is installed. Public story/Core assets match the tested source,
 and unauthenticated private requests return HTTP 401. This installed-runtime
 evidence remains separate from creative quality or physical phone verification.
 
