@@ -25,11 +25,17 @@ UNIT_VALUES = {0, 1, -1, 2, 24, 60, 100, 1000, 1024, 3600, 86400}
 # production timing, dimensions, motion and quality remain in StoriesCfg.
 EXCLUDED = {"config.py", "icon.py", "hardware.py", "story_art.py"}
 REVIEWED_CONSTANTS = {
+    "audio_review.py": {"AMPLITUDE_TO_DB"},  # decibel definition, not a quality threshold
+    "supervisor_memory.py": {"HEX_RADIX"},                              # SHA-256 hexadecimal encoding
+    "supervisor_extensions.py": {"JSONRPC_METHOD_NOT_FOUND"},           # JSON-RPC method-not-found
+    "supervisor_bootstrap.py": {"MAX_MANIFEST_BYTES", "MAX_OVERLAY_BYTES", "MAX_OVERLAY_FILES"},  # immutable pre-config ceilings
+    "story_comfy.py": {"FLUX_LATENT_STRIDE"},                            # Flux.2 VAE latent stride
+    "story_motion.py": {"WAN_SPATIAL_STRIDE", "WAN_TEMPORAL_STRIDE", "WAN_SEED_SPACE", "MP4_TYPE_START", "MP4_TYPE_END"}, # VAE strides, uint64 noise seed and ISO BMFF header
     "util.py": {"ERR_SNIPPET"},                                         # log/display truncation
     "app.py": {"STARTUP_POLL_S", "LAN_PROBE_PORT"},                                       # wait-for-bind poll
     "discovery.py": {"TOKEN_REFRESH_MARGIN_S", "KICK_CHANNELS_MAX",      # OAuth margin, API limits
                      "KICK_V1_SEARCH_MAX", "KICK_V1_GONE", "KEYS_REJECTED"},
-    "chat.py": {"TWITCH_NICK_DIGITS"},
+    "chat.py": {"TWITCH_NICK_DIGITS", "TLS_PORT"},                   # standard secure websocket port
     "agent/skills.py": {"NAME_MAX", "DESC_MAX"},                        # file-name and field caps
     "agent/watch.py": {"SAID_MAX", "SCREEN_MAX", "ERR_TAIL"},     # how much text goes back
     "agent/models.py": {"MODELS", "CHUNK", "MB"},                         # the phone app's model list; write size
@@ -44,6 +50,8 @@ REVIEWED_CONSTANTS = {
     "clipability.py": {"SCORE_MAX", "PEAK_DEFAULT_FRACTION"},                                    # the 0-10 scale
     "scheduler.py": {"DAY_S"},
     "analytics.py": {"DAY_S"},
+    "youtube_outcomes.py": {"VIDEO_FILTER_LIMIT", "TOP_VIDEO_LIMIT"},  # official filter/report ceilings
+    "clip_feedback.py": {"HEX_BASE"},  # SHA-256 hex encoding
     "copywriter.py": {"YOUTUBE_TITLE_MAX", "YOUTUBE_DESC_MAX", "YOUTUBE_TAGS_TOTAL_MAX",
                       "CAPTION_MAX", "FACEBOOK_TITLE_MAX", "DISCORD_MAX"},   # API limits
     "pipeline.py": {"GIB", "SWEEP_IDLE_S", "RAW_SUFFIX"},

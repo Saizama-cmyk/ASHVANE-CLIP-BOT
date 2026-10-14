@@ -23,6 +23,15 @@ import logging
 import os
 import webbrowser
 
+# The bootstrap is bundled/protected and runs before mutable application imports.
+# Internal media workers do not participate in main-process boot health tracking.
+if sys.argv[1:2] not in (["--streamlink"], ["--story-voice"]):
+    from clipbot.supervisor_bootstrap import activate_bootstrap
+    _bootstrap_home = Path(os.environ.get("CLIPBOT_HOME") or
+                           str(Path(os.environ.get("LOCALAPPDATA") or
+                                    str(Path.home() / "AppData" / "Local")) / "Ashvane"))
+    activate_bootstrap(_bootstrap_home)
+
 from clipbot.config import ConfigError, is_frozen, load_settings, migrate_data_dir, settings_path
 
 logger = logging.getLogger("clipbot.main")

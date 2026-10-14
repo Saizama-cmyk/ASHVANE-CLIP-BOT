@@ -1,0 +1,146 @@
+/* Shared infrastructure: an instrument deck, independent of business identity. */
+.supervisor-access{margin:24px 12px 12px;padding-top:16px;border-top:1px solid #304353;display:grid;gap:8px}
+.supervisor-access .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.supervisor-entry{display:flex;align-items:center;gap:10px;background:transparent;border:0;color:#98A9BA;padding:10px 12px;text-align:left;border-radius:8px;font:inherit;cursor:pointer}
+.supervisor-entry svg{width:22px;height:22px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5}
+.supervisor-entry[aria-current=page]{background:#182331;color:#DFE8ED}
+.supervisor-master{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#111925;border:1px solid #304353;border-radius:8px;color:#DFE8ED;cursor:pointer;text-align:left;font:inherit}
+.supervisor-master strong{display:block;font:600 12px 'Segoe UI',sans-serif;letter-spacing:.055em;color:#DAA66B}
+.supervisor-master small{display:block;font-size:12px;color:#98A9BA;margin-top:4px}
+.supervisor-toggle{width:38px;height:22px;flex:none;padding:3px;border-radius:20px;background:#304353;display:flex;align-items:center}
+.supervisor-toggle:after{content:'';width:16px;height:16px;border-radius:50%;background:#98A9BA;transition:transform 160ms ease-out,background 160ms ease-out}
+.supervisor-master[aria-checked=true] .supervisor-toggle{background:#795430}
+.supervisor-master[aria-checked=true] .supervisor-toggle:after{transform:translateX(16px);background:#F3C996}
+.supervisor-entry:hover,.supervisor-master:hover:not(:disabled){background:#1A2735}
+.supervisor-entry:active,.supervisor-master:active:not(:disabled){transform:translateY(1px)}
+.supervisor-entry:focus-visible,.supervisor-master:focus-visible,.supervisor-node:focus-visible{outline:2px solid #DAA66B;outline-offset:3px}
+.supervisor-master:disabled{cursor:wait;color:#98A9BA}
+.supervisor-rail-error{font-size:12px;line-height:1.5;color:#EF9C91;margin:0;overflow-wrap:anywhere}
+.supervisor-workspace{color:#DFE8ED;--supervisor-accent:#DAA66B}
+.supervisor-overview{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:24px}
+.supervisor-overview p{color:#98A9BA;max-width:70ch;margin:0;line-height:1.65}
+.supervisor-state{flex:none;display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 12px;border:1px solid #304353;border-radius:8px}
+.supervisor-state:before{content:'';width:7px;height:7px;background:#98A9BA;border-radius:50%}
+.supervisor-state[data-running=true]:before{background:#DAA66B}
+.supervisor-notice{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 16px;border-left:3px solid #DAA66B;background:#182331;margin-bottom:24px;line-height:1.6;font-size:13px}
+.supervisor-notice.error{border-color:#EF9C91;color:#EF9C91}
+.supervisor-deck{display:grid;grid-template-columns:minmax(0,1fr) 300px;background:#0A0F18;border:1px solid #304353;border-radius:8px;overflow:hidden;margin-bottom:24px}
+.supervisor-map{position:relative;min-height:430px;isolation:isolate;padding:24px}
+.supervisor-map-head{position:relative;z-index:2;display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.supervisor-workspace h2{font:500 20px Bahnschrift,'Segoe UI',sans-serif;letter-spacing:0;margin:0}
+.supervisor-map-head span{color:#98A9BA;font-size:12px}
+.supervisor-plane{position:absolute;inset:80px 5% 16px;transform:perspective(700px) rotateX(58deg);border:1px solid #253747;border-radius:50%;background:repeating-radial-gradient(ellipse at center,transparent 0 44px,#1A2A39 45px 46px,transparent 47px 90px);z-index:-1;pointer-events:none}
+.supervisor-plane:before,.supervisor-plane:after{content:'';position:absolute;background:#253747;left:50%;top:0;width:1px;height:100%}
+.supervisor-plane:after{transform:rotate(90deg)}
+.supervisor-links{position:absolute;inset:64px 24px 24px;width:calc(100% - 48px);height:calc(100% - 88px);pointer-events:none;color:#304353;overflow:visible}
+.supervisor-links line{stroke:currentColor;stroke-width:1;stroke-dasharray:3 5;vector-effect:non-scaling-stroke}
+.supervisor-map:has(.supervisor-many) .supervisor-links{display:none}
+.supervisor-agents{position:relative;min-height:330px}
+.supervisor-agents.supervisor-many{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-content:start}
+.supervisor-many .supervisor-node{position:static;width:auto;transform:none;min-height:76px}
+.supervisor-many .supervisor-hub{position:static;transform:none;border-radius:8px;width:auto;height:64px;grid-column:1/-1}
+.supervisor-hub{position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);display:grid;place-content:center;gap:5px;text-align:center;width:100px;height:100px;border:1px solid #795430;border-radius:50%;background:#111925;color:#DAA66B;font:500 14px Bahnschrift,'Segoe UI',sans-serif}
+.supervisor-hub small{color:#98A9BA;font:11px 'Segoe UI',sans-serif}
+.supervisor-node{position:absolute;left:var(--node-x);top:var(--node-y);transform:translate(-50%,-50%);width:144px;min-height:64px;text-align:left;padding:10px 12px;border:1px solid #304353;border-radius:8px;background:#111925;color:#DFE8ED;cursor:pointer;transition:border-color 160ms ease-out,background 160ms ease-out}
+.supervisor-node b{display:block;font:500 14px Bahnschrift,'Segoe UI',sans-serif;overflow-wrap:anywhere}
+.supervisor-node small{display:block;font:12px 'Segoe UI',sans-serif;color:#98A9BA;margin-top:5px}
+.supervisor-node[aria-pressed=true]{border-color:#DAA66B;background:#1D2630}
+.supervisor-node:hover{background:#1A2735}
+.supervisor-node:active{background:#26333E}
+.supervisor-map-empty{margin:100px auto 0;max-width:44ch;text-align:center;color:#98A9BA;font-size:14px;line-height:1.7}
+.supervisor-inspector{padding:24px;border-left:1px solid #304353;background:#111925;min-width:0}
+.supervisor-inspector h3{font:500 22px Bahnschrift,'Segoe UI',sans-serif;margin:8px 0 16px;overflow-wrap:anywhere}
+.supervisor-inspector p{font-size:13px;line-height:1.7;color:#98A9BA;overflow-wrap:anywhere}
+.supervisor-inspector dl{font-size:13px;margin:24px 0}
+.supervisor-inspector dt{color:#98A9BA;margin-top:16px}
+.supervisor-inspector dd{margin:5px 0 0;line-height:1.6;overflow-wrap:anywhere;white-space:pre-wrap}
+.supervisor-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px;align-items:start}
+.supervisor-panel{background:#111925;border-radius:8px;padding:24px;margin-bottom:24px;min-width:0}
+.supervisor-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.supervisor-panel p,.supervisor-help{font-size:13px;color:#98A9BA;line-height:1.65;margin:8px 0 16px}
+.supervisor-panel label{display:block;font-size:13px;margin-bottom:8px}
+.supervisor-panel textarea{width:100%;min-height:96px;resize:vertical;margin-bottom:12px}
+.supervisor-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.supervisor-current{border-left:2px solid #DAA66B;padding-left:16px;margin:16px 0}
+.supervisor-current strong{font-size:14px;overflow-wrap:anywhere}
+.supervisor-current p{margin:6px 0}
+.supervisor-progress{display:block;width:100%;height:6px;accent-color:#DAA66B;margin:16px 0}
+.supervisor-records{list-style:none;padding:0;margin:0;max-height:400px;overflow:auto;scrollbar-width:thin}
+.supervisor-records li{padding:12px 0;border-top:1px solid #253747;overflow-wrap:anywhere;font-size:13px;line-height:1.6}
+.supervisor-records li:first-child{border-top:0}
+.supervisor-records strong{font-weight:600;display:block}
+.supervisor-records time,.supervisor-records small{font-size:12px;color:#98A9BA;display:block}
+.supervisor-records .btn{margin-top:8px}
+.supervisor-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:8px 0 20px}
+.supervisor-counts dt{font-size:12px;color:#98A9BA;line-height:1.5}
+.supervisor-counts dd{font:500 25px Bahnschrift,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;margin:8px 0 0}
+.supervisor-datasets{display:flex;gap:12px;flex-wrap:wrap}
+.supervisor-capabilities{display:grid;gap:8px;font-size:13px;line-height:1.6}
+.supervisor-capabilities div{padding:8px 0;border-bottom:1px solid #253747;overflow-wrap:anywhere}
+.supervisor-capabilities span{color:#98A9BA}
+.supervisor-workspace .btn:disabled{cursor:not-allowed}
+@media(min-width:641px) and (max-width:1100px){.supervisor-deck{grid-template-columns:minmax(0,1fr) 240px}.supervisor-map{padding:16px}.supervisor-node{width:120px;font-size:12px}.supervisor-columns{grid-template-columns:1fr}.supervisor-inspector{padding:20px}.supervisor-access{margin-inline:8px}}
+@media(max-width:760px){.supervisor-deck{grid-template-columns:1fr}.supervisor-inspector{border-left:0;border-top:1px solid #304353}.supervisor-map{min-height:400px}.supervisor-columns{grid-template-columns:1fr}.supervisor-overview{flex-wrap:wrap;gap:12px}}
+@media(max-width:640px){.supervisor-access{display:flex;align-items:center;gap:8px;margin:8px 12px;padding:8px 0 0;flex-wrap:wrap}.supervisor-entry{flex:1;padding:10px 8px;font-size:13px}.supervisor-master{flex:1;padding:8px 10px;min-height:54px}.supervisor-master strong{font-size:10px}.supervisor-master small{font-size:11px}.supervisor-rail-error{position:relative;flex-basis:100%}.supervisor-panel{padding:20px 16px}.supervisor-map{min-height:0;padding:20px 16px}.supervisor-map-head{margin-bottom:16px;flex-wrap:wrap}.supervisor-agents,.supervisor-agents.supervisor-many{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-height:0!important}.supervisor-node{position:static;transform:none;width:auto;min-height:76px}.supervisor-hub{position:static;transform:none;width:auto;height:auto;min-height:64px;border-radius:8px;grid-column:1/-1}.supervisor-links,.supervisor-plane{display:none}.supervisor-map-empty{margin:24px 0}.supervisor-counts{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:20px}.supervisor-overview p{font-size:13px}}
+@media(prefers-reduced-motion:reduce){.supervisor-toggle:after{transition:background 100ms ease-out}.supervisor-node{transition:background 100ms ease-out}.supervisor-entry:active,.supervisor-master:active:not(:disabled){transform:none}}
+
+/* Neural stage. The canvas illustrates backend structure; buttons and records carry the data. */
+.supervisor-workspace{color-scheme:dark;--sup-ground:#07121b;--sup-panel:#10212d;--sup-ink:#e7efeb;--sup-muted:#a9c0c5;--sup-line:#31505d;--sup-amber:#ffc27d;color:var(--sup-ink)}
+.supervisor-workspace ::selection{background:#376d70;color:#fff}
+.supervisor-workspace textarea{caret-color:var(--sup-amber)}
+.supervisor-workspace .supervisor-overview{align-items:center;margin-bottom:28px}
+.supervisor-workspace .supervisor-overview p{font-size:14px;line-height:1.7;max-width:78ch;color:var(--sup-muted)}
+.supervisor-workspace .supervisor-state{border-color:var(--sup-line);background:var(--sup-panel);font-variant-numeric:tabular-nums}
+.supervisor-workspace .supervisor-deck{grid-template-columns:minmax(0,1fr) minmax(270px,310px);border-color:var(--sup-line);border-radius:10px;background:var(--sup-ground);margin-bottom:40px}
+.supervisor-workspace .supervisor-map{padding:0;min-height:0;overflow:hidden}
+.supervisor-workspace .supervisor-map-head{align-items:center;padding:22px 28px 18px;margin:0;border-bottom:1px solid #213a46;background:#0c1b26}
+.supervisor-workspace .supervisor-map-head h2{font:500 22px/1.2 Bahnschrift,'Segoe UI',sans-serif;color:var(--sup-ink)}
+.supervisor-workspace .supervisor-map-head span{color:var(--sup-muted);font-variant-numeric:tabular-nums}
+.supervisor-workspace .supervisor-plane,.supervisor-workspace .supervisor-links{display:none}
+.supervisor-workspace .supervisor-agents,.supervisor-workspace .supervisor-agents.supervisor-many{display:block;min-height:0!important}
+.supervisor-neural-stage{position:relative;height:510px;overflow:hidden;isolation:isolate;background:radial-gradient(ellipse at 51% 50%,#18313c 0%,#0a1924 42%,#06121b 78%)}
+.supervisor-neural-stage:after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(7,18,27,.28),transparent 26%,transparent 74%,rgba(7,18,27,.28));z-index:1}
+.supervisor-neural-canvas{position:absolute;inset:0;z-index:0}
+.supervisor-neural-canvas canvas{display:block;width:100%;height:100%}
+.supervisor-neural-label{position:absolute;top:22px;left:28px;z-index:2;display:grid;gap:7px;pointer-events:none}
+.supervisor-neural-label span,.supervisor-neural-axis{font:600 10px/1.2 Consolas,'Cascadia Mono',monospace;letter-spacing:.16em;color:#aac6ca}
+.supervisor-neural-label strong{font:500 18px/1.25 Bahnschrift,'Segoe UI',sans-serif;color:#e7efeb}
+.supervisor-neural-axis{position:absolute;z-index:2;right:28px;bottom:23px;pointer-events:none;font-size:9px;color:#85a8b0}
+.supervisor-neural-fallback{position:absolute;left:28px;right:28px;top:47%;z-index:2;text-align:center;color:#a9c0c5;font-size:13px;line-height:1.5}
+.supervisor-neural-stage.is-rendered .supervisor-neural-fallback{display:none}
+.supervisor-neural-stage.is-unavailable .supervisor-neural-fallback{max-width:32ch;margin:auto}
+.supervisor-network-key{display:flex;flex-wrap:wrap;gap:8px 24px;padding:14px 28px;border-top:1px solid #213a46;color:#a9c0c5;font:12px/1.4 'Segoe UI',sans-serif;background:#0b1b25}
+.supervisor-network-key span{display:flex;align-items:center;gap:9px}
+.supervisor-network-key span:before{content:'';width:15px;height:2px;background:#42606b}
+.supervisor-network-key span+span:before{width:6px;height:6px;border-radius:50%;background:#ffc27d;box-shadow:0 0 8px #ffc27d}
+.supervisor-flow-note{display:grid;grid-template-columns:max-content 1fr;gap:12px;padding:16px 28px;border-top:1px solid #213a46;color:#a9c0c5;font-size:12px;line-height:1.5;background:#0c1b26}
+.supervisor-flow-note strong{color:#e7efeb;font-weight:600}
+.supervisor-role-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:#25404b;border-top:1px solid #25404b}
+.supervisor-role{--role-color:#92c4dc;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:75px;padding:13px 17px;text-align:left;border:0;border-left:3px solid transparent;background:#10212d;color:#e7efeb;cursor:pointer;font:inherit;transition:background 140ms ease-out,border-color 140ms ease-out}
+.supervisor-role[data-role=director]{--role-color:#ffc27d}.supervisor-role[data-role=researcher]{--role-color:#75ddcf}.supervisor-role[data-role=engineer]{--role-color:#c29bff}.supervisor-role[data-role=reviewer]{--role-color:#ff9b92}.supervisor-role[data-role=curator]{--role-color:#e7d49d}.supervisor-role[data-role=evaluator]{--role-color:#9ee6b7}
+.supervisor-role-index{align-self:start;color:var(--role-color);font:600 11px Consolas,'Cascadia Mono',monospace;padding-top:2px}
+.supervisor-role b{display:block;font:600 14px/1.2 Bahnschrift,'Segoe UI',sans-serif;overflow-wrap:anywhere}
+.supervisor-role small{display:block;color:#a9c0c5;font-size:11px;line-height:1.35;margin-top:5px;overflow-wrap:anywhere}
+.supervisor-role-arrow{color:#7295a2;font-size:16px;align-self:start;line-height:1}
+.supervisor-role:hover{background:#17303b}.supervisor-role:active{background:#20404a}
+.supervisor-role[aria-pressed=true]{border-left-color:var(--role-color);background:#1b3440}
+.supervisor-role[aria-pressed=true] .supervisor-role-arrow{color:var(--role-color)}
+.supervisor-role:focus-visible{outline:2px solid #ffc27d;outline-offset:-4px;z-index:1}
+.supervisor-workspace .supervisor-inspector{background:#10212d;border-color:#31505d;padding:28px}
+.supervisor-workspace .supervisor-inspector>p:first-child{font:600 10px Consolas,'Cascadia Mono',monospace;letter-spacing:.13em;color:#ffc27d;text-transform:uppercase}
+.supervisor-workspace .supervisor-inspector h3{font-size:25px;line-height:1.2;margin:14px 0 24px;color:#e7efeb}
+.supervisor-workspace .supervisor-inspector dt{color:#8eacb7;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.supervisor-workspace .supervisor-inspector dd{color:#d6e4e4}
+.supervisor-workspace .supervisor-inspector dd small{display:block;margin-top:7px;color:#8eacb7;font-size:11px;font-variant-numeric:tabular-nums}
+.supervisor-workspace .supervisor-columns{gap:28px}
+.supervisor-workspace .supervisor-panel{background:#10212d;border:1px solid #29434f;border-radius:10px;padding:26px;margin-bottom:28px}
+.supervisor-workspace .supervisor-panel h2{color:#e7efeb}
+.supervisor-workspace .supervisor-records li{border-color:#29434f}
+.supervisor-workspace .supervisor-records::-webkit-scrollbar{width:8px}.supervisor-workspace .supervisor-records::-webkit-scrollbar-thumb{background:#31505d;border-radius:8px}
+.supervisor-workspace .btn:focus-visible,.supervisor-workspace textarea:focus-visible{outline:2px solid #ffc27d;outline-offset:2px}
+.supervisor-workspace .btn:active:not(:disabled){transform:translateY(1px)}
+.supervisor-workspace .btn:disabled{cursor:not-allowed}
+@media(max-width:1100px){.supervisor-workspace .supervisor-deck{grid-template-columns:minmax(0,1fr) 270px}.supervisor-role-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.supervisor-neural-stage{height:450px}}
+@media(max-width:760px){.supervisor-workspace .supervisor-deck{grid-template-columns:1fr}.supervisor-workspace .supervisor-inspector{border-left:0;border-top:1px solid #31505d}.supervisor-neural-stage{height:390px}.supervisor-flow-note{grid-template-columns:1fr;gap:3px}}
+@media(max-width:480px){.supervisor-workspace .supervisor-map-head{padding:18px}.supervisor-neural-stage{height:340px}.supervisor-neural-label{top:18px;left:18px}.supervisor-neural-label strong{font-size:15px}.supervisor-neural-axis{right:18px;bottom:16px;font-size:8px}.supervisor-network-key,.supervisor-flow-note{padding:13px 18px}.supervisor-role-grid{grid-template-columns:1fr}.supervisor-role{min-height:60px}.supervisor-workspace .supervisor-inspector{padding:22px}}
+@media(prefers-reduced-motion:reduce){.supervisor-role{transition:background 100ms ease-out,border-color 100ms ease-out}.supervisor-workspace .btn:active:not(:disabled){transform:none}}

@@ -463,3 +463,23 @@ def test_writer_repairs_production_directions_before_independent_jury(tmp_path):
             repair = json.loads(calls[2]["messages"][-1]["content"])
             assert "Production directions" in repair["repair_required"]
     asyncio.run(run())
+
+
+def test_ai_visual_direction_does_not_limit_story_to_procedural_stage(tmp_path):
+    async def run():
+        s = settings()
+        s.stories.image_backend = "comfyui"
+        calls = []
+        async with client(replies(), calls) as http:
+            instance = studio(tmp_path, http, s)
+            project = await draft(instance)
+            assert project["status"] == "draft"
+            writer_prompt = calls[1]["messages"][0]["content"]
+            assert all(call["keep_alive"] == 0 for call in calls)
+            assert "do not limit the locations" in writer_prompt
+            assert "ONE visible instant" in writer_prompt
+            assert "never reveal the full threat" in writer_prompt
+            assert "Match the story to these stageable settings" not in writer_prompt
+            assert "preserves recurring appearances" in calls[2]["messages"][0]["content"]
+            assert project["script"] == SCRIPT
+    asyncio.run(run())

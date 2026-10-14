@@ -1,0 +1,81 @@
+/* Panoramic evidence deck: recorded platform performance beside local production. */
+.growth-workspace{width:100%;max-width:none;color:#DFE8ED}
+main:has(>.growth-workspace.active){max-width:none}
+.source-import-toolbar{padding:0 16px 12px}
+.growth-toolbar{display:flex;gap:16px;align-items:end;justify-content:space-between;flex-wrap:wrap;margin-bottom:24px}
+.growth-filter-row,.growth-toolbar-actions{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.growth-filter-row label{display:grid;gap:6px;font-size:12px;color:#98A9BA}
+.growth-filter-row select{min-width:150px}
+.growth-stamps{font-size:12px;color:#98A9BA;line-height:1.7;margin:0 0 20px;display:flex;gap:24px;flex-wrap:wrap}
+.growth-notice{padding:12px 16px;border-left:3px solid #DAA66B;background:#182331;margin-bottom:20px;font-size:13px;line-height:1.6}
+.growth-notice.error{border-color:#EF9C91;color:#EF9C91}
+.growth-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:#304353;border:1px solid #304353;border-radius:8px;overflow:hidden;margin:0 0 24px}
+.growth-kpi{padding:20px 24px;background:#111925;min-width:0}
+.growth-kpi dt{font-size:12px;color:#98A9BA}
+.growth-kpi dd{font:500 32px Bahnschrift,'Segoe UI',sans-serif;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin:8px 0}
+.growth-kpi small{font-size:11px;color:#98A9BA;display:block;line-height:1.5}
+.growth-panorama{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(280px,1fr) minmax(300px,1.1fr);gap:24px;align-items:start}
+.growth-panel{padding:24px;background:#111925;border-radius:8px;min-width:0;margin-bottom:24px}
+.growth-panel h2{font:500 20px Bahnschrift,'Segoe UI',sans-serif;letter-spacing:0;margin:0}
+.growth-panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.growth-panel p,.growth-note{font-size:12px;line-height:1.7;color:#98A9BA;margin:8px 0 16px}
+.growth-empty{padding:32px 12px;text-align:center;color:#98A9BA;font-size:13px;line-height:1.75}
+.growth-chart{min-height:260px;position:relative}
+.growth-chart svg{display:block;width:100%;height:260px;overflow:visible}
+.growth-chart text{font:11px 'Segoe UI',sans-serif;fill:#98A9BA}
+.growth-chart .growth-grid{stroke:#263747;stroke-width:1;vector-effect:non-scaling-stroke}
+.growth-chart polyline{stroke-width:2;vector-effect:non-scaling-stroke;fill:none}
+.growth-chart circle{stroke:#111925;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.growth-chart-legend{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:8px}
+.growth-chart-legend li{font-size:12px;color:#98A9BA;display:flex;gap:8px;align-items:center;min-width:0}
+.growth-chart-legend i{width:16px;height:2px;background:var(--series-color);flex:none}
+.growth-chart-legend span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.growth-chart-data{margin-top:16px;font-size:12px;color:#98A9BA}
+.growth-chart-data summary{cursor:pointer;padding:8px 0}
+.growth-chart-data .growth-scroll{max-height:240px}
+.growth-orbit{position:relative;min-height:260px;margin:8px 0 16px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:center;isolation:isolate}
+.growth-orbit:before{content:'';position:absolute;inset:48px 0;border:1px solid #304353;border-radius:50%;transform:perspective(500px) rotateX(58deg);z-index:-1}
+.growth-orbit-hub{grid-column:1/-1;justify-self:center;width:90px;height:90px;border:1px solid #795430;border-radius:50%;display:grid;place-content:center;text-align:center;color:#DAA66B;background:#111925;font:500 14px Bahnschrift,'Segoe UI',sans-serif;margin-bottom:8px}
+.growth-orbit-hub small{font:11px 'Segoe UI',sans-serif;color:#98A9BA;margin-top:4px}
+.growth-agent{padding:10px 12px;border:1px solid #304353;border-radius:8px;background:#0D1520;min-width:0}
+.growth-agent strong{display:block;font:500 13px Bahnschrift,'Segoe UI',sans-serif;overflow-wrap:anywhere}
+.growth-agent span{display:block;margin-top:5px;color:#98A9BA;font-size:11px;overflow-wrap:anywhere}
+.growth-supervisor-state{font-size:13px;color:#DAA66B}
+.growth-telemetry{display:grid;gap:0;margin:0}
+.growth-telemetry div{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid #263747;font-size:12px;line-height:1.6}
+.growth-telemetry dt{color:#98A9BA;overflow-wrap:anywhere}
+.growth-telemetry dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;max-width:60%}
+.growth-technical{margin-top:16px;color:#98A9BA;font-size:12px}
+.growth-technical summary{padding:8px 0;cursor:pointer}
+.growth-evidence{display:grid;grid-template-columns:minmax(0,2.65fr) minmax(300px,1.1fr);gap:24px;align-items:start}
+.growth-scroll{overflow:auto;scrollbar-width:thin}
+.growth-workspace table{width:100%;font-size:12px;border-collapse:collapse}
+.growth-workspace th{color:#98A9BA;font-weight:500;text-align:left;white-space:nowrap;padding:10px 12px;border-bottom:1px solid #304353}
+.growth-workspace td{padding:12px;border-bottom:1px solid #263747;vertical-align:top;line-height:1.6}
+.growth-workspace td:first-child{min-width:200px;max-width:600px;overflow-wrap:anywhere}
+.growth-workspace .growth-number{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.growth-workspace td small{display:block;color:#98A9BA;font-size:11px}
+.growth-workspace a{color:#DFE8ED;text-underline-offset:3px}
+.growth-workspace a:hover{color:#DAA66B}
+.growth-group-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+.growth-group-tabs button[aria-pressed=true]{border-color:#DAA66B;background:#26313A;color:#DFE8ED}
+.growth-groups{list-style:none;padding:0;margin:0}
+.growth-groups li{padding:12px 0;border-top:1px solid #263747;font-size:12px}
+.growth-group-label{display:flex;justify-content:space-between;gap:12px;line-height:1.6;margin-bottom:8px}
+.growth-group-label span:first-child{overflow-wrap:anywhere}
+.growth-group-label span:last-child{color:#98A9BA;white-space:nowrap;font-variant-numeric:tabular-nums}
+.growth-group-meter{height:5px;background:#0A1019;position:relative}
+.growth-group-meter:before{content:'';position:absolute;left:50%;top:-2px;height:9px;border-left:1px solid #98A9BA}
+.growth-group-meter i{position:absolute;left:var(--bar-start);width:var(--bar-width);height:5px;background:#DAA66B}
+.growth-group-meter i.negative{background:#8DAFD0}
+.growth-library-meta{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;margin:12px 0 20px;color:#98A9BA}
+.growth-library-meta strong{color:#DFE8ED;font-weight:500;font-variant-numeric:tabular-nums}
+.growth-library{margin-top:0}
+.growth-workspace button:focus-visible,.growth-workspace a:focus-visible{outline:2px solid #DAA66B;outline-offset:3px}
+.growth-workspace button:active:not(:disabled){transform:translateY(1px)}
+.growth-workspace button:disabled{cursor:not-allowed}
+@media(min-width:2200px){.growth-panel{padding:28px 32px}.growth-chart svg{height:340px}.growth-orbit{min-height:340px;grid-template-columns:repeat(3,minmax(0,1fr))}.growth-orbit-hub{grid-column:1/-1}.growth-kpi dd{font-size:38px}.growth-workspace td{padding-block:16px}.growth-chart{min-height:340px}}
+@media(max-width:1350px){.growth-panorama{grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr)}.growth-performance{grid-column:1/-1}.growth-evidence{grid-template-columns:minmax(0,1.7fr) minmax(260px,1fr)}.growth-kpi{padding:16px}.growth-kpi dd{font-size:28px}}
+@media(max-width:950px){.growth-panorama,.growth-evidence{grid-template-columns:1fr}.growth-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.growth-performance{grid-column:auto}.growth-panel{padding:20px}.growth-orbit{grid-template-columns:repeat(3,minmax(0,1fr));min-height:180px}}
+@media(max-width:640px){.growth-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.growth-kpi:last-child{grid-column:1/-1}.growth-toolbar-actions{width:100%}.growth-toolbar-actions .btn{flex:1}.growth-filter-row{width:100%}.growth-filter-row label{flex:1;min-width:120px}.growth-filter-row select{min-width:0;width:100%}.growth-panel{padding:20px 16px}.growth-orbit{grid-template-columns:repeat(2,minmax(0,1fr))}.growth-stamps{gap:8px}.growth-panel-head{align-items:start;flex-wrap:wrap}.growth-chart svg{height:230px}}
+@media(prefers-reduced-motion:reduce){.growth-workspace button:active:not(:disabled){transform:none}}

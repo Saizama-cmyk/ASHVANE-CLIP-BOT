@@ -121,6 +121,8 @@ class AccountProfiles:
         """Called before business workers start; legacy stores retain their original paths."""
         p = self.pipeline
         p.scheduler.account_profiles = self
+        p.analytics.account_profiles = self
+        p.analytics.select_profile(self.active_id("clips"))
         p.story_publishing.account_profiles = self
         p.stories.account_profile_id = lambda: self.active_id("stories")
         p.oauth.profile_hold = lambda: self.held_reason("clips", self.active_id("clips"))
@@ -140,6 +142,9 @@ class AccountProfiles:
         self.apply(p.settings)
 
     def apply(self, settings):
+        analytics = getattr(self.pipeline, "analytics", None)
+        if analytics is not None:
+            analytics.select_profile(self.active_id("clips"))
         for business, tokens in (("clips", getattr(self.pipeline, "tokens", None)), ("stories", getattr(self.pipeline, "story_tokens", None))):
             if tokens is not None and not self.error:
                 tokens.path = self._token_path(business, self.active_id(business))

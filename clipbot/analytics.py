@@ -27,8 +27,12 @@ import logging
 import math
 import statistics
 import time
+import re
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+
+import httpx
 
 from .config import AppPaths, Settings, atomic_write
 from .db import Store
@@ -66,7 +70,7 @@ def post_views_at(snaps: list[dict], posted_at: float, age_s: float) -> dict | N
 
 
 def compute_insights(posts: list[dict], metrics: dict[int, list[dict]], settings: Settings,
-                     accounts: dict | None = None) -> Insights:
+                     accounts: dict | None = None, outcomes: dict | None = None) -> Insights:
     a = settings.analytics
     age = a.next_day_h * 3600
     scored = []
@@ -78,12 +82,29 @@ def compute_insights(posts: list[dict], metrics: dict[int, list[dict]], settings
     for p, snap in scored:
         by_platform.setdefault(p["platform"], []).append(snap["views"])
     medians = {k: statistics.median(v) for k, v in by_platform.items() if v}
+    outcomes = outcomes or {}
+    eligible = {p["post_id"]: outcomes[p["post_id"]] for p, _ in scored
+                if p["platform"] == "youtube" and p["post_id"] in outcomes
+                and outcomes[p["post_id"]].get("engaged_views", 0) >= a.outcome_min_engaged_views}
+    retention = [row["average_view_percentage"] for row in eligible.values()]
+    conversions = [(row["subscribers_gained"] + 1) / (row["engaged_views"] + 1) for row in eligible.values()]
+    enough = len(eligible) >= a.min_posts
+    retention_median = statistics.median(retention) if enough else None
+    conversion_median = statistics.median(conversions) if enough else None
     rows = []
     for p, snap in scored:
         ratio = (snap["views"] + 1) / (medians.get(p["platform"], 0) + 1)
+        performance = math.log2(ratio)
+        outcome = eligible.get(p["post_id"])
+        if enough and outcome:
+            watch = math.log2((outcome["average_view_percentage"] + 1) / (retention_median + 1))
+            conversion = (outcome["subscribers_gained"] + 1) / (outcome["engaged_views"] + 1)
+            subscribers = math.log2(conversion / conversion_median)
+            performance += a.retention_weight * max(-1, min(1, watch))
+            performance += a.subscriber_weight * max(-1, min(1, subscribers))
         rows.append({**p, "views": snap["views"], "likes": snap["likes"],
                      "comments": snap["comments"], "shares": snap["shares"],
-                     "perf": math.log2(ratio)})
+                     "perf": performance})
     groups: dict[str, dict] = {}
     for g in GROUPS:
         acc: dict[str, list[float]] = {}
@@ -96,7 +117,7 @@ def compute_insights(posts: list[dict], metrics: dict[int, list[dict]], settings
                          "n": len(v)} for k, v in acc.items()}
     top = sorted(rows, key=lambda r: -r["perf"])
     return Insights(measured=len(rows), groups=groups, medians=medians,
-                    top_posts=[{k: r[k] for k in ("title", "platform", "display_name", "category",
+                    top_posts=[{k: r[k] for k in ("post_id", "title", "platform", "display_name", "category",
                                                   "kind", "views", "likes", "perf", "url")}
                                for r in top[:a.examples * 2]],
                     accounts=accounts or {}, updated=time.time())
@@ -116,10 +137,34 @@ class Analytics:
         self._picks: dict[str, int] = {}
         self._task: asyncio.Task | None = None
         self._file = paths.data / "analytics.json"
+        self.account_profiles = None
+        self.profile_id = "default"
+        self._refresh_lock = asyncio.Lock()
+        self._needs_load = False
+        self.outcome_status = "not_checked"
         self._load()
 
     def apply(self, settings: Settings) -> None:
         self.settings = settings
+
+    def select_profile(self, profile_id: str):
+        if profile_id != "default" and not re.fullmatch(r"[a-f0-9]{32}", profile_id):
+            raise ValueError("Invalid analytics profile")
+        if profile_id == self.profile_id:
+            return
+        self.profile_id = profile_id
+        self._file = self.paths.data / ("analytics.json" if profile_id == "default" else f"analytics-{profile_id}.json")
+        self.insights, self.last_run, self.last_eod_date, self.status, self._picks = Insights(), 0.0, "", {}, {}
+        self.outcome_status, self._needs_load = "not_checked", True
+
+    @asynccontextmanager
+    async def _profile_lease(self):
+        if self.account_profiles is None:
+            yield
+        else:
+            async with self.account_profiles.upload("clips"):
+                self.select_profile(self.account_profiles.active_id("clips"))
+                yield
 
     # ------------------------------------------------------------------ persistence
     def _load(self) -> None:
@@ -131,12 +176,17 @@ class Analytics:
             logger.warning("analytics cache unreadable, starting fresh: %s", exc)
             return
         ins = d.get("insights", {})
+        if d.get("account_profile_id") != self.profile_id:
+            return  # older aggregate caches cannot establish profile ownership
         self.insights = Insights(**{k: ins[k] for k in Insights().to_dict() if k in ins})
         self.last_run = float(d.get("last_run", 0))
         self.last_eod_date = d.get("last_eod_date", "")
+        self.outcome_status = d.get("youtube_outcomes", "not_checked")
 
     def _save(self) -> None:
         atomic_write(self._file, json.dumps({"insights": self.insights.to_dict(),
+                                             "account_profile_id": self.profile_id,
+                                             "youtube_outcomes": self.outcome_status,
                                              "last_run": self.last_run,
                                              "last_eod_date": self.last_eod_date}))
 
@@ -182,11 +232,31 @@ class Analytics:
                 logger.exception("analytics tick failed")
             await asyncio.sleep(self.settings.analytics.tick_s)
 
-    async def tick(self, force: bool = False) -> bool:
+    @staticmethod
+    async def _thread(function, *args):
+        task = asyncio.create_task(asyncio.to_thread(function, *args))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task  # drain profile-owned writes before releasing its lease
+            raise
+
+    async def tick(self, force: bool = False, expected_profile: str = "") -> bool:
+        async with self._refresh_lock:
+            async with self._profile_lease():
+                if expected_profile and expected_profile != self.profile_id:
+                    raise PublishError("Account profile changed before analytics refresh")
+                if self._needs_load:
+                    await self._thread(self._load)
+                    self._needs_load = False
+                return await self._tick(force)
+
+    async def _tick(self, force: bool = False) -> bool:
         now = time.time()
         since = now - self.settings.analytics.lookback_days * DAY_S
-        posts = await asyncio.to_thread(self.store.measurable_posts, since)
-        metrics = await asyncio.to_thread(self.store.metrics_for, [p["post_id"] for p in posts])
+        posts = await self._thread(self.store.measurable_posts, since)
+        posts = [post for post in posts if (post.get("account_profile_id") or "default") == self.profile_id]
+        metrics = await self._thread(self.store.metrics_for, [p["post_id"] for p in posts])
         reason = "manual" if force else self.due(now, posts, metrics)
         if not reason:
             return False
@@ -195,6 +265,7 @@ class Analytics:
 
     async def refresh(self, posts: list[dict], reason: str) -> None:
         now = time.time()
+        posts = [post for post in posts if (post.get("account_profile_id") or "default") == self.profile_id]
         logger.info("analytics refresh (%s): %d post(s)", reason, len(posts))
         accounts: dict[str, dict] = {}
         for name in MEASURABLE:
@@ -207,25 +278,39 @@ class Analytics:
                 for p in mine:
                     m = got.get(p["remote_id"])
                     if m:
-                        await asyncio.to_thread(self.store.record_metrics, p["post_id"], m["views"],
+                        await self._thread(self.store.record_metrics, p["post_id"], m["views"],
                                                 m["likes"], m["comments"], m["shares"], m["saves"])
                 acct = await pub.account()
                 if acct:
                     accounts[name] = acct
-                    await asyncio.to_thread(self.store.record_account, name, acct["followers"],
-                                            acct["total_views"], acct["posts"])
+                    if self.profile_id == "default":
+                        await self._thread(self.store.record_account, name, acct["followers"],
+                                                acct["total_views"], acct["posts"])
+                if name == "youtube" and hasattr(pub, "outcomes"):
+                    try:
+                        report = await asyncio.wait_for(pub.outcomes([p["remote_id"] for p in mine]),
+                                                        self.settings.analytics.youtube_sync_timeout_s)
+                        self.outcome_status = report["status"]
+                        for p in mine:
+                            if p["remote_id"] in report["by_id"]:
+                                await self._thread(self.store.record_outcome, p["post_id"], self.profile_id,
+                                                        report["by_id"][p["remote_id"]])
+                    except (httpx.HTTPError, ValueError, TimeoutError):
+                        self.outcome_status = "report_error"
+                        logger.warning("YouTube watch-outcome report could not complete")
                 self.status[name] = f"ok · {len(got)} post(s) measured"
             except (PublishError, OSError, ValueError, KeyError) as exc:
                 self.status[name] = f"error: {exc}"
                 logger.warning("analytics %s: %s", name, exc)
-        metrics = await asyncio.to_thread(self.store.metrics_for, [p["post_id"] for p in posts])
+        metrics = await self._thread(self.store.metrics_for, [p["post_id"] for p in posts])
+        outcomes = await self._thread(self.store.outcomes_for, [p["post_id"] for p in posts], self.profile_id)
         self.insights = compute_insights(posts, metrics, self.settings,
-                                         accounts or self.insights.accounts)
+                                         accounts or self.insights.accounts, outcomes)
         self.last_run = now
         if reason == "end-of-day" or datetime.fromtimestamp(now).hour >= \
                 self.settings.analytics.end_of_day_hour:
             self.last_eod_date = datetime.fromtimestamp(now).date().isoformat()
-        await asyncio.to_thread(self._save)
+        await self._thread(self._save)
 
     # ------------------------------------------------------------------ steering
     @property
@@ -294,4 +379,5 @@ class Analytics:
 
     def snapshot(self) -> dict:
         return {"enabled": self.settings.analytics.enabled, "steering": self.active,
+                "account_profile_id": self.profile_id, "youtube_outcomes": self.outcome_status,
                 "last_run": self.last_run, "status": self.status, **self.insights.to_dict()}

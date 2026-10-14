@@ -84,8 +84,9 @@ story composer, manuscript and scene controls, private review, final video previ
 publishing controls. `StoryAccounts.js` edits only story credentials, preserves blank secrets, and
 starts OAuth in the PC browser; the returned sign-in link and pasted return URL provide phone recovery.
 Stories Settings edits only the Stories configuration. Clip state/research polling stops in Stories.
-`Portal.js` transitions the live screen through a central black hole when crossing
-between Clips and Stories, with a short opacity transition when reduced motion is enabled.
+`Portal.js` transitions the live screen through an original photon-ring black hole when crossing
+between businesses. Reduced motion switches immediately. The same mark introduces the app once
+at launch; it is a navigation reveal, not a production-progress indicator.
 
 The phone downloads a final story preview with its bearer token into a temporary private cache;
 the token never goes into a media URL. Leaving the preview removes that cache. Production and
@@ -136,3 +137,26 @@ Surge and Hollow Accounts use named profiles with isolated credentials and profi
 Learning loads the active account profile and binds unsaved guidance/feedback to that ID. Save before loading another profile. Social learning continues to use the selected client and style. Tools includes a four-business model/tool checker; stopped businesses are labeled stopped and native REAPER verification remains distinct from executable detection.
 
 `node scripts/verify_phone_profiles.cjs` checks profiles, rejected/busy activation, explicit-ID saves after an external active-profile change, scoped OAuth fixture requests, bound learning, public-only artist links and checker groups alongside the creative transactions. No real sign-in, upload, generation or publication occurs.
+
+### The shared Core
+
+Core is the initial shared destination, with its own bottom navigation entry in every workspace.
+It reads authenticated supervisor status, blockers, agent instructions/tasks, delegated goals,
+tool receipts and job history. Master, run and cancel actions use the native bearer API client.
+Opening Core or switching businesses never starts production. Business runtime controls also show
+reported pending requests and resource-wait reasons when the PC provides those fields.
+
+The interactive constellation uses the PC's public local Three.js renderer. Its WebView/iframe
+receives only bounded, allowlisted roster, delegation and event metadata; session tokens and
+native API actions are never injected. Scene selection opens the native inspector. Reduced motion
+shows a static ring and the full native roster. Connection or graphics failure keeps native
+controls and records available. Core polling stops when leaving, locking or backgrounding the app.
+
+Space Grotesk and IBM Plex Sans are bundled with their OFL licenses under `assets/fonts`. The
+theme follows the shared observatory design. See [phone design and verification](../docs/PHONE_INTERSTELLAR.md).
+
+`npx expo export --platform all --output-dir ../artifacts/phone-interstellar-export --max-workers 2`
+validates web, iOS and Android bundles. `node phone/verify-core.cjs` from the repository root starts
+an ephemeral fixture server and exercises Core at 320px and 390px. The verification also checks
+that unavailable reference metadata cannot crash the Resonance written-direction form. This is
+browser and bundle verification; native release installation and physical-device testing remain separate.

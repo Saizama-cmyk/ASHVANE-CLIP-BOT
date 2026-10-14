@@ -91,7 +91,7 @@ async def _gpu(settings: Settings) -> tuple[str, float]:
 
 
 async def _nvenc_works(settings: Settings) -> bool:
-    ffmpeg = ffmpeg_exe(settings)
+    ffmpeg = await asyncio.to_thread(ffmpeg_exe, settings)
     if not ffmpeg:
         return False
     try:
@@ -107,15 +107,15 @@ async def _net_mbps(http: httpx.AsyncClient, timeout_s: float) -> float | None:
     try:
         t0 = time.perf_counter()
         n = 0
-        async with http.stream("GET", SPEEDTEST_URL.format(n=SPEEDTEST_BYTES),
-                               timeout=timeout_s) as r:
+        async with asyncio.timeout(timeout_s), http.stream("GET", SPEEDTEST_URL.format(n=SPEEDTEST_BYTES),
+                                                          timeout=timeout_s) as r:
             if r.status_code != 200:
                 return None
             async for chunk in r.aiter_bytes():
                 n += len(chunk)
         dt = time.perf_counter() - t0
         return round(n * 8 / dt / 1_000_000, 1) if dt > 0 and n else None
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, TimeoutError) as exc:
         logger.info("speed test skipped: %s", exc)
         return None
 
@@ -125,7 +125,7 @@ async def detect(settings: Settings, paths: AppPaths, http: httpx.AsyncClient,
     gpu_name, vram = await _gpu(settings)
     nvenc = await _nvenc_works(settings) if gpu_name else False
     try:
-        free = shutil.disk_usage(paths.buffer).free / GIB
+        free = (await asyncio.to_thread(shutil.disk_usage, paths.buffer)).free / GIB
     except OSError:
         free = 0.0
     net = await _net_mbps(http, settings.discovery.http_timeout_s * 4) if measure_network else None

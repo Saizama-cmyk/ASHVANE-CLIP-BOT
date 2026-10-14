@@ -2,31 +2,34 @@
  * An original observatory instrument deck: cool hull surfaces, pale instrument lettering,
  * restrained amber controls. Depth comes from tonal steps and rails rather than decoration.
  */
-import React from "react";
+import React, {useState} from "react";
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 export const C = {
-  bg: "#070A10", s1: "#111925", s2: "#182332", s3: "#223142", s4: "#304353",
-  line: "#263747", line2: "#40566B",
-  ink: "#DFE8ED", ink2: "#A7B9C9", ink3: "#98A9BA",
-  ember: "#DAA66B", emberSoft: "rgba(218,166,107,0.12)", emberLine: "rgba(218,166,107,0.46)",
-  good: "#5FCB8E", goodSoft: "rgba(95,203,142,0.13)",
-  bad: "#EC5B52", badSoft: "rgba(236,91,82,0.13)",
-  warn: "#E8B04B",
+  bg: "#05070D", s1: "#0E1523", s2: "#172233", s3: "#202E42", s4: "#273449",
+  line: "#273449", line2: "#485A74",
+  ink: "#F0F4FA", ink2: "#B8C5D7", ink3: "#9FADC2",
+  ember: "#F1BC7A", emberSoft: "rgba(241,188,122,0.10)", emberLine: "rgba(241,188,122,0.46)",
+  good: "#79DCCA", goodSoft: "rgba(121,220,202,0.10)",
+  bad: "#FF8E88", badSoft: "rgba(255,142,136,0.10)",
+  warn: "#F1BC7A",
 };
+export const HEAD = Platform.OS === "web" ? "SpaceGrotesk, system-ui, sans-serif" : "SpaceGrotesk";
+export const BODY = Platform.OS === "web" ? "IBMPlexSans, system-ui, sans-serif" : "IBMPlexSans";
 export const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "ui-monospace, Menlo, monospace" });
-export const GUTTER = 16;
+export const GUTTER = 20;
+export const BUSINESS_COLORS = {clips: C.ember, stories: "#C8AFE7", music: "#79DCCA", social: "#9CBCE8"};
 
 export const t = StyleSheet.create({
-  title: { color: C.ink, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
-  h2: { color: C.ink, fontSize: 17, fontWeight: "600", letterSpacing: -0.1 },
-  body: { color: C.ink, fontSize: 15, lineHeight: 21 },
-  muted: { color: C.ink2, fontSize: 13.5, lineHeight: 19 },
-  faint: { color: C.ink3, fontSize: 12.5, lineHeight: 17 },
-  label: { color: C.ink3, fontSize: 12.5, fontWeight: "600", letterSpacing: 0.2 },
+  title: { color: C.ink, fontFamily: HEAD, fontSize: 28, fontWeight: "600", letterSpacing: -0.7, lineHeight: 34 },
+  h2: { color: C.ink, fontFamily: HEAD, fontSize: 19, fontWeight: "600", letterSpacing: -0.3, lineHeight: 25 },
+  body: { color: C.ink, fontFamily: BODY, fontSize: 15, lineHeight: 22 },
+  muted: { color: C.ink2, fontFamily: BODY, fontSize: 14, lineHeight: 21 },
+  faint: { color: C.ink3, fontFamily: BODY, fontSize: 12, lineHeight: 18 },
+  label: { color: C.ink3, fontFamily: BODY, fontSize: 13, fontWeight: "600", letterSpacing: 0.1 },
   mono: { color: C.ink, fontFamily: MONO, fontSize: 13 },
-  num: { color: C.ink, fontSize: 24, fontWeight: "700", fontVariant: ["tabular-nums"], letterSpacing: -0.5 },
+  num: { color: C.ink, fontFamily: HEAD, fontSize: 30, fontWeight: "500", fontVariant: ["tabular-nums"], letterSpacing: -0.7 },
   error: { color: C.bad, fontSize: 13.5, lineHeight: 19 },
 });
 
@@ -37,7 +40,7 @@ export function Card({ children, style, tone = 1, pad = true }) {
 
 export function Section({ title, right, children, style }) {
   return (
-    <View style={[{ marginBottom: 20 }, style]}>
+    <View style={[{ marginBottom: 28 }, style]}>
       {(title || right) && (
         <View style={st.sectionHead}>
           <Text style={[t.label, { flex: 1 }]}>{title}</Text>
@@ -53,12 +56,13 @@ export function Icon({ name, size = 20, color = C.ink2, style }) {
 
 /** kind: primary (ember), plain (tonal), ghost (text only), danger. */
 export function Button({ label, icon, onPress, kind = "plain", busy, disabled, small, style, grow, accessibilityState }) {
+  const [focused,setFocused] = useState(false);
   const k = BTN[kind] || BTN.plain;
   const ink = disabled || busy ? C.ink2 : k.ink;
   return (
-    <Pressable onPress={onPress} disabled={disabled || busy} accessibilityRole="button" accessibilityLabel={label}
+    <Pressable onPress={onPress} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} disabled={disabled || busy} accessibilityRole="button" accessibilityLabel={label}
       accessibilityState={{ ...accessibilityState, disabled: !!(disabled || busy), busy: !!busy }} style={({ pressed }) => [st.btn, small && st.btnSmall, { backgroundColor: k.bg, borderColor: k.border },
-        grow && { flex: 1 }, (disabled || busy) && { backgroundColor: C.s2, borderColor: C.line2 }, pressed && { opacity: 0.78 }, style]}>
+        grow && { flex: 1 }, (disabled || busy) && { backgroundColor: C.s2, borderColor: C.line2 }, pressed && { opacity: 0.78 }, focused && {borderColor:C.ember}, focused && Platform.OS==="web" && {outlineStyle:"solid",outlineWidth:2,outlineColor:C.ember,outlineOffset:3}, style]}>
       {busy ? <ActivityIndicator color={ink} size="small" /> : (
         <>
           {!!icon && <Icon name={icon} size={small ? 16 : 18} color={ink} />}
@@ -70,13 +74,14 @@ const BTN = {
   primary: { bg: C.ember, border: C.ember, ink: "#1A0D06" },
   plain: { bg: C.s3, border: C.line, ink: C.ink },
   ghost: { bg: "transparent", border: "transparent", ink: C.ink2 },
-  danger: { bg: C.badSoft, border: "rgba(236,91,82,0.35)", ink: C.bad },
+  danger: { bg: C.badSoft, border: "rgba(255,142,136,0.35)", ink: C.bad },
 };
 
 export function IconButton({ icon, onPress, label, color = C.ink2, size = 20, style, disabled }) {
+  const [focused,setFocused] = useState(false);
   return (
-    <Pressable onPress={onPress} disabled={disabled} hitSlop={10} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }}
-      style={({ pressed }) => [st.iconBtn, pressed && { backgroundColor: C.s3 }, disabled && { opacity: 0.35 }, style]}>
+    <Pressable onPress={onPress} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} disabled={disabled} hitSlop={10} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }}
+      style={({ pressed }) => [st.iconBtn, (pressed || focused) && { backgroundColor: C.s3 }, focused && Platform.OS==="web" && {outlineStyle:"solid",outlineWidth:2,outlineColor:C.ember,outlineOffset:2}, disabled && { opacity: 0.35 }, style]}>
       <Icon name={icon} size={size} color={color} />
     </Pressable>);
 }
@@ -89,7 +94,7 @@ export function Segmented({ options, value, onChange, style }) {
         const on = key === value;
         return (
           <Pressable key={key} onPress={() => onChange(key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
-            style={[st.segItem, on && st.segOn]}>
+            style={({ pressed }) => [st.segItem, on && st.segOn, pressed && {backgroundColor: C.s3}]}>
             <Text style={[st.segText, on && { color: C.ink }]} numberOfLines={1}>{label}</Text>
           </Pressable>);
       })}
@@ -108,17 +113,18 @@ export function Pill({ label, tone = "plain", icon }) {
 const PILL = {
   plain: { bg: C.s3, border: C.line, ink: C.ink2 },
   live: { bg: C.emberSoft, border: C.emberLine, ink: C.ember },
-  good: { bg: C.goodSoft, border: "rgba(95,203,142,0.35)", ink: C.good },
-  bad: { bg: C.badSoft, border: "rgba(236,91,82,0.35)", ink: C.bad },
+  good: { bg: C.goodSoft, border: "rgba(121,220,202,0.35)", ink: C.good },
+  bad: { bg: C.badSoft, border: "rgba(255,142,136,0.35)", ink: C.bad },
 };
 
 export function Field({ label, style, inputStyle, mono, ...props }) {
+  const [focused,setFocused] = useState(false);
   return (
     <View style={style}>
       {!!label && <Text style={[t.label, { marginBottom: 6 }]}>{label}</Text>}
       <TextInput placeholderTextColor={C.ink3} selectionColor={C.ember} cursorColor={C.ember}
-        style={[st.input, mono && { fontFamily: MONO, fontSize: 14 }, props.multiline && { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }, inputStyle]}
-        {...props} accessibilityLabel={props.accessibilityLabel || label} />
+        style={[st.input, mono && { fontFamily: MONO, fontSize: 14 }, props.multiline && { minHeight: 88, paddingTop: 12, textAlignVertical: "top" }, focused && {borderColor:C.ember}, inputStyle]}
+        {...props} onFocus={event=>{setFocused(true);props.onFocus?.(event);}} onBlur={event=>{setFocused(false);props.onBlur?.(event);}} accessibilityLabel={props.accessibilityLabel || label} />
     </View>);
 }
 
@@ -163,23 +169,23 @@ export const chatStyles = StyleSheet.create({
 });
 
 const st = StyleSheet.create({
-  card: { borderRadius: 8, borderWidth: 1, borderColor: C.line, overflow: "hidden" },
-  cardPad: { padding: 16 },
-  sectionHead: { flexDirection: "row", alignItems: "center", marginBottom: 8, paddingHorizontal: 4, minHeight: 22 },
+  card: { borderRadius: 14, overflow: "hidden" },
+  cardPad: { padding: 20 },
+  sectionHead: { flexDirection: "row", alignItems: "center", marginBottom: 10, paddingHorizontal: 0, minHeight: 22 },
   btn: { minHeight: 48, borderRadius: 8, paddingHorizontal: 18, flexDirection: "row", gap: 8,
     alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  btnSmall: { minHeight: 44, paddingHorizontal: 12, borderRadius: 10 },
-  btnText: { fontSize: 15.5, fontWeight: "600" },
+  btnSmall: { minHeight: 44, paddingHorizontal: 14, borderRadius: 8 },
+  btnText: { fontFamily: BODY, fontSize: 15, fontWeight: "600" },
   iconBtn: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  seg: { flexDirection: "row", backgroundColor: C.s1, borderRadius: 12, padding: 3, borderWidth: 1, borderColor: C.line },
-  segItem: { flex: 1, minHeight: 44, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  seg: { flexDirection: "row", backgroundColor: C.s1, borderRadius: 8, padding: 3 },
+  segItem: { flex: 1, minHeight: 44, borderRadius: 6, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   segOn: { backgroundColor: C.s3 },
-  segText: { color: C.ink3, fontSize: 13.5, fontWeight: "600" },
+  segText: { color: C.ink3, fontFamily: BODY, fontSize: 13.5, fontWeight: "600" },
   pill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, height: 26, borderRadius: 13, borderWidth: 1 },
   pillDot: { width: 6, height: 6, borderRadius: 3 },
-  pillText: { fontSize: 12.5, fontWeight: "600" },
+  pillText: { fontFamily: BODY, fontSize: 12, fontWeight: "600" },
   input: { minHeight: 48, borderRadius: 8, paddingHorizontal: 14, backgroundColor: C.s2, color: C.ink,
-    fontSize: 16, borderWidth: 1, borderColor: C.line },
+    fontFamily: BODY, fontSize: 16, borderWidth: 1, borderColor: C.line },
   divider: { height: 1, backgroundColor: C.line },
   empty: { alignItems: "center", paddingVertical: 28, paddingHorizontal: 20 },
   emptyIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: C.s2, alignItems: "center",

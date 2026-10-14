@@ -7,6 +7,7 @@ import io
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -14,14 +15,21 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 from .config import Settings, ffmpeg_exe, ffprobe_exe, is_frozen, resolve_paths
 from .story_art import scene_layers
+from .story_comfy import ComfyStoryImages, decode_illustration
+from .story_motion import ComfyStoryMotion, WAN_TEMPORAL_STRIDE, WAN_SEED_SPACE
 from .story_voice import spoken_text, validate_spoken_text
 from .util import ERR_SNIPPET, run_cmd
 
 logger = logging.getLogger("clipbot.story_render")
+
+
+def image_backend(cfg) -> str:
+    # Preserve an operator's existing local illustration endpoint on upgrade.
+    return "automatic1111" if cfg.image_backend == "shadow_theatre" and cfg.image_provider_url else cfg.image_backend
 
 _VOICES_PS = """$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Speech;
 $s=New-Object System.Speech.Synthesis.SpeechSynthesizer;
@@ -118,6 +126,8 @@ class StoryRenderer:
         self._refresh_task: asyncio.Task | None = None
         self.progress = None
         self.powershell = shutil.which("powershell.exe") if os.name == "nt" else None
+        from .story_visual_service import StoryVisualService
+        self.visual_service = StoryVisualService()
 
     def apply(self, settings: Settings) -> None:
         old = self.settings.stories
@@ -135,6 +145,7 @@ class StoryRenderer:
             self._refresh_task.cancel()
             await asyncio.gather(self._refresh_task, return_exceptions=True)
             self._refresh_task = None
+        await self.visual_service.stop(self.settings)
 
     def _kokoro_paths(self, cfg):
         return (Path(cfg.kokoro_model_path) if cfg.kokoro_model_path else self.models_dir / "stories" / "kokoro.onnx",
@@ -172,6 +183,7 @@ class StoryRenderer:
     @property
     def capabilities(self) -> dict:
         cfg = self.settings.stories
+        backend = image_backend(cfg)
         reasons = []
         narrator = bool(self.voices) if cfg.narrator_backend == "windows" else (bool(self.neural_voices) if cfg.narrator_backend == "kokoro_local" else bool(cfg.speech_url))
         if not narrator:
@@ -183,10 +195,10 @@ class StoryRenderer:
         return {"narrator_available": narrator, "still_available": video, "animated_available": video,
                 "render_available": narrator and video, "voices": voices, "reasons": reasons,
                 "narrator_label": "Windows offline narration" if cfg.narrator_backend == "windows" else ("Kokoro local neural narration" if cfg.narrator_backend == "kokoro_local" else "Local speech server (connection checked on render)"),
-                "visual_provider": {"id": "local_image" if cfg.image_provider_url else "shadow_theatre",
-                                    "label": "Local AI illustrations with camera movement" if cfg.image_provider_url else "Original illustrated shadow theatre",
+                "visual_provider": {"id": backend, "generated_motion": backend == "comfyui" and cfg.motion_backend == "wan",
+                                    "label": "Cinematic illustrations / generated Wan animation" if backend == "comfyui" and cfg.motion_backend == "wan" else ("Cinematic AI illustrations with camera movement" if backend != "shadow_theatre" else "Original illustrated shadow theatre"),
                                     "available": video,
-                                    "limitation": "Camera/layer animation; no generated character acting. Review the finished video before publishing."}}
+                                    "limitation": "Generated scene motion can contain artifacts; review before publishing. Local animation takes longer than still illustrations." if backend == "comfyui" and cfg.motion_backend == "wan" else "Camera/layer animation; no generated character acting. Review the finished video before publishing."}}
 
     async def _command(self, args: list[str], settings: Settings, cwd: Path | None = None):
         result = await run_cmd(args, settings.stories.render_timeout_s, str(cwd) if cwd else None,
@@ -251,39 +263,63 @@ class StoryRenderer:
                     raise ValueError("Local generated media exceeds the configured response limit")
         return bytes(output)
 
-    async def _illustrate(self, scene: dict, folder: Path, width: int, height: int, settings: Settings) -> dict:
+    async def _illustrate(self, scene: dict, folder: Path, width: int, height: int, settings: Settings,
+                          reference_path: Path | None = None) -> dict:
         cfg = settings.stories
         supplied = scene.get("asset_path")
-        # A complete illustration already contains its subjects; generic paper
-        # people pasted over it can contradict the narrated scene.
-        art_scene = {**scene, "visual": {**(scene.get("visual") or {}), "subject": "none"}} if supplied or cfg.image_provider_url else scene
-        layers = await asyncio.to_thread(scene_layers, art_scene, folder, width, height)
+        backend = image_backend(cfg)
+        if not supplied and backend == "shadow_theatre":
+            return await asyncio.to_thread(scene_layers, scene, folder, width, height)
+        # Complete illustrations are rendered directly: no procedural character
+        # or fog is composited over the generated scene.
+        folder.mkdir(parents=True, exist_ok=True)
+        layers = {"background": folder / "background.png", "full_frame": True}
         if supplied:
             source = Path(supplied).resolve(strict=True)
             project_folder = folder.parent.resolve(strict=True)
             if not source.is_relative_to(project_folder) or not source.is_file():
                 raise ValueError("Story scene artwork must remain inside this project")
             def use_image():
-                from PIL import ImageOps
-                with Image.open(source) as image:
-                    ImageOps.fit(image.convert("RGB"), (width, height), method=Image.Resampling.LANCZOS).save(layers["background"])
+                if source.stat().st_size > cfg.generated_media_max_mb * 1024 * 1024:
+                    raise ValueError("Story artwork exceeds the configured media limit")
+                image = decode_illustration(source.read_bytes(), cfg.illustration_max_pixels)
+                ImageOps.fit(image, (width, height), method=Image.Resampling.LANCZOS).save(layers["background"])
             await asyncio.to_thread(use_image)
-        elif cfg.image_provider_url:
+        elif backend == "comfyui":
+            await self.visual_service.ensure(settings, self.http)
+            async with self.gpu_lock:
+                metadata = await ComfyStoryImages(self.http, local_service_url(cfg.comfy_url), cfg).generate(
+                    cfg.visual_style_prompt + "\n\nCurrent shot: " + scene["visual_prompt"], width, height,
+                    layers["background"], reference_path)
+            (folder / "illustration.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        else:
+            if not cfg.image_provider_url:
+                raise ValueError("The selected AUTOMATIC1111 image engine needs a local server URL")
             async with self.gpu_lock:
                 raw_response = await self._local_request(local_service_url(cfg.image_provider_url) + "/sdapi/v1/txt2img",
-                    {"prompt": scene["visual_prompt"], "width": width, "height": height,
+                    {"prompt": cfg.visual_style_prompt + "\n\nCurrent shot: " + scene["visual_prompt"], "width": width, "height": height,
                      "steps": cfg.image_steps, "batch_size": 1}, settings)
             images = json.loads(raw_response).get("images", [])
             if not images or not isinstance(images[0], str):
                 raise ValueError("Local illustration server returned no image")
             def save_image():
                 raw = base64.b64decode(images[0].split(",")[-1], validate=True)
-                with Image.open(io.BytesIO(raw)) as image:
-                    image.convert("RGB").resize((width, height), Image.Resampling.LANCZOS).save(layers["background"])
+                image = decode_illustration(raw, cfg.illustration_max_pixels)
+                ImageOps.fit(image, (width, height), method=Image.Resampling.LANCZOS).save(layers["background"])
             await asyncio.to_thread(save_image)
         return layers
 
     async def __call__(self, project: dict, folder: Path, settings: Settings) -> dict:
+        try:
+            return await self._produce(project, folder, settings)
+        finally:
+            if image_backend(settings.stories) == "comfyui":
+                # Only an owned child is stopped; a borrowed ComfyUI is never
+                # globally unloaded or interrupted. Release VRAM for the next
+                # local writing/review role, including cancelled/failed renders.
+                await self.visual_service.stop(settings)
+
+    async def _produce(self, project: dict, folder: Path, settings: Settings) -> dict:
         cfg = settings.stories
         ffmpeg = ffmpeg_exe(settings)
         if not ffmpeg or not ffprobe_exe(settings):
@@ -294,15 +330,33 @@ class StoryRenderer:
         if self.progress:
             self.progress(project["id"], "narrating", 0)
         audio_paths = await self._narrate(project, folder, settings)
+        native_motion = project["format"] == "animated" and cfg.motion_backend == "wan"
+        if native_motion and image_backend(cfg) != "comfyui":
+            raise ValueError("Wan animation requires Hollow's ComfyUI image engine")
         parts = []
         measured_captions = True
+        previous_image, previous_setting = None, None
+        artwork = []
+        # Finish illustration first so video generation loads its models once,
+        # rather than swapping two large diffusion engines for every shot.
         for index, (scene, audio) in enumerate(zip(project["scenes"], audio_paths)):
             if self.progress:
-                self.progress(project["id"], "rendering", index / len(audio_paths))
+                self.progress(project["id"], "rendering", index / (2 * len(audio_paths)))
+            setting = (scene.get("visual") or {}).get("setting")
+            reference = previous_image if cfg.comfy_continuity and setting and setting == previous_setting else None
+            layers = await self._illustrate(scene, folder / f"scene-{index}", width, height, settings, reference)
+            previous_image, previous_setting = layers["background"], setting
+            artwork.append(layers)
+        if native_motion:
+            # Owned process only: release image weights and RAM before video weights.
+            await self.visual_service.stop(settings)
+        for index, (scene, audio, layers) in enumerate(zip(project["scenes"], audio_paths, artwork)):
+            if self.progress:
+                self.progress(project["id"], "rendering", (1 + index / len(audio_paths)) / 2)
             spoken_duration, _ = await self._duration(audio, settings)
             duration = spoken_duration + cfg.narration_gap_s
-            layers = await self._illustrate(scene, folder / f"scene-{index}", width, height, settings)
             scene_folder = layers["background"].parent
+            motion_video = await self._animate(scene, layers["background"], duration, width, height, settings) if native_motion else None
             font_size = cfg.caption_font_size / (2 if landscape else 1)
             timing_path = audio.with_suffix(".timings.json")
             timings = json.loads(timing_path.read_text(encoding="utf-8")).get("segments") if cfg.narrator_backend == "kokoro_local" and timing_path.is_file() else None
@@ -328,15 +382,22 @@ class StoryRenderer:
             fog_x = f"-{motion}*t/{duration:.6f}" if animated else "0"
             camera = (f"[0:v]zoompan=z='1+{cfg.scene_motion}*on/{max(1, round(duration * cfg.fps))}':"
                       f"x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s={width}x{height}:fps={cfg.fps}[background];") if animated else "[0:v]null[background];"
-            filters = camera + character + f"[background][character]overlay=x='{x}':y='{y}':eval=frame[stage];[stage][2:v]overlay=x='{fog_x}':y=0:eval=frame"
+            full_frame = layers.get("full_frame", False)
+            if motion_video:
+                camera = f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={cfg.fps}[background];"
+            filters = camera + "[background]null" if full_frame else camera + character + f"[background][character]overlay=x='{x}':y='{y}':eval=frame[stage];[stage][2:v]overlay=x='{fog_x}':y=0:eval=frame"
             if cfg.captions:
                 filters += ",ass=narration.ass"
             filters += "[video]"
             out = scene_folder / "scene.mp4"
             args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y"]
-            for name in ("background", "figure", "fog"):
-                args += ["-loop", "1", "-framerate", str(cfg.fps), "-i", str(layers[name])]
-            args += ["-i", str(audio), "-filter_complex", filters, "-map", "[video]", "-map", "3:a:0",
+            visual_inputs = ("background",) if full_frame else ("background", "figure", "fog")
+            if motion_video:
+                args += ["-i", str(motion_video)]
+            else:
+                for name in visual_inputs:
+                    args += ["-loop", "1", "-framerate", str(cfg.fps), "-i", str(layers[name])]
+            args += ["-i", str(audio), "-filter_complex", filters, "-map", "[video]", "-map", f"{len(visual_inputs)}:a:0",
                      "-af", f"loudnorm=I={cfg.narration_lufs}:TP={cfg.narration_peak_db}:LRA={cfg.narration_lra},apad=pad_dur={cfg.narration_gap_s}", "-t", str(duration),
                      "-c:v", "libx264", "-preset", settings.edit.preset, "-crf", str(cfg.crf),
                      "-pix_fmt", "yuv420p", "-r", str(cfg.fps), "-c:a", "aac", "-b:a", cfg.audio_bitrate, "-ar", str(settings.edit.audio_sample_rate),
@@ -357,7 +418,40 @@ class StoryRenderer:
             raise ValueError("Finished story must contain both video and narration")
         return {"video_path": str(video), "audio_path": str(narration), "duration_s": duration,
                 "width": width, "height": height, "fps": cfg.fps,
-                "visual_mode": "Animated shadow theatre" if project["format"] == "animated" else "Illustrated stills",
+                "visual_mode": "Generated scene animation (Wan)" if native_motion else (("Cinematic AI illustrations with camera movement" if project["format"] == "animated" else "Cinematic AI illustrations") if image_backend(cfg) != "shadow_theatre" else ("Animated shadow theatre" if project["format"] == "animated" else "Illustrated stills")),
                 "narrator": project.get("voice") or cfg.voice or (self.neural_voices[0]["id"] if cfg.narrator_backend == "kokoro_local" and self.neural_voices else cfg.narrator_backend),
                 "warnings": (["Sentence caption boundaries follow synthesized audio; individual word timing is estimated." if measured_captions else "Subtitle timing is estimated within each measured scene reading."] if cfg.captions else [])
-                            + (["Procedural shadow theatre uses a limited set of drawn settings and moving layers; it does not generate character acting or depict every described event."] if not cfg.image_provider_url and not all(scene.get("asset_path") for scene in project["scenes"]) else ["Illustrations use camera motion, not generated character animation."])}
+                            + (["Generated motion can introduce visual artifacts; review the finished video before publishing."] if native_motion else (["Procedural shadow theatre uses a limited set of drawn settings and moving layers; it does not generate character acting or depict every described event."] if image_backend(cfg) == "shadow_theatre" and not all(scene.get("asset_path") for scene in project["scenes"]) else ["Illustrations use camera motion, not generated character animation."]))}
+
+    async def _animate(self, scene, image, duration, width, height, settings):
+        cfg, folder = settings.stories, image.parent
+        segment_frames = 1 + WAN_TEMPORAL_STRIDE * ((cfg.wan_max_frames - 1) // WAN_TEMPORAL_STRIDE)
+        count = math.ceil(duration / ((segment_frames - 1) / cfg.fps))
+        if count > cfg.wan_max_segments:
+            raise ValueError("This scene exceeds Hollow's animation budget; split its narration into shorter scenes")
+        await self.visual_service.ensure(settings, self.http)
+        prompt = cfg.motion_style_prompt + "\nShot: " + scene["visual_prompt"] + "\nSpoken event: " + scene["narration"]
+        records, reference = [], image
+        async with self.gpu_lock:
+            generator = ComfyStoryMotion(self.http, cfg.comfy_url, cfg)
+            for index in range(count):
+                segment = folder / f"motion-{index}.mp4"
+                record = await generator.generate_motion(prompt, reference, width, height, duration/count, segment,
+                                                          seed=(cfg.comfy_seed + index) % WAN_SEED_SPACE)
+                measured, probe = await self._duration(segment, settings)
+                videos = [s for s in probe.get("streams", []) if s.get("codec_type") == "video"]
+                if not videos or measured < duration/count:
+                    raise ValueError("Generated motion has no usable video or is shorter than its narrated segment")
+                records.append(record)
+                if index + 1 < count:
+                    reference = folder / f"motion-last-{index}.png"
+                    await self._command([ffmpeg_exe(settings), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+                                         "-sseof", str(-1/cfg.fps), "-i", str(segment), "-frames:v", "1", str(reference)], settings)
+        (folder / "motion.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
+        if count == 1:
+            return folder / "motion-0.mp4"
+        listing = folder / "motion.txt"
+        listing.write_text("\n".join(f"file 'motion-{index}.mp4'" for index in range(count)), encoding="utf-8")
+        output = folder / "motion.mp4"
+        await self._command([ffmpeg_exe(settings), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-f", "concat", "-safe", "1", "-i", str(listing), "-c", "copy", str(output)], settings)
+        return output

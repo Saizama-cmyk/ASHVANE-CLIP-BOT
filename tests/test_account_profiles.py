@@ -29,6 +29,7 @@ def context(tmp_path, http):
     pipeline.story_oauth = OAuthManager(settings, http, pipeline.story_tokens, account_section="story_accounts", callback_scope="stories")
     pipeline.publishers = build_publishers(settings, http, pipeline.tokens, pipeline.oauth)
     pipeline.scheduler = SimpleNamespace(apply=lambda s: None)
+    pipeline.analytics = SimpleNamespace(select_profile=lambda _: None)
     pipeline.stories = SimpleNamespace(busy=False)
     pipeline.story_publishing = SimpleNamespace(_tick_lock=asyncio.Lock(), apply=lambda s: None,
                                                _destination=lambda name: {"ready": False, "account_id": "", "account_label": "", "reason": "Not connected"})

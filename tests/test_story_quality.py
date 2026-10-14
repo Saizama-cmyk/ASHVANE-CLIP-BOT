@@ -67,8 +67,8 @@ def test_supplied_complete_artwork_is_used_without_an_unrelated_character(tmp_pa
     layers = asyncio.run(renderer._illustrate(scene, tmp_path / "scene-0", 256, 256, Settings()))
     with Image.open(layers["background"]) as img:
         assert img.getpixel((128, 128)) == (180, 20, 40)
-    with Image.open(layers["figure"]) as img:
-        assert img.getchannel("A").getbbox() is None
+    assert layers["full_frame"] is True
+    assert "figure" not in layers and "fog" not in layers
     outside = tmp_path.parent / "outside.png"
     Image.new("RGB", (32, 32)).save(outside)
     with pytest.raises(ValueError, match="inside this project"):

@@ -4,7 +4,7 @@ import { C } from "./theme";
 
 // A single spatial transition when crossing between businesses. It animates the live shell,
 // including its header and tabs. No screenshots, persistent animation loop or hidden content.
-const businessFor = tab => ["tools", "chat", "code"].includes(tab) ? null : tab === "stories" || tab.startsWith("story-") ? "stories" : tab === "music" || tab.startsWith("music-") ? "music" : tab === "social" || tab.startsWith("social-") ? "social" : "clips";
+const businessFor = tab => ["core", "tools", "chat", "code"].includes(tab) ? null : tab === "stories" || tab.startsWith("story-") ? "stories" : tab === "music" || tab.startsWith("music-") ? "music" : tab === "social" || tab.startsWith("social-") ? "social" : "clips";
 
 export function usePortal(initial = "desk") {
   const [tab, setTab] = useState(initial);
@@ -28,7 +28,7 @@ export function usePortal(initial = "desk") {
   const navigate = useCallback(next => {
     destination.current = next;
     if (running.current || next === current.current) return;
-    if (!businessFor(next) || !businessFor(current.current) || businessFor(next) === businessFor(current.current)) { current.current = next; setTab(next); return; }
+    if (reduced || !businessFor(next) || !businessFor(current.current) || businessFor(next) === businessFor(current.current)) { current.current = next; setTab(next); return; }
     running.current = true; setCrossing(true);
     const out = Animated.timing(amount, { toValue: 1, duration: reduced ? 90 : 500, easing: Easing.out(Easing.cubic), useNativeDriver: true });
     animation.current = out;
@@ -59,13 +59,19 @@ export function PortalOverlay({ portal }) {
   if (!portal.crossing || portal.reduced) return null;
   return <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants" style={styles.overlay}>
     <Animated.View style={{ opacity: portal.amount, transform: [{ scale: portal.amount.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.3] }) }] }}>
-      <View style={styles.halo} /><View style={styles.orbit} /><View style={styles.horizon} />
+      <GravityMark size={250} />
     </Animated.View>
+  </View>;
+}
+/** Original photon-ring mark; static outside the bounded portal/launch reveal. */
+export function GravityMark({size = 160}) {
+  return <View accessible={false} style={{width: size, height: size, alignItems: "center", justifyContent: "center"}}>
+    <View style={{position: "absolute", width: size * .78, height: size * .78, borderRadius: size, borderWidth: 1, borderColor: C.line2, backgroundColor: C.bg}} />
+    {[1, .94, .86].map((scale, index) => <View key={scale} style={{position: "absolute", width: size * scale, height: size * .32 * scale, borderRadius: size, borderWidth: index === 1 ? 3 : 1, borderColor: index === 1 ? C.ember : "rgba(241,188,122,.27)", transform: [{rotate: "-23deg"}]}} />)}
+    <View style={{width: size * .48, height: size * .48, borderRadius: size, backgroundColor: C.bg, borderWidth: 2, borderColor: C.ember}} />
+    <View style={{position: "absolute", width: size * .7, height: size * .13, borderBottomWidth: 2, borderColor: C.ink, borderRadius: size, transform: [{rotate: "-23deg"}]}} />
   </View>;
 }
 const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
-  halo: { width: 220, height: 220, borderRadius: 110, borderWidth: 1, borderColor: "#40566B", backgroundColor: "#070A10" },
-  orbit: { position: "absolute", width: 284, height: 64, top: 78, left: -32, borderRadius: 142, borderWidth: 3, borderColor: C.ember, transform: [{ rotate: "-24deg" }] },
-  horizon: { position: "absolute", width: 156, height: 156, top: 32, left: 32, borderRadius: 78, backgroundColor: "#000000", borderWidth: 2, borderColor: "#DFE8ED" },
 });

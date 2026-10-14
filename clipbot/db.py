@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS post_metrics (
     comments INTEGER NOT NULL DEFAULT 0, shares INTEGER NOT NULL DEFAULT 0,
     saves INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS ix_metrics_post ON post_metrics(post_id, captured_at);
+CREATE TABLE IF NOT EXISTS post_outcomes (
+    post_id INTEGER NOT NULL, account_profile_id TEXT NOT NULL, captured_at REAL NOT NULL,
+    json TEXT NOT NULL, PRIMARY KEY(post_id, account_profile_id));
+CREATE TABLE IF NOT EXISTS clip_corrections (
+    candidate_id TEXT NOT NULL, profile_id TEXT NOT NULL, source_group TEXT NOT NULL,
+    split TEXT NOT NULL, label TEXT NOT NULL, note TEXT NOT NULL, preview_s REAL,
+    created_at REAL NOT NULL, updated_at REAL NOT NULL, evidence TEXT NOT NULL,
+    PRIMARY KEY(candidate_id, profile_id));
 CREATE TABLE IF NOT EXISTS account_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT, platform TEXT NOT NULL, captured_at REAL NOT NULL,
     followers INTEGER NOT NULL DEFAULT 0, total_views INTEGER NOT NULL DEFAULT 0,
@@ -249,6 +257,7 @@ class Store:
             out.append({"post_id": r["id"], "candidate_id": r["candidate_id"],
                         "platform": r["platform"], "remote_id": r["remote_id"], "url": r["url"],
                         "posted_at": r["posted_at"], "streamer": tgt["login"].lower(),
+                        "account_profile_id": cand.get("source", {}).get("account_profile_id", "default"),
                         "display_name": tgt.get("display_name", tgt["login"]),
                         "source": tgt["platform"], "category": tgt.get("category", ""),
                         "kind": ev.get("kind", ""), "score": cand.get("verdict", {}).get("score", 0),
@@ -275,6 +284,53 @@ class Store:
         for r in rows:
             out.setdefault(r["post_id"], []).append(dict(r))
         return out
+
+    def record_outcome(self, post_id: int, profile_id: str, outcome: dict) -> None:
+        with self._lock, self._conn:
+            self._conn.execute("INSERT INTO post_outcomes(post_id,account_profile_id,captured_at,json) "
+                "VALUES(?,?,?,?) ON CONFLICT(post_id,account_profile_id) DO UPDATE SET "
+                "captured_at=excluded.captured_at,json=excluded.json",
+                (post_id, profile_id, time.time(), json.dumps(outcome, allow_nan=False)))
+
+    def outcomes_for(self, post_ids: list[int], profile_id: str) -> dict[int, dict]:
+        if not post_ids:
+            return {}
+        marks = ",".join("?" for _ in post_ids)
+        with self._lock:
+            rows = self._conn.execute(f"SELECT * FROM post_outcomes WHERE account_profile_id=? AND post_id IN ({marks})",
+                                      (profile_id, *post_ids)).fetchall()
+        return {row["post_id"]: {**json.loads(row["json"]), "captured_at": row["captured_at"]} for row in rows}
+
+    def save_correction(self, record: dict, limit: int) -> dict:
+        with self._lock, self._conn:
+            existing = self._conn.execute("SELECT 1 FROM clip_corrections WHERE candidate_id=? AND profile_id=?",
+                                          (record["candidate_id"], record["profile_id"])).fetchone()
+            if not existing and self._conn.execute("SELECT COUNT(*) FROM clip_corrections").fetchone()[0] >= limit:
+                raise ValueError("Clip correction storage is full; existing corrections have been preserved")
+            evidence = record["evidence"]
+            related = self._conn.execute("SELECT split,source_group FROM clip_corrections WHERE profile_id=? AND "
+                "(source_group=? OR (json_extract(evidence,'$.source_key')=? AND "
+                "json_extract(evidence,'$.start_wall')<? AND json_extract(evidence,'$.end_wall')>?))",
+                (record["profile_id"], record["source_group"], evidence["source_key"], evidence["end_wall"], evidence["start_wall"])).fetchall()
+            splits = {row["split"] for row in related}
+            split = "quarantine" if len(splits) > 1 else next(iter(splits)) if splits else record["split"]
+            source_group = related[0]["source_group"] if related else record["source_group"]
+            self._conn.execute("INSERT INTO clip_corrections VALUES(?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(candidate_id,profile_id) DO UPDATE SET label=excluded.label,note=excluded.note,"
+                "preview_s=excluded.preview_s,updated_at=excluded.updated_at",
+                (record["candidate_id"], record["profile_id"], source_group, split,
+                 record["label"], record["note"], record["preview_s"], record["created_at"], record["updated_at"],
+                 json.dumps(record["evidence"], allow_nan=False)))
+            row = dict(self._conn.execute("SELECT * FROM clip_corrections WHERE candidate_id=? AND profile_id=?",
+                                          (record["candidate_id"], record["profile_id"])).fetchone())
+        row["evidence"] = json.loads(row["evidence"])
+        return row
+
+    def corrections_for(self, profile_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM clip_corrections WHERE profile_id=? ORDER BY updated_at DESC",
+                                      (profile_id,)).fetchall()
+        return [{**dict(row), "evidence": json.loads(row["evidence"])} for row in rows]
 
     def record_account(self, platform: str, followers: int, total_views: int, posts: int,
                        when: float | None = None) -> None:

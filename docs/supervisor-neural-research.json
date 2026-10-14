@@ -1,0 +1,34 @@
+{
+  "question": "Can a local, bounded WebGL scene depict Ashvane's actual supervisor architecture with glowing neuronal geometry and an accessible fallback?",
+  "claims": [
+    {
+      "id": "C1",
+      "statement": "Three.js WebGLRenderer provides a WebGL2 renderer with explicit GPU-resource disposal; use locally bundled code and dispose owned resources.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [{"url": "https://threejs.org/docs/pages/WebGLRenderer.html", "origin": "threejs-official-docs", "kind": "primary"}]
+    },
+    {
+      "id": "C2",
+      "statement": "BufferGeometry supports mesh, line and point attributes in buffers; this is suitable for batching structural filaments and neurons rather than separate DOM effects.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [{"url": "https://threejs.org/docs/pages/BufferGeometry.html", "origin": "threejs-official-docs", "kind": "primary"}]
+    },
+    {
+      "id": "C3",
+      "statement": "WebGL best practices support limiting rendering work and explicitly releasing resources; the chosen frame and resolution caps are implementation decisions, not measured performance guarantees.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [{"url": "https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices", "origin": "mozilla-webgl-documentation", "kind": "primary"}]
+    },
+    {
+      "id": "C4",
+      "statement": "The prefers-reduced-motion media feature exposes the user's motion preference; use a static view with readable activity records when requested.",
+      "numeric": false,
+      "unverified": false,
+      "sources": [{"url": "https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion", "origin": "mozilla-css-documentation", "kind": "primary"}]
+    }
+  ],
+  "limits": "Each API claim is supported by its own maintainer's documentation, a single primary origin. No comparative performance benchmark, browser rendering inspection, or claim of biological cognition is made. Actual supervisor topology is derived from local source and ledger fields, not from JARVIS concept articles. No Qwen fetch connector was available; primary pages were read with the built-in web tool. Graphics implementation was delegated independently of parent-owned business controls."
+}

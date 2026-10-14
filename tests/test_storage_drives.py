@@ -4,6 +4,8 @@ The drives listed on the Storage page are a pool. One of them being unplugged, f
 gone is normal - a USB stick gets pulled - and must never stop a clip being written, or take the
 whole pipeline down with it.
 """
+import os
+
 import clipbot.storage as storage
 from clipbot.config import Settings, resolve_paths
 from clipbot.storage import clip_drives, clips_target
@@ -20,11 +22,12 @@ def _paths(tmp_path):
 def test_overflow_dirs_are_expanded_and_listed_after_the_main_one(tmp_path, monkeypatch):
     s, p = _paths(tmp_path)
     monkeypatch.setenv("ASHVANE_TEST_DRIVE", str(tmp_path / "stick"))
-    s.app.overflow_dirs = ["  ", "%ASHVANE_TEST_DRIVE%", str(tmp_path / "spare")]
+    variable = "%ASHVANE_TEST_DRIVE%" if os.name == "nt" else "${ASHVANE_TEST_DRIVE}"
+    s.app.overflow_dirs = ["  ", variable, str(tmp_path / "spare")]
 
     drives = clip_drives(s, p)
     assert drives[0] == p.clips                       # the main folder is always tried first
-    assert drives[1] == tmp_path / "stick"            # %VARS% expanded, blank entries dropped
+    assert drives[1] == tmp_path / "stick"            # native variables expanded, blank entries dropped
     assert drives[2] == tmp_path / "spare"
 
 

@@ -77,17 +77,35 @@ class Limiter:
     def __init__(self, limit: int) -> None:
         self.limit = limit
         self.active = 0
+        self.waiting = 0
         self._cond = asyncio.Condition()
 
     async def __aenter__(self) -> None:
         async with self._cond:
-            await self._cond.wait_for(lambda: self.active < self.limit)
-            self.active += 1
+            self.waiting += 1
+            try:
+                await self._cond.wait_for(lambda: self.active < self.limit)
+                self.active += 1
+            finally:
+                self.waiting -= 1
 
     async def __aexit__(self, *exc) -> None:
-        async with self._cond:
-            self.active -= 1
-            self._cond.notify_all()
+        async def release():
+            async with self._cond:
+                self.active -= 1
+                self._cond.notify_all()
+        # Capacity release must finish even if shutdown cancels a waiter while
+        # it is reacquiring the condition lock to leave its worker slot.
+        task = asyncio.create_task(release())
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
+
+    def snapshot(self) -> dict:
+        return {"active": self.active, "waiting": self.waiting, "limit": self.limit,
+                "available": max(0, self.limit - self.active)}
 
     async def set_limit(self, limit: int) -> None:
         async with self._cond:
@@ -166,7 +184,7 @@ class Pipeline:
         self.trends = TrendScout(s, self.http, self.discovery, self.paths)
         self.captures = CaptureManager(s, self.paths.buffer, self.discovery.kick_channel)
         self.chat = ChatHub(s, self._on_chat, self.discovery.kick_channel)
-        gpu_lock = asyncio.Lock()          # vision model and judge never run at the same time
+        gpu_lock = self.gpu_lock = asyncio.Lock()  # shared with maintenance inference
         self.research = ResearchStudio(s, self.http, self.paths, self.trends, gpu_lock)
         self.stories = StoryStudio(s, self.http, self.paths, gpu_lock)
         self.story_renderer = StoryRenderer(s, self.http, gpu_lock, self.paths.models)
@@ -224,7 +242,7 @@ class Pipeline:
         await asyncio.gather(*self._tasks, *self._inflight.values(), return_exceptions=True)
         await self._persist_pending_candidates()
         self._tasks.clear()
-        await asyncio.gather(self.captures.stop_all(), self.chat.stop(), self.scheduler.stop(),
+        await asyncio.gather(self.captures.close(), self.chat.stop(), self.scheduler.stop(),
                              self.analytics.stop(), self.importer.stop(), self.trends.stop(),
                              self.research.stop(), self.stories.stop(),
                              self.story_publishing.stop(), self.story_renderer.stop(), return_exceptions=True)
@@ -623,7 +641,7 @@ class Pipeline:
         while True:
             await asyncio.sleep(self.settings.capture.buffer_s)
             try:
-                await asyncio.to_thread(self.captures.cleanup_retired)
+                await self.captures.storage_io.run(self.captures.cleanup_retired)
                 await self._check_disk()
                 await self._refresh_failsafe()
             except OSError as exc:
@@ -687,7 +705,7 @@ class Pipeline:
             return
         want = self.settings.app.min_free_gb
         if free < want * GIB:
-            await asyncio.to_thread(sweep, self.settings, self.paths, self._live_keys(), want)
+            await self.captures.storage_io.run(sweep, self.settings, self.paths, self._live_keys(), want)
             free = await free_bytes(self.paths.buffer) or free
         low = free < want * GIB
         if low != self.disk_paused:
@@ -721,7 +739,7 @@ class Pipeline:
                 continue
             await asyncio.sleep(minutes * 60)
             try:
-                await asyncio.to_thread(sweep, self.settings, self.paths, self._live_keys())
+                await self.captures.storage_io.run(sweep, self.settings, self.paths, self._live_keys())
             except OSError as exc:
                 logger.warning("tidy-up skipped: %s", exc)
 
@@ -799,6 +817,10 @@ class Pipeline:
                  "stages_s": {key: round(seconds, 2) for key, seconds in value["stages_s"].items()}}
                 for value in self._latency.values()]
         transcribing = sum(stage == Stage.TRANSCRIBE for stage in self._stage_of.values())
+        wait_reasons = {"assemble_wait": "waiting_for_assembly_slot", "ai_wait": "waiting_for_ai_slot",
+                        "edit_wait": "waiting_for_edit_slot", "transcribe_wait": "waiting_for_transcription_slot"}
+        for job in jobs:
+            job["waiting_reason"] = wait_reasons.get(job.get("phase")) if "finished_at" not in job else None
         return {"source_latency_available": False, "unit": "seconds",
                 "active_jobs": [job for job in jobs if "finished_at" not in job],
                 "recent_jobs": [job for job in jobs if "finished_at" in job],
@@ -806,7 +828,30 @@ class Pipeline:
                                   "waiting": max(0, transcribing - self.transcriber.jobs)},
                 "ai_slots": {"active": self._ai_limit.active, "limit": self._ai_limit.limit},
                 "assembly_slots": {"active": self._assemble_limit.active, "limit": self._assemble_limit.limit},
-                "edit_slots": {"active": self._edit_limit.active, "limit": self._edit_limit.limit}}
+                "edit_slots": {"active": self._edit_limit.active, "limit": self._edit_limit.limit},
+                "worker_queues": {"ai": self._ai_limit.snapshot(), "assembly": self._assemble_limit.snapshot(),
+                                  "edit": self._edit_limit.snapshot()}}
+
+    def resource_budget_snapshot(self) -> dict:
+        """Current in-memory reservations only; no file, database or model work."""
+        lock = getattr(self, "gpu_lock", None)
+        # asyncio.Lock exposes no public queue counter. Count its current live
+        # futures only when this is the known stdlib implementation; unknown
+        # lock implementations report unavailable instead of an estimated zero.
+        waiters = getattr(lock, "_waiters", None) if isinstance(lock, asyncio.Lock) else None
+        gpu_waiting = sum(not waiter.done() for waiter in waiters) if waiters is not None else 0 if isinstance(lock, asyncio.Lock) else None
+        phases = Counter(row.get("phase", "other") for row in self._latency.values() if "finished_at" not in row)
+        return {"assembly": self._assemble_limit.snapshot(), "ai": self._ai_limit.snapshot(),
+                "edit": self._edit_limit.snapshot(),
+                "transcription": {"active": self.transcriber.jobs,
+                                  "waiting": phases.get("transcribe_wait", 0),
+                                  "configured_limit": self.settings.workers.transcribers},
+                "shared_gpu": {"locked": lock.locked() if lock is not None else None,
+                               "waiting": gpu_waiting,
+                               "waiting_reason": "shared_gpu_busy" if gpu_waiting else None},
+                "phases": dict(phases),
+                "candidate_queue": {"active": len(self._inflight), "pressure_capacity": self.settings.backlog.capacity,
+                                    "policy": "backpressure"}}
 
     async def _transcribe_candidate(self, c: Candidate):
         started = time.monotonic()
@@ -998,8 +1043,9 @@ class Pipeline:
         return await asyncio.to_thread(read)
 
     async def _review_final(self, c: Candidate) -> bool:
+        from .review import FINAL_PUBLICATION_POLICY, final_public_metadata
         try:
-            check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
+            public_metadata = final_public_metadata(c, self.settings)
         except UnsafePublicCopy as exc:
             c.error = str(exc)
             await self._save(c)
@@ -1016,10 +1062,37 @@ class Pipeline:
                 c.verdict["final_review"] = {"passed": False, "status": "unavailable", "reason": reason}
                 await self._finish(c, Stage.FAILED, "final review: " + reason)
                 return False
-            policy = json.dumps({"review": self.settings.review.model_dump(),
-                                 "model": self.settings.ai.vision_model,
-                                 "hook": c.post_copy.get("hook", "")}, sort_keys=True)
-            stamp = f"{stat.st_size}:{stat.st_mtime_ns}:" + hashlib.sha256(policy.encode()).hexdigest()
+            policy = json.dumps({
+                "version": FINAL_PUBLICATION_POLICY,
+                "review": self.settings.review.model_dump(),
+                "qc": self.settings.clip.model_dump(),
+                "edit": self.settings.edit.model_dump(),
+                "style": c.post_copy.get("style", {}),
+                "safety": self.settings.safety.model_dump(),
+                "copy_guard": {"patterns": self.settings.copywriter.private_text_patterns,
+                               "overlap_words": self.settings.copywriter.private_overlap_words},
+                "vision": {key: value for key, value in self.settings.ai.model_dump().items()
+                           if key.startswith("vision_") or key in ("retries", "transcript_max_chars", "timeout_s")},
+                "probe_timeout_s": self.settings.capture.probe_timeout_s,
+                "public_metadata": public_metadata,
+                "timeline": {key: c.verdict.get(key) for key in
+                             ("trim_start", "trim_end", "render_timeline", "viewer_review")},
+                "transcript": c.transcript,
+                "words": [{"start": w.start, "end": w.end, "text": w.text} for w in c.words],
+            }, sort_keys=True)
+
+            def media_digest():
+                with Path(c.final_path).open("rb") as media:
+                    return hashlib.file_digest(media, "sha256").hexdigest()
+
+            try:
+                content_hash = await asyncio.to_thread(media_digest)
+            except OSError as exc:
+                reason = f"Final video unavailable: {exc}"
+                c.verdict["final_review"] = {"passed": False, "status": "unavailable", "reason": reason}
+                await self._finish(c, Stage.FAILED, "final review: " + reason)
+                return False
+            stamp = f"{stat.st_size}:{stat.st_mtime_ns}:{content_hash}:" + hashlib.sha256(policy.encode()).hexdigest()
             previous = c.verdict.get("final_review", {})
             if previous.get("passed") is True and previous.get("file_stamp") == stamp:
                 return True
@@ -1162,6 +1235,8 @@ class Pipeline:
                         "resume_at": s.backlog.resume_at},
             "gpu": self.gpu, "monitors": monitors,
             "latency": self.latency_snapshot(),
+            "resource_budget": self.resource_budget_snapshot(),
+            "capture_storage": self.captures.storage_io.snapshot(),
             "stages": {"window_h": s.dashboard.stage_window_h, "counts": counts,
                        "live": dict(live)},
             "spikes": {"total": self.spikes_total, "ignored": self.spikes_ignored},
@@ -1216,14 +1291,17 @@ class Pipeline:
             end = float(v.get("trim_end", 0.0) or 0.0) or info.duration
             out = self.paths.clips / f"{c.event.target.login}_{c.id}.mp4"
             check_public_text(c, {'hook': c.post_copy.get('hook', '')}, self.settings)
+            timeline = {}
             async with self._edit_limit:
                 await render(Path(c.raw_path), out, start, min(end, info.duration), c.words,
                              c.event.target.login, self.settings, self.paths.work,
                              self.settings.brand.watermark, hook=c.post_copy.get("hook", ""),
-                             spike_at=c.event.t_wall - c.start_wall)
+                             spike_at=c.event.t_wall - c.start_wall, timeline=timeline)
             c.final_path = str(out)
+            c.verdict = {**v, "trim_start": start, "trim_end": min(end, info.duration),
+                         "render_timeline": timeline}
             if not v.get("title"):
-                c.verdict = {**v, "title": c.event.target.title or c.event.target.display_name}
+                c.verdict["title"] = c.event.target.title or c.event.target.display_name
             if c.stage in (Stage.REJECTED, Stage.FAILED):
                 c.stage = Stage.SCHEDULED
             await self._save(c)

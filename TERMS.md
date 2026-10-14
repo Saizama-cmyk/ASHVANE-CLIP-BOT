@@ -2,12 +2,16 @@
 
 By installing or using Ashvane ("the software") you agree to these terms.
 
-**1. What it is.** Free, open-source software that runs on your own computer. It watches public
-live streams, cuts short clips of moments you choose to keep, and can post them to accounts
-*you* connect. Ashvane runs no servers for it and never receives your data, clips or passwords.
+**1. What it is.** Free, open-source software that runs on your own computer. Surge handles
+streamer clips, Hollow handles original stories, Resonance handles music production, and
+Social Studio handles client drafts and a manual calendar. Supported publishers use accounts
+*you* connect. Ashvane has no hosted account or central production-data service. Configured
+streams, research, downloads, remote endpoints and connected platforms still use their
+respective network services; see [Privacy](PRIVACY.md).
 
-**2. You are responsible for what you post.** Stream content belongs to the streamers and
-platforms. Before you post clips you must make sure you have the right to. That can mean the
+**2. You are responsible for what you post.** Source media, references, model assets and
+external software retain their owners' rights and terms. Before you publish, make sure you
+have the necessary rights. For streamer clips, that can mean the
 streamer's permission, a platform's clip-sharing rules, or a legal exception such as fair use.
 Fair use is decided case by case and is **not guaranteed**. The software credits each streamer by
 name, but credit alone is not permission.

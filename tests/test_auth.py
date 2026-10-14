@@ -4,6 +4,7 @@ import time
 import pytest
 
 from clipbot import config as C
+from clipbot import secure
 from clipbot.auth import AuthError, ProfileStore
 
 
@@ -58,6 +59,7 @@ def test_sessions(isolated_home):
     assert store.verify(pid, "newpassword1", 5, 60)
 
 
+@pytest.mark.skipif(not secure.available(), reason="Windows DPAPI integration")
 def test_secrets_encrypted_on_disk(isolated_home):
     s = C.merge_incoming(C.Settings(), {"twitch": {"client_secret": "super-secret-value"}})
     C.save_settings(s)

@@ -70,7 +70,7 @@ async def wait_for_coverage(capture: Capture, until: float, wait_s: float,
                             poll_s: float) -> list[Segment]:
     deadline = time.time() + wait_s
     while True:
-        segs = await asyncio.to_thread(capture.segments)
+        segs = await capture.read_segments()
         if segs and segs[-1].end >= until:
             return segs
         if time.time() >= deadline:
@@ -81,7 +81,7 @@ async def wait_for_coverage(capture: Capture, until: float, wait_s: float,
 async def assemble(event: SpikeEvent, capture: Capture, settings: Settings,
                    work_dir: Path) -> Candidate:
     s = settings
-    ffmpeg = ffmpeg_exe(s)
+    ffmpeg = await asyncio.to_thread(ffmpeg_exe, s)
     if not ffmpeg:
         raise AssembleError("ffmpeg not found (Settings → Paths)")
     t = event.t_wall
@@ -89,13 +89,15 @@ async def assemble(event: SpikeEvent, capture: Capture, settings: Settings,
                                    s.capture.segment_s)
     used, offset, duration, t0 = plan_cut(segs, t, s.clip.pre_s, s.clip.post_s,
                                           s.capture.segment_s)
-    work_dir.mkdir(parents=True, exist_ok=True)
+    # Removable capture storage can stall even on mkdir/stat/resolve/unlink.
+    # Keep every filesystem operation off the shared engine/dashboard event loop.
+    await asyncio.to_thread(work_dir.mkdir, parents=True, exist_ok=True)
     list_path = work_dir / f"{event.id}_concat.txt"
     out = work_dir / f"{event.id}_raw.mp4"
-    used = [seg for seg in used if seg.path.exists()]        # pruned again while we planned?
+    used = await asyncio.to_thread(lambda: [seg for seg in used if seg.path.exists()])
     if not used:
         raise AssembleError("the buffer was pruned before the cut could run")
-    await asyncio.to_thread(list_path.write_text, concat_list(used), "utf-8")
+    await asyncio.to_thread(lambda: list_path.write_text(concat_list(used), "utf-8"))
     try:
         res = await run_cmd([
             ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
@@ -106,9 +108,9 @@ async def assemble(event: SpikeEvent, capture: Capture, settings: Settings,
             "-af", "aresample=async=1", "-movflags", "+faststart", str(out)],
             s.edit.render_timeout_s, grace_s=s.app.shutdown_timeout_s)
     finally:
-        list_path.unlink(missing_ok=True)
-    if res.returncode != 0 or not out.exists():
-        out.unlink(missing_ok=True)
+        await asyncio.to_thread(list_path.unlink, missing_ok=True)
+    if res.returncode != 0 or not await asyncio.to_thread(out.exists):
+        await asyncio.to_thread(out.unlink, missing_ok=True)
         raise AssembleError(f"cut failed: {res.err_text.strip()[-ERR_SNIPPET:] or res.returncode}")
     return Candidate(id=event.id, event=event, raw_path=str(out), start_wall=t0,
                      end_wall=t0 + duration)
@@ -126,7 +128,7 @@ def parse_qc(stderr: str) -> tuple[float, float, float | None, bool, bool]:
 async def quality_check(path: Path, expected_s: float, settings: Settings) -> QCResult:
     """One ffmpeg pass: stream presence, duration, blackdetect share, mean volume."""
     s = settings
-    ffmpeg = ffmpeg_exe(s)
+    ffmpeg = await asyncio.to_thread(ffmpeg_exe, s)
     if not ffmpeg:
         raise AssembleError("ffmpeg not found (Settings → Paths)")
     res = await run_cmd([ffmpeg, "-hide_banner", "-nostats", "-nostdin", "-i", str(path),

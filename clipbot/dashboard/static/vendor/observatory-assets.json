@@ -1,0 +1,87 @@
+[
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/OutputPass.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/OutputPass.js",
+    "sha256": "02e4a261af34de71338185e9e87f0cbe5cba9115608d984363e1269dec1d2272",
+    "installed_sha256": "f5ea224a0965396c2f4225d99cb2703b02d2844e7e20a1f74a28810fde1f7608"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/shaders/OutputShader.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/shaders/OutputShader.js",
+    "sha256": "353479f77a8d7e2629d49ccac9fc2f5dbfdda5442e0adf867b00377a2fcb0cb2",
+    "installed_sha256": "ae8c704c92e890ca58ea0e36fcd8b6376a4d68719297afe2a04ac2300e1b0e10"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/Pass.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/Pass.js",
+    "sha256": "444b409c235ead986893c472e720da1b779a56985c7d10b279c7944b52bd61c5",
+    "installed_sha256": "1342b46d2cf003c05db089a0d954b422bb488f086debc104a062a8feec41692f"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/UnrealBloomPass.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/UnrealBloomPass.js",
+    "sha256": "ba8f2fcadfa6588384c9473498f974d81d120f02f0e63a0e59c265202a006b5a",
+    "installed_sha256": "ebe87e0df515558c2c26b2a76ccfb33cfee09549e3d406de160ca29272fb8e4f"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/shaders/LuminosityHighPassShader.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/shaders/LuminosityHighPassShader.js",
+    "sha256": "5044f780b6e6cf863947f64c36fe1587132f7fbe395ada863cd1e5f0388dcf1e",
+    "installed_sha256": "f3b3409715510f3d89950b89f6d35e843d056edbed270e44d573d545073492a8"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/shaders/CopyShader.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/shaders/CopyShader.js",
+    "sha256": "a33057d5ac91c43304c186ac0e8816e62bb2ed471d3a00ff3018dfd5c0389718",
+    "installed_sha256": "1958deb9ab76180027d535e50a3f02bd810ab4233bdcd2978084d3df05964641"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/RenderPass.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/RenderPass.js",
+    "sha256": "817f6c3cdcd0fd41515d112359ea0532568eefb5aabd3b33903957ebca1b8a6a",
+    "installed_sha256": "6e9d45acef7e87e594a573b1c9425408075f891fa70a5699e3c15b5f70a14a10"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/EffectComposer.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/EffectComposer.js",
+    "sha256": "4e079a5886152d7e529a59aef644e968ab4d32c6a33ce016b36bf29b2eac26f7",
+    "installed_sha256": "65d42b9e8c12e236528fb649580f4a809057f66303b300a8b0f85bd2b5196efe"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/MaskPass.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/MaskPass.js",
+    "sha256": "7cd08eee9d5d6f5578beaddbdcbe9c384f6873810af27f22ab7db3ceeb127aa3",
+    "installed_sha256": "64944f7898920266d06844bd651e1c667999c5b3bcf54bf9d5c6a2bd0db13ac9"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/examples/jsm/postprocessing/ShaderPass.js",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/postprocessing/ShaderPass.js",
+    "sha256": "e2500a5913b26bbf5148ceaae644c6edcff06a18b01494ee37bf856353d2ab9d",
+    "installed_sha256": "6cdfd8110e42959c412a54e7a38043105b93076580b0c1c0d0bcef9e5aab2429"
+  },
+  {
+    "path": "clipbot/dashboard/static/vendor/three/0.186.1/LICENSE",
+    "url": "https://cdn.jsdelivr.net/npm/three@0.186.1/LICENSE",
+    "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+  },
+  {
+    "path": "clipbot/dashboard/static/fonts/SpaceGrotesk[wght].ttf",
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf",
+    "sha256": "acad6de1fc93436f5c0f1f4137751ef04f1aea3063e7036535970ffcfbd79f72"
+  },
+  {
+    "path": "clipbot/dashboard/static/fonts/spacegrotesk-OFL.txt",
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/OFL.txt",
+    "sha256": "564ce565c371c5e5bbf286006565a7c9aa55a9f56e7ca58d56e05d649dd61a72"
+  },
+  {
+    "path": "clipbot/dashboard/static/fonts/IBMPlexSans[wdth,wght].ttf",
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf",
+    "sha256": "3b031aa4216174205bd8471f88a49b91f093169e9e87bd5262242bc5967fe2e3"
+  },
+  {
+    "path": "clipbot/dashboard/static/fonts/ibmplexsans-OFL.txt",
+    "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsans/OFL.txt",
+    "sha256": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da"
+  }
+]

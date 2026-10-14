@@ -30,6 +30,7 @@ echo [2/3] Running PyInstaller...
   --paths "%CD%" ^
   --add-data "%CD%\clipbot\dashboard\static;clipbot\dashboard\static" ^
   --add-data "%CD%\assets;assets" ^
+  --add-data "%CD%\scripts\supervisor_sandbox;scripts\supervisor_sandbox" ^
   --collect-all streamlink --collect-all streamlink_cli ^
   --collect-all faster_whisper --collect-all ctranslate2 --collect-all onnxruntime ^
   --collect-all kokoro_onnx --collect-all espeakng_loader --collect-all phonemizer --collect-all _soundfile_data --copy-metadata kokoro-onnx ^

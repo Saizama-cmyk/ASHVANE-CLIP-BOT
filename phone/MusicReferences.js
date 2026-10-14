@@ -8,6 +8,11 @@ import { useWorkspace } from "./workspace";
 
 const finished = status => ["completed", "failed", "cancelled", "needs_input"].includes(status);
 const savedJobs = new Map();
+const validOptions = value => value && Array.isArray(value.extensions) && value.extensions.length > 0
+  && value.extensions.every(extension=>typeof extension === "string")
+  && Number.isFinite(value.max_upload_bytes) && value.max_upload_bytes > 0
+  && Number.isFinite(value.max_lyrics_file_bytes) && value.max_lyrics_file_bytes > 0;
+const optionsUnavailable = "Reference limits are unavailable. Refresh references or update the PC app. Written direction and lyrics remain available.";
 const confirmReplace = proceed => {
   const message = "Replace the lyrics currently on this desk with the selected text file?";
   if (Platform.OS === "web") { if (globalThis.confirm(message)) proceed(); }
@@ -42,11 +47,11 @@ export default function MusicReferences({ host, token, onUnauthorized, active, e
     const version = epoch.current;
     Promise.allSettled([request("/references/options"), request("/references"), request("/rap/capabilities")]).then(results => {
       if (version !== epoch.current) return;
-      if (results[0].status === "fulfilled") setOptions(results[0].value);
+      if (results[0].status === "fulfilled") setOptions(validOptions(results[0].value) ? results[0].value : null);
       if (results[1].status === "fulfilled") setReferences(results[1].value.references || []);
       if (results[2].status === "fulfilled") setCapabilities(results[2].value);
       const failed = results.find(result => result.status === "rejected" && result.reason.name !== "AbortError");
-      setError(failed?.reason.message || "");
+      setError(failed?.reason.message || (results[0].status === "fulfilled" && !validOptions(results[0].value) ? optionsUnavailable : ""));
     });
   }, [active, enabled, request]);
   useEffect(() => {
@@ -140,7 +145,7 @@ export default function MusicReferences({ host, token, onUnauthorized, active, e
     <Button label="Choose reference audio or video" disabled={allBusy || !enabled || !options} onPress={uploadReference} />
     {!!options && <Text style={t.faint}>{options.extensions.join(", ")} · up to {Math.floor(options.max_upload_bytes / 1048576)} MB</Text>}
     <Button label="Import .txt or .lrc lyrics" disabled={allBusy || !options} onPress={importLyrics} />
-    <Button small label="Refresh references & listener" disabled={allBusy} onPress={() => run(async version => { const [limits, caps] = await Promise.all([request("/references/options"), request("/rap/capabilities"), refresh(version)]); if (version === epoch.current) { setOptions(limits); setCapabilities(caps); } }, "References refreshed.")} />
+    <Button small label="Refresh references & listener" disabled={allBusy} onPress={() => run(async version => { const [limits, caps] = await Promise.all([request("/references/options"), request("/rap/capabilities"), refresh(version)]); if (!validOptions(limits)) throw new Error(optionsUnavailable); if (version === epoch.current) { setOptions(limits); setCapabilities(caps); } }, "References refreshed.")} />
     {!!error && <Text accessibilityRole="alert" style={t.error}>{error}</Text>}
     {!!notice && <Text accessibilityLiveRegion="polite" style={t.muted}>{notice}</Text>}
     <View style={{ gap: 8 }}>

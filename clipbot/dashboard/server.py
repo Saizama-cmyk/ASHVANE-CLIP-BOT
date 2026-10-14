@@ -54,7 +54,7 @@ _ID_RE = re.compile(r"^[0-9a-f]{6,32}$")
 _OAUTH_PLATFORMS = ("youtube", "tiktok")
 _PUBLIC = ("/static/", "/api/auth/", "/oauth/youtube/callback", "/oauth/tiktok/callback",
            "/oauth/stories/youtube/callback", "/oauth/stories/tiktok/callback")
-_PUBLIC_EXACT = {"/", "/remote", "/favicon.ico", "/api/control/focus"}   # shells only; their data is not
+_PUBLIC_EXACT = {"/", "/remote", "/favicon.ico", "/ui-runtime.js", "/api/control/focus"}  # shells and non-secret UI limits only
 
 
 def _token(request: Request) -> str | None:
@@ -97,6 +97,20 @@ def static_dir() -> Path:
     return resource_path("clipbot", "dashboard", "static")
 
 
+class DashboardFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        from ..supervisor_bootstrap import overlay_resource
+        try:
+            selected = overlay_resource("clipbot/dashboard/static/" + path)
+        except ValueError:
+            selected = None
+        except ImportError:
+            raise HTTPException(503, "Dashboard update failed its integrity check; restart to recover")
+        if selected is not None:
+            return FileResponse(selected, headers={"Cache-Control": "no-cache"})
+        return await super().get_response(path, scope)
+
+
 def validation_errors(exc: ValidationError) -> list[dict]:
     return [{"field": ".".join(str(p) for p in e["loc"]), "msg": e["msg"]} for e in exc.errors()]
 
@@ -134,6 +148,12 @@ def create_app(ctx) -> FastAPI:
     install_business_runtime_routes(app, ctx)
     from ..account_profiles import install_account_profile_routes
     install_account_profile_routes(app, ctx)
+    from ..supervisor_api import install_supervisor_routes
+    install_supervisor_routes(app, ctx)
+    from ..growth import install_growth_routes
+    install_growth_routes(app, ctx)
+    from ..clip_feedback import install_clip_feedback_routes
+    install_clip_feedback_routes(app, ctx)
 
     def a_cfg():
         return ctx.settings.app
@@ -278,18 +298,26 @@ def create_app(ctx) -> FastAPI:
             if mutation:
                 runtime_mutations -= 1
 
-    app.mount("/static", StaticFiles(directory=str(static_dir())), name="static")
+    app.mount("/static", DashboardFiles(directory=str(static_dir())), name="static")
 
     # ------------------------------------------------------------------ pages
     @app.get("/", include_in_schema=False)
     async def index():
-        return FileResponse(static_dir() / "index.html",
+        return FileResponse(resource_path("clipbot", "dashboard", "static", "index.html"),
                             headers={"Cache-Control": "no-store"})
+
+    @app.get("/ui-runtime.js", include_in_schema=False)
+    async def ui_runtime():
+        # Non-secret UI limits only; no disk reads or profile/account metadata.
+        limits = {"growth_request_timeout_s": ctx.settings.analytics.growth_request_timeout_s,
+                  "youtube_sync_timeout_s": ctx.settings.analytics.youtube_sync_timeout_s}
+        return Response("window.ashvaneUI=Object.freeze(" + json.dumps(limits) + ");",
+                        media_type="text/javascript", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @app.get("/remote", include_in_schema=False)
     async def remote():
         """The phone panel. Same session cookie as the desk, so it is behind the same password."""
-        return FileResponse(static_dir() / "remote.html",
+        return FileResponse(resource_path("clipbot", "dashboard", "static", "remote.html"),
                             headers={"Cache-Control": "no-store"})
 
     @app.get("/favicon.ico", include_in_schema=False)
@@ -359,7 +387,7 @@ def create_app(ctx) -> FastAPI:
     @app.get("/pet", include_in_schema=False)
     async def pet_page():
         logger.info("pet window loaded")
-        return FileResponse(static_dir() / "pet.html", headers={"Cache-Control": "no-store"})
+        return FileResponse(resource_path("clipbot", "dashboard", "static", "pet.html"), headers={"Cache-Control": "no-store"})
 
     @app.get("/api/pet/state")
     async def pet_data():
@@ -407,7 +435,8 @@ def create_app(ctx) -> FastAPI:
         cap, target = ctx.pipeline.captures.get(key), ctx.pipeline.targets.get(key)
         if target is None:
             raise HTTPException(404, "not monitoring that stream")
-        segs = (await asyncio.to_thread(cap.segments)) if cap else []
+        segs = cap.cached_segments if cap else ()
+        observation = cap.snapshot() if cap else {}
         v, d = ctx.settings.viewer, ctx.settings.detector
         samples = await asyncio.to_thread(ctx.pipeline.store.recent_candidates, ctx.settings.dashboard.samples_limit)
         clips = [c for c in samples if (c.get("event") or {}).get("target", {}).get("login") == target.login]
@@ -416,6 +445,11 @@ def create_app(ctx) -> FastAPI:
                 "title": target.title, "url": target.url,
                 "segments": [{"name": sg.path.stem, "start": sg.start, "end": sg.end}
                              for sg in segs[-v.segments_ahead:]],
+                "buffer": {"available": observation.get("metadata_available", False),
+                           "age_s": observation.get("metadata_age_s"),
+                           "segment_age_s": observation.get("complete_segment_age_s"),
+                           "error": observation.get("metadata_error", ""),
+                           "status": observation.get("status", "not capturing")},
                 "stats": ctx.pipeline.detector.stats(key),
                 "thresholds": {"z": d.z_threshold, "keyword": d.keyword_threshold, "audio_z": d.audio_z_threshold},
                 "chat": ctx.pipeline.detector.recent_chat(key, v.chat_lines),
@@ -429,7 +463,7 @@ def create_app(ctx) -> FastAPI:
         if cap is None or not _SEG_NAME.match(name):
             raise HTTPException(404)
         src = cap.folder / f"{name}.ts"
-        if not src.exists():
+        if not await asyncio.to_thread(src.exists):
             raise HTTPException(404, "segment gone")
         out = await remux_segment(src, ctx.pipeline.paths.work / "live" / safe_name(key), ctx.settings)
         if out is None:
@@ -842,7 +876,7 @@ def create_app(ctx) -> FastAPI:
     @app.get("/api/monitor/thumb.jpg")
     async def monitor_thumb(key: str):
         cap = ctx.pipeline.captures.get(key)
-        segs = await asyncio.to_thread(cap.segments) if cap else []
+        segs = cap.cached_segments if cap else ()
         if not segs:
             raise HTTPException(404, "no buffer yet")
         out = await stream_thumb(segs[-1].path, key, ctx.settings, ctx.pipeline.paths)
@@ -921,17 +955,29 @@ def create_app(ctx) -> FastAPI:
     @app.post("/api/system/scan")
     async def system_scan(request: Request):
         b = await _json(request)
-        hw = await detect(ctx.settings, ctx.pipeline.paths, ctx.pipeline.http,
-                          ctx.pipeline.transcriber.status, bool(b.get("network", True)))
-        return {"hardware": hw.to_dict(), "recommendations": recommend(hw, ctx.settings),
-                "readiness": await run_checklist(ctx.settings, ctx.pipeline.http, ctx)}
+        try:
+            hw = await asyncio.wait_for(detect(ctx.settings, ctx.pipeline.paths, ctx.pipeline.http,
+                ctx.pipeline.transcriber.status, bool(b.get("network", True))), ctx.settings.dashboard.system_scan_timeout_s)
+        except TimeoutError as exc:
+            raise HTTPException(504, "PC scan reached its deadline. Check the capture drive and network, then retry.") from exc
+        # Setup probes include independent businesses and native studio checks. They
+        # must not delay or invalidate hardware recommendations; /api/setup owns them.
+        return {"hardware": hw.to_dict(), "recommendations": recommend(hw, ctx.settings)}
 
     @app.post("/api/system/apply")
     async def system_apply(request: Request):
         b = await _json(request)
         patch: dict = {}
-        for item in b.get("apply", []):
-            section, name = str(item["field"]).split(".", 1)
+        items = b.get("apply", [])
+        if not isinstance(items, list):
+            raise HTTPException(422, "Select recommendations to apply")
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("field"), str) or "value" not in item:
+                raise HTTPException(422, "Invalid recommendation")
+            field = tuple(item["field"].split("."))
+            if len(field) != 2 or field not in LEAF_FIELDS or field in SECRET_FIELDS:
+                raise HTTPException(422, "Invalid recommendation field")
+            section, name = field
             patch.setdefault(section, {})[name] = item["value"]
         try:
             new = merge_incoming(ctx.settings, patch)

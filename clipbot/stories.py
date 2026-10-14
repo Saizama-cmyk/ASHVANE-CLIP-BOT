@@ -234,6 +234,9 @@ class StoryStudio:
             "auto_render", "auto_publish", "publish_destinations", "publish_privacy",
         )}
         return {"projects": copy.deepcopy(self.projects), "busy": self.busy, "job": job,
+                "account_profile_id": self.account_profile_id() if hasattr(self, "account_profile_id") else "default",
+                "compilation": {"max_stories": cfg.compilation_max_stories,
+                                "opening_s": cfg.compilation_opening_s, "between_s": cfg.compilation_between_s},
                 "genres": [{"id": key, "label": label} for key, label in GENRES],
                 "capabilities": self._capabilities(), "settings": safe_settings, "errors": list(self.errors)}
 
@@ -309,6 +312,117 @@ class StoryStudio:
             raise
         self._launch(project, self._generate(project, self.settings.model_copy(deep=True)), "story-generate")
         return copy.deepcopy(project)
+
+    def create_compilation(self, title: str, project_ids: list[str], landscape: bool = True,
+                           account_profile_id: str = "") -> dict:
+        """A new edition of finished, approved stories; original projects stay intact."""
+        self._available()
+        cfg = self.settings.stories
+        if len(self.projects) >= cfg.max_projects:
+            raise StoryBusy("The story library is full. Delete a finished project before adding another")
+        profile = self.account_profile_id() if hasattr(self, "account_profile_id") else "default"
+        if account_profile_id and account_profile_id != profile:
+            raise StoryBusy("The Hollow account profile changed. Reload before creating this compilation")
+        title = " ".join(_clean_text(title, "Compilation title", min(cfg.max_title_chars, YOUTUBE_TITLE_MAX)).split())
+        if type(landscape) is not bool:
+            raise ValueError("Choose landscape or portrait for the compilation")
+        if (not isinstance(project_ids, list) or not 2 <= len(project_ids) <= cfg.compilation_max_stories
+                or any(not isinstance(pid, str) for pid in project_ids) or len(set(project_ids)) != len(project_ids)):
+            raise ValueError(f"Choose 2 to {cfg.compilation_max_stories} different finished stories in order")
+        sources = []
+        for pid in project_ids:
+            source = self._find(pid)
+            identity = self.content_fingerprint(pid)
+            if (source.get("kind") == "compilation" or source.get("status") != "ready"
+                    or not source.get("output", {}).get("video_path")
+                    or source.get("review", {}).get("passed") is not True
+                    or source["review"].get("content_hash") != identity):
+                raise ValueError("Each selection must be a finished individual story with a current passing review")
+            if (source.get("account_profile_id") or "default") != profile:
+                raise ValueError("Choose stories belonging to the current Hollow account profile")
+            check_public_text(SimpleNamespace(verdict=source["review"], visual="", words=[], transcript=source["script"]),
+                              {"chapter_title": source["title"]}, self.settings)
+            sources.append({"project_id": pid, "title": source["title"], "content_hash": identity})
+        public_copy = self._validate_copy({"youtube": {"title": title,
+            "description": f"{FICTION_LABEL}\n\n{len(sources)} original horror stories, together in one collection.",
+            "tags": ["horror stories", "scary story compilation"], "hashtags": ["HorrorStories"]}}, title, self.settings)
+        check_public_text(SimpleNamespace(verdict={}, visual="", words=[], transcript=""),
+                          {"title": title, "public_copy": public_copy}, self.settings)
+        now = time.time()
+        project = {"id": uuid.uuid4().hex, "kind": "compilation", "title": title,
+            "account_profile_id": profile, "topic": f"{len(sources)} original horror stories",
+            "genre": "mixed", "format": "compilation", "duration_s": 0, "voice": "Original story audio",
+            "created_at": now, "updated_at": now, "status": "rendering", "progress": 0,
+            "script": "", "scenes": [], "public_copy": public_copy, "review": {}, "error": "",
+            "output": {}, "video_url": "", "audio_url": "", "manual_edit": False, "revision": 0,
+            "publishing": {}, "publication_history": [], "agents": [],
+            "compilation": {"sources": sources, "landscape": landscape,
+                            "base_description": public_copy["youtube"]["description"],
+                            "opening_s": cfg.compilation_opening_s, "between_s": cfg.compilation_between_s}}
+        self.projects.insert(0, project)
+        try:
+            self._directory(project["id"]).mkdir(parents=True, exist_ok=True)
+            self._save()
+        except OSError:
+            self.projects.remove(project)
+            raise
+        self._launch(project, self._render_compilation(project, self.settings.model_copy(deep=True)), "story-compilation")
+        return copy.deepcopy(project)
+
+    async def _render_compilation(self, project: dict, settings: Settings) -> None:
+        from .story_compilation import StoryCompiler
+        try:
+            compilation = project["compilation"]
+            inputs = []
+            snapshots = compilation.get("snapshots", [])
+            for index, source in enumerate(compilation["sources"]):
+                if snapshots:
+                    path = self._inside(project["id"], snapshots[index]["file"])
+                else:
+                    original = self._find(source["project_id"])
+                    if (self.content_fingerprint(original["id"]) != source["content_hash"]
+                            or original.get("status") != "ready"):
+                        raise ValueError("A source story changed before assembly. Create the compilation again")
+                    path = self._inside(original["id"], original["output"]["video_path"])
+                inputs.append({"project_id": source["project_id"], "title": source["title"], "path": path})
+            directory = self._directory(project["id"]) / ("edition-" + uuid.uuid4().hex)
+            result = await StoryCompiler(settings).compile(inputs, directory, title=project["title"],
+                opening_s=compilation["opening_s"], between_s=compilation["between_s"], landscape=compilation["landscape"])
+            output = self._validate_output(project, result)
+            chapters = copy.deepcopy(result["chapters"])
+            snapshots = copy.deepcopy(result["source_snapshots"])
+            for source in snapshots:
+                source["file"] = str(self._inside(project["id"], source["file"]))
+            compilation.update(chapters=chapters, snapshots=snapshots)
+            def timestamp(seconds):
+                seconds = int(seconds)
+                hours, remainder = divmod(seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+            chapter_text = "\n".join(f"{timestamp(row['start_s'])} {row['title']}" for row in chapters)
+            description = compilation["base_description"].rstrip() + "\n\n" + chapter_text
+            compilation["chapter_text"] = chapter_text
+            project["public_copy"]["youtube"]["description"] = description
+            project["public_copy"] = self._validate_copy(project["public_copy"], project["title"], settings)
+            check_public_text(SimpleNamespace(verdict={}, visual="", words=[], transcript=""),
+                              {"title": project["title"], "public_copy": project["public_copy"], "chapters": chapters}, settings)
+            project.update(output=output, duration_s=output["duration_s"], status="ready", progress=1,
+                           video_url=f"/api/stories/projects/{project['id']}/video",
+                           audio_url=f"/api/stories/projects/{project['id']}/audio")
+            project["review"] = {"passed": True, "scope": "source_approvals_and_assembly",
+                "reason": "Each source had a current passing story review. Compilation audio/video and chapter timings passed technical checks. This is not a new creative or visual jury review.",
+                "issues": [], "content_hash": self.content_fingerprint(project["id"])}
+        except asyncio.CancelledError:
+            self._invalidate_output(project)
+            project.update(status="interrupted", error="Compilation cancelled. Your original stories are intact.")
+            raise
+        except Exception as exc:
+            logger.exception("story compilation failed for %s", project["id"])
+            self._invalidate_output(project)
+            project.update(status="failed", error=f"Compilation failed: {str(exc)[:ERR_SNIPPET] or type(exc).__name__}")
+        finally:
+            project["updated_at"] = time.time()
+            self._persist_job(project)
 
     def _validate_copy(self, value, title: str, settings: Settings) -> dict:
         if not isinstance(value, dict) or not isinstance(value.get("youtube"), dict):
@@ -397,6 +511,31 @@ class StoryStudio:
         if all(value is None for value in (script, scenes, title, public_copy)):
             raise ValueError("Provide a script, scenes, title or public copy to update")
         draft = copy.deepcopy(project)
+        if project.get("kind") == "compilation":
+            if (script is not None and script != project["script"]) or (scenes is not None and scenes != project["scenes"]):
+                raise ValueError("Edit individual stories before making a compilation. Compilation narration stays with its source videos")
+            if title is not None:
+                draft["title"] = _clean_text(title, "Compilation title", min(self.settings.stories.max_title_chars, YOUTUBE_TITLE_MAX))
+            draft["public_copy"] = self._validate_copy(public_copy or draft["public_copy"], draft["title"], self.settings)
+            description = draft["public_copy"]["youtube"]["description"]
+            previous_chapters = draft["compilation"].get("chapter_text", "")
+            if previous_chapters and description.rstrip().endswith(previous_chapters):
+                description = description.rstrip()[:-len(previous_chapters)].rstrip()
+            draft["compilation"]["base_description"] = description
+            check_public_text(SimpleNamespace(verdict={}, visual="", words=[], transcript=""),
+                              {"title": draft["title"], "public_copy": draft["public_copy"]}, self.settings)
+            self._invalidate_output(draft)
+            draft.update(status="draft", progress=0, updated_at=time.time(), manual_edit=True, error="",
+                         revision=project.get("revision", 0) + 1,
+                         review={"passed": None, "reason": "Compilation changed. Assemble it again before publishing.", "issues": []})
+            index = self.projects.index(project)
+            self.projects[index] = draft
+            try:
+                self._save()
+            except OSError:
+                self.projects[index] = project
+                raise
+            return copy.deepcopy(draft)
         if title is not None:
             draft["title"] = title
         if script is not None:
@@ -511,6 +650,8 @@ class StoryStudio:
         """Restart an interrupted/failed draft job without adding another library row."""
         self._available()
         project = self._find(project_id)
+        if project.get("kind") == "compilation":
+            return self.render(project_id)
         self._not_uploading(project)
         if project.get("status") not in {"failed", "interrupted", "needs_review"}:
             raise ValueError("Only a failed, interrupted or rejected story may be regenerated")
@@ -532,6 +673,8 @@ class StoryStudio:
         """Run the private jury again after a user edits the public manuscript."""
         self._available()
         project = self._find(project_id)
+        if project.get("kind") == "compilation":
+            raise ValueError("Individual stories supply the creative reviews. Assemble the compilation to verify its audio/video and chapters")
         self._not_uploading(project)
         if project.get("status") not in {"draft", "needs_review", "ready", "failed", "interrupted"}:
             raise ValueError("Save a complete story before requesting review")
@@ -606,9 +749,19 @@ class StoryStudio:
             "writer": "Act as the original-fiction scriptwriter. Return one JSON object with title, scenes (opening/escalation array with narration, visual_prompt, and visual {setting,subject,action}), ending (one separate final scene with the same fields), public_copy {youtube:{title,description,tags,hashtags}}. Write the entire complete spoken story ONCE, in ordered scene narration strings followed by the ending narration. The mandatory ending field is the actual spoken payoff: an earned concrete reveal and irreversible consequence, never another opening encounter or an unanswered question. The app appends ending to scenes and concatenates exact narration into its script; do not repeat it in a separate script field. Narration is complete prose, with no editor notes, review language, stage directions, scene labels, self-assessment or markdown. Visual prompts are original illustrations of each scene. Structured visual setting must be corridor, forest, street, room or station; subject must be figure, creature or none; action must be approach, reveal, vanish, follow or wait. These represent an original stylized shadow-theatre stage, not photorealistic generative animation. Match the story to these stageable settings and actions; never depict an unrelated action just to fill a scene. Label the description as original fiction. Never set asset paths, invent an existing video, or copy a known story. Internal instructions and review notes must never become narration or public copy.",
             "judge": "Act as an independent story jury. Return JSON with passed (boolean), reason (string), issues (array of strings). Check original premise, coherent character motivation, escalating tension, satisfying ending, narrated prose, scene continuity, and absence of editorial notes from narration and public copy. This is fictional entertainment, not factual reporting. Fail weak or incomplete stories. Your reason and issues stay private and must never be inserted into narration.",
         }
+        ai_visuals = cfg.image_backend == "comfyui" or cfg.image_backend == "automatic1111" or bool(cfg.image_provider_url)
+        if ai_visuals:
+            contracts["writer"] = contracts["writer"].replace(
+                "These represent an original stylized shadow-theatre stage, not photorealistic generative animation. Match the story to these stageable settings and actions; never depict an unrelated action just to fill a scene.",
+                "The structured visual fields are compatibility tags only; they do not limit the locations, props or actions in the story. The visual_prompt is the actual image direction. For each scene describe ONE visible instant: shot size and angle, identifiable subject and clothing, specific environment and recurring props, motivated light, and the visible change that matches the narration. Reuse identical character appearance, clothing and location details across scenes; vary wide, medium, over-shoulder and object inserts when each communicates new information. Establish normal geography before an anomaly; never reveal the full threat before the narration earns it. Use clear, readable silhouettes and restrained horror, not an unrelated monster in every image. No lettering, captions, logos, collages or creator imitation. Do not describe a sequence of incompatible actions in one still. Animated format currently means illustrated shots with restrained camera movement; do not promise lip sync or generated character acting.")
+            contracts["director"] += " Plan a visually concrete story world: recurring character appearance and clothing, location layout, important props and the progression from normal state to anomaly, reveal and consequence. Include those details in the existing premise and beats, so the writer can preserve them. Choose purposeful viewpoints rather than repeating generic corridors."
+            contracts["judge"] += " Also check that each image direction depicts its narrated event, preserves recurring appearances and props, and respects reveal order. Reject vague repeated atmosphere or an early monster reveal that spoils the scene."
+        if cfg.image_backend == "comfyui" and cfg.motion_backend == "wan":
+            contracts["writer"] = contracts["writer"].replace("Animated format currently means illustrated shots with restrained camera movement; do not promise lip sync or generated character acting.", "Animated format uses local image-to-video scene motion. The illustration establishes the first frame; describe a legible initial state that permits the narrated action, preserving the threat's reveal order. Keep movement physically simple and purposeful. Do not promise lip sync or actor-level performance.")
         prompt = cfg.jury_prompt if role == "judge" else cfg.prompt
         schema = self._schema(role, settings, payload)
-        body = {"model": self._model(settings), "stream": False, "keep_alive": settings.ai.keep_alive,
+        body = {"model": self._model(settings), "stream": False,
+                "keep_alive": 0 if cfg.image_backend == "comfyui" and cfg.visual_release_story_model else settings.ai.keep_alive,
                 "format": schema,
                 "messages": [{"role": "system", "content": prompt + "\n\n" + contracts[role]},
                              {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
@@ -728,6 +881,7 @@ class StoryStudio:
                       "maximum_scenes": scene_limit, "maximum_words_per_scene": maximum_words // scene_limit,
                       "maximum_script_words": cfg.max_script_words,
                       "visual_stage": {key: sorted(values) for key, values in VISUAL_CHOICES.items()},
+                      "visual_medium": "AI illustrations of specific story events; stage tags are compatibility metadata only" if cfg.image_backend == "comfyui" or cfg.image_backend == "automatic1111" or cfg.image_provider_url else "Original procedural shadow theatre with stageable settings and actions",
                       "inspiration_boundary": "Any references in the topic are broad style inspiration only. Create a new plot, characters, prose and ending."}
             model = self._model(settings)
             self._stage(project, "directing", ROLES.index(role) / len(ROLES), "Planning an original story arc", role, model)
@@ -814,6 +968,20 @@ class StoryStudio:
         self._available()
         project = self._find(project_id)
         self._not_uploading(project)
+        if project.get("kind") == "compilation":
+            if project["status"] not in {"draft", "ready", "failed", "interrupted"}:
+                raise ValueError("Wait for compilation assembly to finish or cancel it")
+            previous = copy.deepcopy(project)
+            self._invalidate_output(project)
+            project.update(status="rendering", progress=0, error="", review={}, updated_at=time.time())
+            try:
+                self._save()
+            except OSError:
+                project.clear()
+                project.update(previous)
+                raise
+            self._launch(project, self._render_compilation(project, self.settings.model_copy(deep=True)), "story-compilation")
+            return copy.deepcopy(project)
         if project["status"] not in {"draft", "ready"}:
             raise ValueError("Review and save a complete story draft before rendering")
         capabilities = self._capabilities()
@@ -860,7 +1028,8 @@ class StoryStudio:
         project = self._find(project_id)
         if not self.busy or self._active_id != project_id:
             return False
-        self._task.cancel()
+        if not self._task.cancelling():
+            self._task.cancel()
         # Persist immediately, including cancellation before the coroutine first runs.
         project.update(status="interrupted", error="Job cancelled. Your saved story is still available.", updated_at=time.time())
         self._persist_job(project)

@@ -41,7 +41,8 @@ class LocalDependencies:
             cfg = self.ctx.settings.ai
             businesses = self.ctx.settings.businesses
             if not cfg.auto_start or not any((businesses.surge_enabled, businesses.hollow_enabled,
-                                              businesses.resonance_enabled, businesses.social_enabled)):
+                                              businesses.resonance_enabled, businesses.social_enabled,
+                                              self.ctx.settings.supervisor.enabled)):
                 return
             base = cfg.ollama_url.rstrip("/")
             url = urlsplit(base)

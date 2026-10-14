@@ -3,7 +3,10 @@ import asyncio
 import os
 import subprocess
 import time
+import threading
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -98,3 +101,81 @@ def test_qc_rejects_silence_and_black(tmp_path, ffmpeg):
                     str(silent)], check=True)
     qc = asyncio.run(quality_check(silent, 5, Settings()))
     assert not qc.ok and ("black" in qc.reason or "silent" in qc.reason)
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "cancel"])
+def test_clip_disk_operations_do_not_block_dashboard_loop(tmp_path, monkeypatch, outcome):
+    """Regression for a live engine stuck in work_dir.mkdir on slow capture storage."""
+    import clipbot.assembler as module
+    segment = tmp_path / "segment.ts"
+    segment.write_bytes(b"captured")
+    target = StreamTarget(Platform.TWITCH, "fixture", "Fixture", "Art", 1)
+    event = SpikeEvent(target, 103, "chat", 1, 1, 1)
+    settings = merge_incoming(Settings(), {"clip": {"pre_s": 3, "post_s": 3}})
+    monkeypatch.setattr(module, "ffmpeg_exe", lambda _settings: "fixture-ffmpeg")
+    monkeypatch.setattr(module, "wait_for_coverage", AsyncMock(return_value=[Segment(segment, 100, 106)]))
+    loop_thread = threading.get_ident()
+    touched = []
+    for name in ("mkdir", "exists", "resolve", "write_text", "unlink"):
+        original = getattr(Path, name)
+
+        def guarded(path, *args, _name=name, _original=original, **kwargs):
+            if str(path).startswith(str(tmp_path)):
+                assert threading.get_ident() != loop_thread, f"{_name} blocked the engine event loop"
+                touched.append(_name)
+            return _original(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, name, guarded)
+
+    async def command(args, *_args, **_kwargs):
+        if outcome == "cancel":
+            raise asyncio.CancelledError()
+        if outcome == "success":
+            await asyncio.to_thread(Path(args[-1]).write_bytes, b"encoded")
+        return SimpleNamespace(returncode=0 if outcome == "success" else 1, err_text="fixture failure")
+
+    monkeypatch.setattr(module, "run_cmd", command)
+
+    async def run():
+        if outcome == "success":
+            result = await assemble(event, None, settings, tmp_path / "work")
+            assert result.id == event.id and result.end_wall - result.start_wall == 6
+        else:
+            with pytest.raises(asyncio.CancelledError if outcome == "cancel" else AssembleError):
+                await assemble(event, None, settings, tmp_path / "work")
+
+    asyncio.run(run())
+    assert "mkdir" in touched and "unlink" in touched
+
+
+def test_dashboard_capture_snapshot_never_scans_storage(tmp_path, monkeypatch):
+    """A stalled metadata worker cannot stall dashboard controls or invent fresh data."""
+    import clipbot.capture as module
+    target = StreamTarget(Platform.TWITCH, "fixture", "Fixture", "Art", 1)
+    cap = Capture(target, Settings(), tmp_path, None)
+    entered, release = threading.Event(), threading.Event()
+
+    def slow_scan(_folder):
+        entered.set()
+        assert release.wait(2), "test worker was not released"
+        return [Segment(tmp_path / "segment.ts", 100, 106)], 106
+
+    monkeypatch.setattr(module, "_scan_segments", slow_scan)
+
+    async def run():
+        worker = asyncio.create_task(asyncio.to_thread(cap.segments))
+        try:
+            assert await asyncio.to_thread(entered.wait, 2)
+            unknown = cap.snapshot()
+            assert not unknown["metadata_available"] and unknown["metadata_age_s"] is None
+        finally:
+            release.set()
+            await worker
+        snapshot = cap.snapshot()
+        assert snapshot["segments"] == 1 and snapshot["buffered_s"] == 6
+        assert snapshot["metadata_available"] and snapshot["metadata_age_s"] >= 0
+        monkeypatch.setattr(cap, "segments", lambda: pytest.fail("dashboard enumerated capture storage"))
+        monkeypatch.setattr(module, "newest_segment_time", lambda _path: pytest.fail("dashboard enumerated capture storage"))
+        assert cap.snapshot()["latest_segment_wall"] == 106
+
+    asyncio.run(run())

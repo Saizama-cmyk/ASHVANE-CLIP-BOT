@@ -10,6 +10,33 @@ from tests.test_account_profiles import context
 H = {"X-ClipBot": "1"}
 
 
+def test_bootstrap_ui_limits_are_public_but_account_data_and_foreign_hosts_are_not(tmp_path):
+    import json
+
+    async def run():
+        async with httpx.AsyncClient() as engine:
+            ctx, _ = context(tmp_path, engine)
+            app = create_app(ctx)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8787") as client:
+                response = await client.get("/ui-runtime.js")
+                assert response.status_code == 200
+                assert response.headers["cache-control"] == "no-store"
+                assert response.headers["x-content-type-options"] == "nosniff"
+                payload = response.text.removeprefix("window.ashvaneUI=Object.freeze(").removesuffix(");")
+                assert json.loads(payload) == {
+                    "growth_request_timeout_s": ctx.settings.analytics.growth_request_timeout_s,
+                    "youtube_sync_timeout_s": ctx.settings.analytics.youtube_sync_timeout_s,
+                }
+                assert (await client.get("/api/growth")).status_code == 401
+                assert (await client.get("/ui-runtime.js", headers={"Host": "foreign.example"})).status_code == 403
+                # A signed-out browser must still bootstrap after initial setup.
+                await client.post("/api/auth/setup", headers=H, json={"name": "Owner", "password": "first-password"})
+                client.cookies.clear()
+                assert (await client.get("/ui-runtime.js")).status_code == 200
+                assert (await client.get("/api/account-profiles/clips")).status_code == 401
+    asyncio.run(run())
+
+
 def test_first_setup_and_profile_switch_hold_both_users_until_new_runtime(tmp_path):
     async def run():
         async with httpx.AsyncClient() as engine:

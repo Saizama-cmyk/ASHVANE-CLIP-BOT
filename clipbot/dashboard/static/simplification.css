@@ -1,0 +1,23 @@
+/* Daily work first; setup and technical controls stay available by disclosure. */
+.workspace-nav-label{padding:14px 12px 6px;color:var(--muted);font-size:11px;line-height:1.4}
+.workspace-nav-label:first-child{padding-top:0}
+.workspace-manage{margin-top:12px}
+.workspace-manage>summary{position:relative;display:flex;align-items:center;gap:8px;padding:12px;color:var(--muted);font-size:13px;list-style:none;cursor:pointer;border-radius:8px;min-height:44px}
+.workspace-manage>summary::-webkit-details-marker{display:none}
+.workspace-manage>summary:after{content:'+';margin-left:auto;font-size:16px}
+.workspace-manage[open]>summary:after{content:'-'}
+.workspace-manage>summary:hover{background:var(--plate-2);color:var(--text)}
+.workspace-manage>summary:active{background:var(--plate-3)}
+.workspace-manage>summary:focus-visible,.workspace-advanced>summary:focus-visible,.settings-transfer>summary:focus-visible{outline:2px solid var(--molten);outline-offset:3px}
+.workspace-manage-tabs{display:grid;gap:4px}
+.workspace-manage-tabs>button{width:100%}
+.workspace-advanced{margin:8px 0 16px;font-size:13px;min-width:0}
+.workspace-advanced>summary{color:var(--muted);cursor:pointer;padding:10px 0;min-height:40px}
+.workspace-advanced[open]>.stories-field,.workspace-advanced[open]>.music-field{margin-top:8px}
+.settings-transfer{position:relative;margin-left:8px;font-size:13px}
+.settings-transfer>summary{list-style:none;cursor:pointer;color:var(--muted);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;min-height:36px}
+.settings-transfer>summary::-webkit-details-marker{display:none}
+.settings-transfer>summary:hover{background:var(--plate-2);color:var(--text)}
+.settings-transfer-controls{position:absolute;bottom:calc(100% + 12px);left:0;z-index:70;min-width:260px;padding:16px;background:var(--plate-2);border:1px solid var(--line-2);border-radius:8px;display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.settings-transfer-controls label{flex-basis:100%;white-space:normal}
+@media(max-width:640px){.rail #clipsNav{align-items:flex-start}.workspace-nav-label{display:none}.workspace-manage{margin:0;flex:none}.workspace-manage>summary{padding:10px 12px;min-width:100px;border:1px solid var(--line-2)}.workspace-manage[open]{display:flex;align-items:flex-start;gap:4px}.workspace-manage-tabs{display:flex;gap:4px}.workspace-manage-tabs>button{width:auto}.settings-transfer{margin-left:0}.settings-transfer-controls{left:auto;right:0;min-width:220px}.savebar{gap:8px}.workspace-advanced{margin-top:0}}

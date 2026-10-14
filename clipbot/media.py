@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import time
+import uuid
 from pathlib import Path
 
 from .config import AppPaths, Settings, ffmpeg_exe
@@ -67,13 +68,15 @@ async def remux_segment(src: Path, cache_dir: Path, settings: Settings) -> Path 
     0.16s per six-second segment, once, and the result is cached.
     """
     out = cache_dir / f"{src.stem}.mp4"
-    if out.exists():
+    if await asyncio.to_thread(out.exists):
         return out
-    ffmpeg = ffmpeg_exe(settings)
+    ffmpeg = await asyncio.to_thread(ffmpeg_exe, settings)
     if not ffmpeg:
         return None
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp.mp4")
+    await asyncio.to_thread(cache_dir.mkdir, parents=True, exist_ok=True)
+    # A preload and the playing video may request the same segment concurrently.
+    # Each ffmpeg owns its output until atomic publication; they never share a tmp.
+    tmp = out.with_name(f"{out.stem}.{uuid.uuid4().hex}.tmp.mp4")
     try:
         res = await run_cmd([ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", str(src),
                              "-map", "0:v:0?", "-map", "0:a:0?", "-c:v", "copy",
@@ -82,16 +85,43 @@ async def remux_segment(src: Path, cache_dir: Path, settings: Settings) -> Path 
                              "-f", "mp4", str(tmp)], settings.capture.probe_timeout_s)
     except CmdTimeout as exc:
         logger.debug("remux of %s timed out: %s", src.name, exc)
+        await asyncio.to_thread(tmp.unlink, missing_ok=True)
         return None
-    if res.returncode != 0 or not tmp.exists():
-        tmp.unlink(missing_ok=True)
+    except asyncio.CancelledError:
+        await asyncio.to_thread(tmp.unlink, missing_ok=True)
+        raise
+    if res.returncode != 0 or not await asyncio.to_thread(tmp.exists):
+        logger.debug("remux of %s failed: %s", src.name, res.err_text)
+        await asyncio.to_thread(tmp.unlink, missing_ok=True)
         return None
-    os.replace(tmp, out)
+    await asyncio.to_thread(_publish_live_segment, tmp, out)
     horizon = time.time() - settings.capture.buffer_s
-    for old in cache_dir.glob("*.mp4"):
-        if old.stat().st_mtime < horizon:
-            old.unlink(missing_ok=True)
+    await asyncio.to_thread(_prune_live_cache, cache_dir, horizon)
     return out
+
+
+def _publish_live_segment(tmp: Path, out: Path) -> None:
+    if out.exists():
+        tmp.unlink(missing_ok=True)
+        return
+    try:
+        os.replace(tmp, out)
+    except PermissionError:
+        # On Windows an already-served winner may be open without delete sharing.
+        if not out.is_file():
+            raise
+        tmp.unlink(missing_ok=True)
+
+
+def _prune_live_cache(cache_dir: Path, horizon: float) -> None:
+    for old in cache_dir.glob("*.mp4"):
+        try:
+            if old.stat().st_mtime < horizon:
+                old.unlink(missing_ok=True)
+        except FileNotFoundError:
+            continue  # another viewer finished the same cache cleanup
+        except PermissionError:
+            logger.debug("live cache %s is in use; prune on the next segment", old.name)
 
 
 def poster_path(paths: AppPaths, cid: str) -> Path:

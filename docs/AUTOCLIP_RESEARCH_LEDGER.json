@@ -1,0 +1,120 @@
+{
+  "question": "Which AutoClip workflows are documented by official public pages, and which comparisons with Ashvane remain untested?",
+  "checked_at": "2026-10-13",
+  "reader": "Official web reads; requested local Qwen fetch tools unavailable in this session",
+  "claims": [
+    {
+      "id": "C1",
+      "statement": "AutoClip advertises linked/file video intake and monitored new uploads or livestream VODs; rolling live-edge capture is not established by this page.",
+      "numeric": false,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "statement": "The current pricing page lists monthly Starter 19.99 USD/200 credits, Pro 39.99/500 and Scale 79.99/1200, with highlight billing for streams.",
+      "numeric": true,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/pricing",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "statement": "The AI-clipping page advertises transcript-first selection, multimodal verification and tight/extended variants; quality and speed were not benchmarked here.",
+      "numeric": false,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/features/ai-clipping",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C4",
+      "statement": "The dedicated posting page documents TikTok, Instagram and YouTube; the cross-posting article instead lists nine destinations.",
+      "numeric": true,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/features/multi-platform-posting",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        },
+        {
+          "url": "https://autoclip.dev/blog/how-to-post-clips-to-multiple-platforms",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C5",
+      "statement": "The monitoring guide itself contains both nine-destination and 13-plus-destination wording.",
+      "numeric": true,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/blog/how-to-set-up-channel-monitoring-for-automatic-clips",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C6",
+      "statement": "Homepage plan FAQ allowance/watermark wording conflicts with the current pricing page.",
+      "numeric": false,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        },
+        {
+          "url": "https://autoclip.dev/pricing",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C7",
+      "statement": "The privacy policy discloses external AI/media processing and tokens held by backend or publishing partners.",
+      "numeric": false,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/privacy",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C8",
+      "statement": "The terms do not guarantee AI accuracy or commercial results; connected-account terms describe promotional/automated authority while connected, including after subscription ends. Actual account consent was not tested.",
+      "numeric": false,
+      "sources": [
+        {
+          "url": "https://autoclip.dev/terms",
+          "origin": "autoclip-vendor",
+          "kind": "primary"
+        }
+      ]
+    },
+    {
+      "id": "C9",
+      "statement": "AutoClip is more accurate, faster or more profitable than Ashvane on comparable sources.",
+      "numeric": false,
+      "unverified": true,
+      "sources": []
+    }
+  ]
+}

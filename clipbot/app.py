@@ -111,6 +111,8 @@ class ClipBotApp:
         self._server: uvicorn.Server | None = None
         from .dependencies import LocalDependencies
         self.dependencies = LocalDependencies(self)
+        from .supervisor import Supervisor
+        self.supervisor = Supervisor(self)
 
     @property
     def url(self) -> str:
@@ -147,6 +149,7 @@ class ClipBotApp:
                 self.sync_autostart()
             self.dependencies.request()
             await self.pipeline.start()
+            await self.supervisor.start()
             if self.settings.businesses.resonance_enabled:
                 from .music_api import set_music_running
                 try:
@@ -164,18 +167,27 @@ class ClipBotApp:
                 if d.remote:
                     logger.info("phone remote at %s (same Wi-Fi, sign in with your profile)",
                                 self.lan_url)
+            from .supervisor_bootstrap import mark_healthy
+            from .config import root_dir
+            mark_healthy(root_dir())
             self.ready.set()
             await self._quit.wait()
         finally:
             self.ready.set()
+            try:
+                await self.supervisor.close()
+            except Exception:
+                logger.exception("Supervisor shutdown needs attention")
             if self._server:
                 self._server.should_exit = True
             if server_task:
                 await asyncio.gather(server_task, return_exceptions=True)
             from .business_runtime import close_business_runtime
+            from .growth import close_growth
             from .music_api import close_music
             from .social_api import close_social
             await close_business_runtime(self)
+            await close_growth(self)
             if getattr(self, "creative_tools", None):
                 await self.creative_tools.close()
             await close_social(self)
@@ -223,6 +235,7 @@ class ClipBotApp:
         if ("app", "start_with_windows") in changed:
             await asyncio.to_thread(self.sync_autostart)
         self.pipeline.apply_settings(new)
+        await self.supervisor.reconfigure(new)
         if any(path[0] in {"businesses", "ai"} for path in changed):
             self.dependencies.request()
         if self.on_state_change:

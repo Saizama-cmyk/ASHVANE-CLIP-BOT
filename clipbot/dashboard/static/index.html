@@ -747,13 +747,17 @@ nav button:hover .i3{transform:scale(1.08)}
 </style>
 <!-- Existing component layout is retained above; the daily desk theme is authoritative. -->
 <link rel="stylesheet" href="/static/desk.css?v=a304f06551a48a4d">
-<link rel="stylesheet" href="/static/stories.css?v=324bf69692b3d826">
+<link rel="stylesheet" href="/static/stories.css?v=f45e84188a43df20">
 <link rel="stylesheet" href="/static/cosmic.css?v=3bad212166c84804">
-<link rel="stylesheet" href="/static/business.css?v=12cdb423062346c1">
+<link rel="stylesheet" href="/static/business.css?v=a95586644e0d726d">
+<link rel="stylesheet" href="/static/supervisor.css?v=073bb4e8375ec297">
+<link rel="stylesheet" href="/static/growth.css?v=2778283e23c38eb3">
+<link rel="stylesheet" href="/static/simplification.css?v=d1118022f7495c67">
 <link rel="stylesheet" href="/static/music.css?v=baeedf1dc90dc913">
 <link rel="stylesheet" href="/static/social.css?v=b6576a04b326dd0b">
 <link rel="stylesheet" href="/static/creative.css?v=c216f842b402b15b">
 <link rel="stylesheet" href="/static/accounts.css?v=86231a76ae88e87b">
+<link rel="stylesheet" href="/static/observatory.css?v=218da3cbca32f824">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -775,7 +779,7 @@ nav button:hover .i3{transform:scale(1.08)}
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
 </svg>
 <div id="lock" role="dialog" aria-modal="true" aria-labelledby="lockTitle"><form id="lockForm">
-  <img class="lockmark" src="/static/art/mark.png" alt="">
+  <img class="lockmark" src="/static/art/ashvane-mark.svg" alt="">
   <h2 id="lockTitle">Ashvane</h2><div class="small dim" id="lockHint">Your clips. Your PC. Your workspace.</div>
   <select id="lockProfile" aria-label="Profile"></select>
   <input type="text" id="lockName" name="username" autocomplete="username" aria-label="Profile name" placeholder="Profile name" hidden>
@@ -787,21 +791,25 @@ nav button:hover .i3{transform:scale(1.08)}
   <button class="btn primary" type="submit" id="lockBtn">Unlock</button></form></div>
 <div class="shell">
 <aside class="rail">
-  <div class="brand"><img src="/static/art/mark-96.png" alt="" width="42" height="42"><div><b>Ashvane</b><span>Capture / cut / publish</span></div></div>
+  <div class="brand"><img src="/static/art/ashvane-mark.svg" alt="" width="42" height="42"><div><b>Ashvane</b><span>The living observatory</span></div></div>
   <div class="business-picker">
     <button type="button" id="businessToggle" aria-expanded="false" aria-controls="businessChoices"><span class="business-caption">Business</span><span class="business-current" id="businessCurrent">Surge</span><span class="business-description" id="businessDescription">Streamer clips</span><span class="business-chevron" aria-hidden="true">⌄</span></button>
     <div id="businessChoices" class="business-choices" hidden aria-label="Choose business"><button type="button" data-business="clips" aria-pressed="true"><b>Surge</b><small>Streamer clips</small></button><button type="button" data-business="stories" aria-pressed="false"><b>Hollow</b><small>Scary stories</small></button><button type="button" data-business="music" aria-pressed="false"><b>Resonance</b><small>Music production</small></button><button type="button" data-business="social" aria-pressed="false"><b>Social Studio</b><small>Brands &amp; client content</small></button></div>
   </div>
   <nav id="clipsNav" role="tablist" aria-orientation="vertical" aria-label="Surge sections">
+    <div class="workspace-nav-label" aria-hidden="true">Production</div>
     <button role="tab" aria-selected="true" data-view="clips" title="Clips"><span class="desk-nav-mark" aria-hidden="true">01</span><span class="t">Clips</span></button>
     <button role="tab" aria-selected="false" data-view="studio" title="Studio"><span class="desk-nav-mark" aria-hidden="true">02</span><span class="t">Studio</span></button>
     <button role="tab" aria-selected="false" data-view="live" title="Live"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-live"/></svg><span class="t">Live</span></button>
     <button role="tab" aria-selected="false" data-view="research" title="Research"><span class="desk-nav-mark" aria-hidden="true">03</span><span class="t">Research</span></button>
+    <div class="workspace-nav-label" aria-hidden="true">Results</div>
     <button role="tab" aria-selected="false" data-view="desk" title="Today"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Today</span></button>
     <button role="tab" aria-selected="false" data-view="growth" title="Growth"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-growth"/></svg><span class="t">Growth</span></button>
+    <details class="workspace-manage" id="surgeManage"><summary id="surgeManageSummary">Manage<span class="count" id="manageSetupCount" hidden></span></summary><div class="workspace-manage-tabs">
     <button role="tab" aria-selected="false" data-view="system" title="System"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-system"/></svg><span class="t">System</span></button>
     <button role="tab" aria-selected="false" data-view="settings" title="Settings"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings"/></svg><span class="t">Settings</span></button>
     <button role="tab" aria-selected="false" data-view="setup" title="Setup"><svg class="nav-instrument" aria-hidden="true" viewBox="0 0 24 24"><use href="#i-setup"/></svg><span class="t">Setup</span><span class="count" id="setupCount" hidden></span></button>
+    </div></details>
   </nav>
   <nav id="storiesNav" role="tablist" aria-orientation="vertical" aria-label="Hollow sections" hidden>
     <button type="button" role="tab" aria-selected="true" data-story-section="create"><span class="desk-nav-mark" aria-hidden="true">01</span><span class="t">Create</span></button>
@@ -823,6 +831,12 @@ nav button:hover .i3{transform:scale(1.08)}
     <button type="button" role="tab" aria-selected="false" data-social-section="calendar"><span class="desk-nav-mark" aria-hidden="true">04</span><span class="t">Calendar</span></button>
     <button type="button" role="tab" aria-selected="false" data-social-section="accounts"><span class="desk-nav-mark" aria-hidden="true">05</span><span class="t">Accounts</span></button>
   </nav>
+  <section class="supervisor-access" aria-label="Shared infrastructure">
+    <button class="supervisor-entry" id="supervisorEntry" type="button" aria-controls="view-supervisor"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-25 12 12)"/><path d="M12 2v4m0 12v4"/></svg><span>Supervisor</span></button>
+    <button class="supervisor-master" id="supervisorMaster" type="button" role="switch" aria-checked="false" aria-describedby="supervisorMasterHelp" disabled><span><strong>MASTER SWITCH</strong><small id="supervisorMasterState">Connecting…</small></span><span class="supervisor-toggle" aria-hidden="true"></span></button>
+    <span class="sr-only" id="supervisorMasterHelp">Enable shared improvement agents. Turning off saves the setting and cancels or drains supervisor work across all businesses.</span>
+    <p class="supervisor-rail-error" id="supervisorRailError" role="status" hidden></p>
+  </section>
   <div class="rail-foot">
     <div class="status" role="button" tabindex="0" title="Open the System panel: what this means, events, issues, analytics">
       <div id="tally" class="tally" role="status" aria-live="polite"><i></i><span id="tallyText">Connecting</span></div>
@@ -841,13 +855,44 @@ nav button:hover .i3{transform:scale(1.08)}
   </div>
 </aside>
 <div class="content">
-  <div class="topbar"><div class="grow"><h1 id="pageTitle">Clip workspace</h1><p id="pageSub">Watch the cut. Check the moment. Publish when it’s ready.</p></div><div class="top-tools"><button class="btn" type="button" id="accountProfilesButton">Account profiles</button><button class="btn ghost" type="button" id="phoneBtn" hidden>Phone remote</button></div></div>
+  <div class="topbar"><div class="grow"><h1 id="pageTitle">Clip workspace</h1><p id="pageSub">Watch the cut. Check the moment. Publish when it’s ready.</p></div><div class="top-tools"><button class="btn" type="button" id="accountProfilesButton">Account profiles</button><button class="btn ghost" type="button" id="phoneBtn" hidden>Phone remote</button></div>
+    <section class="business-runtime" id="businessRuntime" aria-label="Four independent business run controls">
+      <div id="businessRuntimeRows">
+        <div class="business-runtime-row" data-runtime-business="clips"><div><button class="business-runtime-open" type="button" data-business-open="clips">Surge</button><small>Connecting…</small></div><button type="button" class="business-run-switch" data-business-run="clips" role="switch" aria-checked="false" aria-label="Run Surge" disabled><span class="business-switch-track" aria-hidden="true"></span><span data-run-label>Run</span></button></div>
+        <div class="business-runtime-row" data-runtime-business="stories"><div><button class="business-runtime-open" type="button" data-business-open="stories">Hollow</button><small>Connecting…</small></div><button type="button" class="business-run-switch" data-business-run="stories" role="switch" aria-checked="false" aria-label="Run Hollow" disabled><span class="business-switch-track" aria-hidden="true"></span><span data-run-label>Run</span></button></div>
+        <div class="business-runtime-row" data-runtime-business="music"><div><button class="business-runtime-open" type="button" data-business-open="music">Resonance</button><small>Connecting…</small></div><button type="button" class="business-run-switch" data-business-run="music" role="switch" aria-checked="false" aria-label="Run Resonance" disabled><span class="business-switch-track" aria-hidden="true"></span><span data-run-label>Run</span></button></div>
+        <div class="business-runtime-row" data-runtime-business="social"><div><button class="business-runtime-open" type="button" data-business-open="social">Social Studio</button><small>Connecting…</small></div><button type="button" class="business-run-switch" data-business-run="social" role="switch" aria-checked="false" aria-label="Run Social Studio" disabled><span class="business-switch-track" aria-hidden="true"></span><span data-run-label>Run</span></button></div>
+      </div>
+      <div id="businessRuntimeStatus" class="business-runtime-status" role="status" aria-live="polite"></div>
+      <div id="businessResourceSummary" class="business-resource-summary" aria-label="Production capacity"></div>
+    </section>
+  </div>
   <div class="banner" id="restartBanner"><span>Some changes need a restart: <b id="restartList"></b></span>
     <button class="btn primary" id="restartBtn" type="button">Restart Ashvane</button></div>
   <div class="banner" id="updBanner"><span id="updText"></span><button class="btn primary" id="updBtn" type="button">Update now</button></div>
   <div class="banner err" id="connBanner"><span>Lost contact with the Ashvane engine. Retrying…</span></div>
 
 <main id="workspace" tabindex="-1">
+  <section class="view supervisor-workspace" id="view-supervisor" aria-labelledby="supervisorEntry">
+    <div id="coreOperations" class="core-operations" aria-live="polite"></div>
+    <div class="supervisor-overview"><p>A shared Core coordinates Ashvane’s local agents. Follow their tasks, recorded delegations and verified changes here. The master switch below the business navigation controls the whole supervisor.</p><div class="supervisor-state" id="supervisorState">Connecting…</div></div>
+    <div class="supervisor-notice" id="supervisorNotice" role="status" aria-live="polite" hidden><span id="supervisorNoticeText"></span></div>
+    <div class="supervisor-deck">
+      <section class="supervisor-map" aria-labelledby="supervisorNetworkHeading"><div class="supervisor-map-head"><h2 id="supervisorNetworkHeading">Core neural network</h2><span id="supervisorRosterCount">Waiting for roster</span></div><div class="supervisor-plane" aria-hidden="true"></div><svg class="supervisor-links" id="supervisorLinks" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg><div class="supervisor-agents" id="supervisorAgents"><p class="supervisor-map-empty">Loading the supervisor roster…</p></div></section>
+      <section class="supervisor-inspector" id="supervisorInspector" aria-label="Selected agent"><h3>Inspect an agent</h3><p>Select an agent to see its current task and status.</p></section>
+    </div>
+    <div class="supervisor-columns"><div>
+      <section class="supervisor-panel"><div class="supervisor-panel-head"><h2>Direct the next cycle</h2><button class="btn" id="supervisorRefresh" type="button">Refresh</button></div><form id="supervisorGoalForm"><label for="supervisorGoal">Goal <span class="supervisor-help">· optional</span></label><textarea id="supervisorGoal" name="supervisor_goal" maxlength="2000" rows="3" placeholder="For example: improve the story opening without weakening the safety checks."></textarea><div class="supervisor-actions"><button class="btn primary" type="submit" id="supervisorRun" disabled>Run improvement cycle</button><button class="btn" type="button" id="supervisorCancel" disabled>Cancel active job</button></div><p id="supervisorRunHelp">Waiting for the supervisor engine.</p></form><div class="supervisor-current" id="supervisorCurrent"><strong>Checking current work…</strong></div></section>
+      <section class="supervisor-panel"><div class="supervisor-panel-head"><h2>Activity</h2><span class="supervisor-help">Latest reported events</span></div><ol class="supervisor-records" id="supervisorEvents"><li>Loading events…</li></ol></section>
+      <section class="supervisor-panel"><h2>Job history</h2><p>Inspect completed cycles. Rollback appears only when the engine reports a reversible change.</p><ol class="supervisor-records" id="supervisorJobs"><li>Loading jobs…</li></ol></section>
+    </div><div>
+      <section class="supervisor-panel"><h2>Learning examples</h2><p>Original examples and tested repair outcomes saved by Core. Eligible records have separate training and evaluation exports.</p><dl class="supervisor-counts"><div><dt>Total</dt><dd id="supervisorCount-total">—</dd></div><div><dt>Eligible</dt><dd id="supervisorCount-eligible">—</dd></div><div><dt>Training</dt><dd id="supervisorCount-training">—</dd></div><div><dt>Evaluation</dt><dd id="supervisorCount-evaluation">—</dd></div></dl><div class="supervisor-datasets"><button class="btn" type="button" data-supervisor-dataset="training" disabled>Export training</button><button class="btn" type="button" data-supervisor-dataset="evaluation" disabled>Export evaluation</button></div><p>Core can create datasets and use recorded repair outcomes. Automatic model weight retraining is not implemented.</p></section>
+      <section class="supervisor-panel"><h2>Goal tree</h2><p>Directions assigned by the supervisor.</p><ol class="supervisor-records" id="supervisorGoals"><li>Loading goals…</li></ol></section>
+      <section class="supervisor-panel"><h2>Runtime observations</h2><p>Recurring faults and waiting work help Core choose useful repairs.</p><div id="supervisorObservations">Waiting for runtime evidence…</div></section>
+      <section class="supervisor-panel"><h2>Capabilities</h2><p>Available models, isolation and limits reported by this installation.</p><div class="supervisor-capabilities" id="supervisorCapabilities">Loading capabilities…</div></section>
+      <section class="supervisor-panel"><h2>Extensions</h2><p>Installed manifests reported by the engine.</p><div class="supervisor-capabilities" id="supervisorExtensions">Loading extensions…</div></section>
+    </div></div>
+  </section>
   <section class="view stories-workspace" id="view-stories" role="tabpanel">
     <div class="stories-intro"><p>Turn an original premise into a manuscript, a narrated scene sequence, and a finished video. Choose the visual treatment separately from the kind of story.</p><span class="stories-fiction">Original fictional stories</span></div>
     <div class="stories-global-error" id="storiesGlobalError" role="alert" hidden><p id="storiesGlobalErrorText"></p><button class="btn" type="button" id="storiesReload">Try again</button></div>
@@ -858,7 +903,7 @@ nav button:hover .i3{transform:scale(1.08)}
             <fieldset class="stories-fieldset stories-field"><legend>Story premise</legend><div class="creative-mode"><label><input type="radio" name="story_topic_mode" value="generated" checked><span>Generate a premise</span></label><label><input type="radio" name="story_topic_mode" value="given"><span>Use my premise</span></label></div><p id="storiesTopicModeHelp" class="creative-mode-help">Leave the premise empty to let the local writer invent an original story.</p></fieldset><div class="stories-field"><label for="storiesTopic">Premise or selected idea</label><textarea id="storiesTopic" name="story_topic" rows="4" maxlength="2000" placeholder="Optional · generate a premise, or choose an idea below"></textarea></div><div class="stories-field"><label for="storiesDirection">Creative direction</label><textarea id="storiesDirection" name="story_direction" rows="3" maxlength="2000" placeholder="Optional mood, setting, themes or things to avoid"></textarea></div><button class="btn" type="button" id="storiesIdeasGenerate">Suggest story ideas</button><p id="storiesIdeasStatus" class="stories-help" role="status" aria-live="polite"></p><div id="storiesIdeas" class="creative-ideas"></div><div id="storiesIdeaFeedback" hidden></div>
             <div class="stories-field"><label for="storiesGenre">Genre</label><select id="storiesGenre" name="story_genre" required><option value="">Loading genres…</option></select></div>
             <fieldset class="stories-fieldset stories-field"><legend>Visual treatment</legend><div class="stories-format"><label><input type="radio" name="story_format" value="still" checked><span><b>Still illustrations</b><small>Original illustrated shadow theatre</small></span></label><label><input type="radio" name="story_format" value="animated"><span><b>Animated scenes</b><small>Original moving shadow theatre</small></span></label></div><p class="stories-help" id="storiesFormatNote">Checking visual providers…</p></fieldset>
-            <div class="stories-length"><div class="stories-field"><label for="storiesLength">Length</label><select id="storiesLength" name="story_length"><option value="short">Short</option><option value="episode">Episode</option></select></div><div class="stories-field"><label for="storiesDuration">Seconds</label><input type="number" id="storiesDuration" name="story_duration" value="60" min="30" max="1800" step="1" inputmode="numeric" required></div></div>
+            <div class="stories-length"><div class="stories-field"><label for="storiesLength">Length</label><select id="storiesLength" name="story_length"><option value="short">Short</option><option value="episode">Episode</option></select></div><details class="workspace-advanced"><summary>Exact duration</summary><div class="stories-field"><label for="storiesDuration">Seconds</label><input type="number" id="storiesDuration" name="story_duration" value="60" min="30" max="1800" step="1" inputmode="numeric" required></div></details></div>
             <div class="stories-field"><label for="storiesVoice">Narrator</label><select id="storiesVoice" name="story_voice"><option value="">Checking available voices…</option></select></div>
             <div class="stories-readiness" id="storiesReadiness" aria-live="polite">Checking script, narration, and visual providers…</div>
             <button class="btn primary" type="submit" id="storiesCreate" disabled>Create story draft</button>
@@ -878,7 +923,17 @@ nav button:hover .i3{transform:scale(1.08)}
             <button class="btn ghost" type="button" id="storiesAccounts">Connect an account</button>
           </form>
         </section>
-        <section class="stories-panel" data-story-area="library"><div class="stories-panel-head"><h2>Your stories</h2><span id="storiesLibraryCount">Loading…</span></div><div class="stories-library-tools"><input id="storiesLibrarySearch" type="search" name="story_search" autocomplete="off" placeholder="Find a story" aria-label="Find a story"></div><div class="stories-library" id="storiesLibrary"><p class="stories-library-empty">Loading saved projects…</p></div></section>
+        <section class="stories-panel" data-story-area="library"><div class="stories-panel-head"><h2>Your stories</h2><span id="storiesLibraryCount">Loading…</span></div><div class="stories-library-tools"><input id="storiesLibrarySearch" type="search" name="story_search" autocomplete="off" placeholder="Find a story" aria-label="Find a story"></div><details class="story-compilation"><summary>Make a horror compilation</summary>
+<form id="storiesCompilationForm" class="stories-create-form">
+<p class="stories-help">Combine finished stories from this Hollow profile. Their voices and visuals stay intact. Measured chapters are added automatically.</p>
+<div class="stories-field"><label for="storiesCompilationTitle">Collection title</label><input id="storiesCompilationTitle" maxlength="100" required placeholder="Three stories for after midnight"></div>
+<div class="stories-field"><label for="storiesCompilationPick">Add a finished story</label><select id="storiesCompilationPick"></select><button type="button" class="btn" id="storiesCompilationAdd">Add to collection</button></div>
+<ol id="storiesCompilationOrder" class="compilation-order"></ol>
+<label class="stories-help"><input type="checkbox" id="storiesCompilationLandscape" checked> Landscape episode (16:9)</label>
+<p class="stories-help">Silent opening and chapter cards use your Hollow settings. Publishing uses this profile’s existing destinations and auto-publish preference.</p>
+<button class="btn primary" type="submit" id="storiesCompilationCreate" disabled>Assemble compilation</button>
+<p id="storiesCompilationStatus" class="stories-help" role="status" aria-live="polite"></p>
+</form></details><div class="stories-library" id="storiesLibrary"><p class="stories-library-empty">Loading saved projects…</p></div></section>
       </aside>
       <div class="stories-stage">
         <section class="stories-panel stories-empty" id="storiesEmpty"><div class="story-empty-line" aria-hidden="true"></div><h2>Build a story worth listening to.</h2><p>Start with your premise on the left, or open a saved story. The manuscript and director’s scene notes stay editable before you render.</p><div class="stories-worksteps" aria-label="Story production stages"><span>Manuscript</span><span>Scene direction</span><span>Narration &amp; video</span></div></section>
@@ -927,7 +982,7 @@ nav button:hover .i3{transform:scale(1.08)}
       <section class="music-panel"><h3>From first take to finished session</h3><p>Generate a source, audition it in Library, then take it into Production. REAPER projects keep the original take available while you develop a new beat.</p><p>To replace existing backing, choose a processed artist version that has a saved dry vocal. A full song mix can be layered with a new beat.</p><div id="musicJob" class="music-job" hidden aria-live="polite"><strong id="musicJobStage"></strong><p id="musicJobMessage"></p><div class="music-actions"><button class="btn" id="musicCancel" type="button">Cancel generation</button></div></div><p id="musicCreateStatus" class="music-status" role="status" aria-live="polite"></p><button class="btn" type="button" data-music-go="library">Hear saved takes</button></section>
     </div>
     <div data-music-area="library" class="music-grid" hidden><section class="music-panel"><h3>Local take library</h3><div class="music-field"><label for="musicSearch">Find a take</label><input id="musicSearch" name="music_search" type="search" autocomplete="off" placeholder="Title or sound direction"></div><div id="musicLibrary" class="music-list" aria-live="polite"><p class="music-help">Loading saved takes…</p></div></section><section class="music-panel"><h3>Source audition</h3><div id="musicSourceEmpty" class="music-empty"><p>Select a saved take to listen, read its lyrics, and prepare a production session.</p></div><div id="musicSource" hidden><div class="music-audition"><h3 id="musicSourceTitle" class="music-source-title"></h3><p id="musicSourceMeta" class="music-source-meta"></p><audio id="musicAudio" controls preload="none" aria-label="Selected source take"></audio><a class="btn" id="musicSourceDownload" download hidden>Download source</a></div><details><summary>Lyrics &amp; source direction</summary><p id="musicSourceStyle" class="music-source-meta"></p><p id="musicSourceLyrics" class="music-source-meta"></p></details><div class="music-actions"><button class="btn primary" type="button" id="musicUseTake">Take into Production</button><button class="btn" type="button" id="musicReuse">Use direction for a new take</button></div></div><div id="musicSourceFeedback" hidden></div><p id="musicLibraryStatus" class="music-status" role="status" aria-live="polite"></p></section></div>
-    <div data-music-area="production" class="music-grid" hidden><section class="music-panel"><h3>Shape the session</h3><form id="musicProductionForm"><div class="music-field"><label for="musicProductionSource">Source take or artist version</label><select id="musicProductionSource" name="music_production_source"><option value="">Original beat · no source take</option></select><p class="music-help" id="musicReplacementHelp">Choose a take to layer a beat, or start an original instrumental.</p></div><div class="music-field"><label for="musicProductionTitle">Session title</label><input id="musicProductionTitle" name="music_production_title" maxlength="120" autocomplete="off" placeholder="Name the production session"></div><div class="music-field"><label for="musicBrief">Production notes</label><textarea id="musicBrief" name="music_producer_brief" rows="5" maxlength="2000" placeholder="What should change? Describe the groove, arrangement and finish you want."></textarea><p class="music-help">Notes are saved with the project. The local producer uses these notes to edit and render the REAPER session. Optional beat controls below set the starting arrangement.</p></div><div class="music-fields"><div class="music-field"><label for="musicBeatStyle">Beat</label><select id="musicBeatStyle" name="music_beat_style"><option value="trap">Trap</option><option value="boom-bap">Boom bap</option><option value="four-on-floor">Four on the floor</option></select></div><div class="music-field"><label for="musicBpm">Tempo · BPM</label><input id="musicBpm" name="music_bpm" type="number" min="40" max="240" step="1" value="120" required></div><div class="music-field"><label for="musicBars">Beat length · bars</label><input id="musicBars" name="music_bars" type="number" min="1" max="128" step="1" value="8" required></div><div class="music-field"><label for="musicBeatSeed">Beat seed</label><input id="musicBeatSeed" name="music_beat_seed" type="number" min="0" max="2147483647" step="1" value="0" required></div></div><details><summary>Optional custom beat patterns</summary><label class="music-check"><input type="checkbox" id="musicCustomBeat" name="music_custom_beat"><span>Use my sixteenth-note patterns instead of the starting beat</span></label><p class="music-help">Each row is one bar, repeated across the session. The local producer can further change the arrangement and effects from your notes.</p><div id="musicPatterns" hidden></div></details><label class="music-check"><input type="checkbox" id="musicReplaceBacking" name="music_replace_backing" disabled><span>Replace backing using this version’s saved dry vocal</span></label><div class="music-actions"><button class="btn primary" type="button" id="musicProduce" disabled>Produce from these notes</button><button class="btn" type="submit" id="musicPrepare" disabled>Prepare editable session</button><button class="btn" type="button" id="musicSaveProduction">Save notes on this PC</button></div><p id="musicProductionStatus" class="music-status" role="status" aria-live="polite">Checking production tools…</p><div id="musicProducerJob" class="music-job" hidden aria-live="polite"><strong id="musicProducerStage"></strong><p id="musicProducerMessage"></p><div class="music-actions"><button class="btn" type="button" id="musicProducerCancel">Cancel production</button><button class="btn" type="button" id="musicApplyPlan" hidden>Apply reviewed plan &amp; render</button></div><details id="musicPlanDetails" hidden><summary>Production plan &amp; review</summary><pre id="musicPlanText" class="music-source-meta"></pre></details></div></form></section><section class="music-panel"><h3>Sessions &amp; versions</h3><div class="music-field"><label for="musicProjectSelect">Saved REAPER session</label><select id="musicProjectSelect" name="music_project"><option value="">Select a session</option></select></div><div id="musicProjectEmpty"><p>Prepare a session to create an editable REAPER project. Direct the local producer with your notes, or open REAPER on this PC for optional visual edits. Exported versions can be auditioned here.</p></div><div id="musicProject" hidden><h3 id="musicProjectTitle" class="music-source-title"></h3><p id="musicProjectInfo"></p><p id="musicProjectNotes" class="music-source-meta"></p><div class="music-actions"><button class="btn" id="musicOpenReaper" type="button">Open REAPER on this PC</button><button class="btn primary" id="musicExport" type="button">Export a new version</button><button class="btn" id="musicEditProject" type="button">Use these beat settings</button></div><p id="musicProjectStatus" class="music-status" role="status" aria-live="polite"></p><div id="musicVersions" class="music-versions"></div></div></section></div>
+    <div data-music-area="production" class="music-grid" hidden><section class="music-panel"><h3>Shape the session</h3><form id="musicProductionForm"><div class="music-field"><label for="musicProductionSource">Source take or artist version</label><select id="musicProductionSource" name="music_production_source"><option value="">Original beat · no source take</option></select><p class="music-help" id="musicReplacementHelp">Choose a take to layer a beat, or start an original instrumental.</p></div><div class="music-field"><label for="musicProductionTitle">Session title</label><input id="musicProductionTitle" name="music_production_title" maxlength="120" autocomplete="off" placeholder="Name the production session"></div><div class="music-field"><label for="musicBrief">Production notes</label><textarea id="musicBrief" name="music_producer_brief" rows="5" maxlength="2000" placeholder="What should change? Describe the groove, arrangement and finish you want."></textarea><p class="music-help">Notes are saved with the project. The local producer uses these notes to edit and render the REAPER session. Optional beat controls below set the starting arrangement.</p></div><div class="music-fields"><div class="music-field"><label for="musicBeatStyle">Beat</label><select id="musicBeatStyle" name="music_beat_style"><option value="trap">Trap</option><option value="boom-bap">Boom bap</option><option value="four-on-floor">Four on the floor</option></select></div><div class="music-field"><label for="musicBpm">Tempo · BPM</label><input id="musicBpm" name="music_bpm" type="number" min="40" max="240" step="1" value="120" required></div><div class="music-field"><label for="musicBars">Beat length · bars</label><input id="musicBars" name="music_bars" type="number" min="1" max="128" step="1" value="8" required></div><details class="workspace-advanced"><summary>Beat seed</summary><div class="music-field"><label for="musicBeatSeed">Beat seed</label><input id="musicBeatSeed" name="music_beat_seed" type="number" min="0" max="2147483647" step="1" value="0" required></div></details></div><details><summary>Optional custom beat patterns</summary><label class="music-check"><input type="checkbox" id="musicCustomBeat" name="music_custom_beat"><span>Use my sixteenth-note patterns instead of the starting beat</span></label><p class="music-help">Each row is one bar, repeated across the session. The local producer can further change the arrangement and effects from your notes.</p><div id="musicPatterns" hidden></div></details><label class="music-check"><input type="checkbox" id="musicReplaceBacking" name="music_replace_backing" disabled><span>Replace backing using this version’s saved dry vocal</span></label><div class="music-actions"><button class="btn primary" type="button" id="musicProduce" disabled>Produce from these notes</button><button class="btn" type="submit" id="musicPrepare" disabled>Prepare editable session</button><button class="btn" type="button" id="musicSaveProduction">Save notes on this PC</button></div><p id="musicProductionStatus" class="music-status" role="status" aria-live="polite">Checking production tools…</p><div id="musicProducerJob" class="music-job" hidden aria-live="polite"><strong id="musicProducerStage"></strong><p id="musicProducerMessage"></p><div class="music-actions"><button class="btn" type="button" id="musicProducerCancel">Cancel production</button><button class="btn" type="button" id="musicApplyPlan" hidden>Apply reviewed plan &amp; render</button></div><details id="musicPlanDetails" hidden><summary>Production plan &amp; review</summary><pre id="musicPlanText" class="music-source-meta"></pre></details></div></form></section><section class="music-panel"><h3>Sessions &amp; versions</h3><div class="music-field"><label for="musicProjectSelect">Saved REAPER session</label><select id="musicProjectSelect" name="music_project"><option value="">Select a session</option></select></div><div id="musicProjectEmpty"><p>Prepare a session to create an editable REAPER project. Direct the local producer with your notes, or open REAPER on this PC for optional visual edits. Exported versions can be auditioned here.</p></div><div id="musicProject" hidden><h3 id="musicProjectTitle" class="music-source-title"></h3><p id="musicProjectInfo"></p><p id="musicProjectNotes" class="music-source-meta"></p><div class="music-actions"><button class="btn" id="musicOpenReaper" type="button">Open REAPER on this PC</button><button class="btn primary" id="musicExport" type="button">Export a new version</button><button class="btn" id="musicEditProject" type="button">Use these beat settings</button></div><p id="musicProjectStatus" class="music-status" role="status" aria-live="polite"></p><div id="musicVersions" class="music-versions"></div></div></section></div>
     <section data-music-area="settings" class="music-panel music-settings" hidden><h3>Resonance settings</h3><p>Connect the managed local music tools and set the request limits for this business.</p><form id="musicSettingsForm"><div id="musicSettingsFields" class="fields"></div><div class="music-actions"><button class="btn primary" type="submit" id="musicSettingsSave" disabled>Save Resonance settings</button><button class="btn" type="button" id="musicSettingsReload">Reload settings</button></div><p id="musicSettingsStatus" class="music-status" role="status" aria-live="polite">Loading music settings…</p></form></section>
   </section>
   <section class="view" id="view-desk" role="tabpanel">
@@ -1005,6 +1060,7 @@ nav button:hover .i3{transform:scale(1.08)}
       <div class="clip-editor">
         <section class="source-bin" aria-labelledby="sourceBinTitle">
           <div class="bin-heading"><h2 id="sourceBinTitle">Source bin</h2><span id="libraryCount" class="small dim">Loading clips…</span></div>
+          <div class="source-import-toolbar"><button class="btn ghost" id="runImport" type="button">Pull popular Twitch clips</button></div>
           <div class="filters" id="clipFilters" aria-label="Filter clips">
             <button data-f="all" class="on">All</button><button data-f="scheduled">Scheduled</button>
             <button data-f="posted">Posted</button><button data-f="rejected">Rejected</button>
@@ -1031,17 +1087,19 @@ nav button:hover .i3{transform:scale(1.08)}
   </section>
 
   <!-- GROWTH -->
-  <section class="view" id="view-growth" role="tabpanel">
-    <div class="panel">
-      <div class="phead"><h2>Growth</h2><span class="sub" id="growthSub"></span>
-        <button class="btn" id="refreshAnalytics" type="button"><i class="ico i3" style="--i:url(/static/ui/chrome/refresh.png);--ia:url(/static/ui/ember/refresh.png)" aria-hidden="true"></i>Refresh now</button>
-        <button class="btn ghost" id="runImport" type="button">Pull popular clips</button></div>
-      <div class="kpis" id="kpis"></div>
-      <div class="phead"><h2>What performs</h2><span class="sub">score = log2(views ÷ your median) · shrunk for small samples</span></div>
-      <div class="bars" id="groupBars"></div>
-      <div class="phead"><h2>Top posts</h2></div>
-      <div class="scroll"><table><thead><tr><th>Title</th><th>Where</th><th>Streamer</th><th>Views</th><th>Score</th></tr></thead><tbody id="topPosts"></tbody></table></div>
+  <section class="view growth-workspace" id="view-growth" role="tabpanel">
+    <div class="growth-toolbar"><div class="growth-filter-row"><label for="growthPlatform">Platform<select id="growthPlatform" name="growth_platform"><option value="all">All tracked platforms</option></select></label><label for="growthRange">Published in<select id="growthRange" name="growth_range"><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="all">All recorded history</option></select></label></div><div class="growth-toolbar-actions"><button class="btn" type="button" id="growthRefresh">Refresh dashboard</button><button class="btn primary" type="button" id="growthYoutubeSync" disabled>Sync my YouTube</button></div></div>
+    <div class="growth-notice" id="growthNotice" role="status" aria-live="polite" hidden></div>
+    <p class="growth-stamps"><span id="growthLocalStamp">Local snapshot: not loaded</span><span id="growthAnalyticsStamp">Platform measurements: not loaded</span></p>
+    <dl class="growth-kpis" id="growthKpis"><div class="growth-kpi"><dt>Performance</dt><dd>--</dd><small>Waiting for recorded measurements</small></div></dl>
+    <div class="growth-panorama">
+      <section class="growth-panel growth-performance"><div class="growth-panel-head"><h2>Recorded view totals</h2><span class="growth-note">Up to five measured posts</span></div><p>Each point is a captured cumulative view count. Lines connect observations; these are not daily views. Platform reporting can arrive later than local activity.</p><div class="growth-chart" id="growthChart"><div class="growth-empty">Waiting for measurements.</div></div><ul class="growth-chart-legend" id="growthChartLegend"></ul><details class="growth-chart-data"><summary>Read the chart measurements</summary><div class="growth-scroll"><table><thead><tr><th>Post</th><th>Captured</th><th class="growth-number">Views</th></tr></thead><tbody id="growthChartRows"><tr><td colspan="3">No measurements loaded.</td></tr></tbody></table></div></details></section>
+      <section class="growth-panel"><div class="growth-panel-head"><h2>Shared supervisor</h2><span class="growth-supervisor-state" id="growthSupervisorState">Not loaded</span></div><p>Actual agent status reported by the local engine.</p><div class="growth-orbit" id="growthSupervisorNetwork"><div class="growth-empty">Waiting for the agent roster.</div></div><button class="btn" type="button" id="growthSupervisorOpen">Open supervisor &amp; master switch</button></section>
+      <section class="growth-panel"><div class="growth-panel-head"><h2>Local production</h2><span class="growth-note">Updates while visible</span></div><p id="growthPollNote">Processing state from this PC. Refresh uses the engine's configured interval and does not contact platform APIs.</p><dl class="growth-telemetry" id="growthTelemetry"><div><dt>Production state</dt><dd>Waiting for engine</dd></div></dl><details class="growth-technical"><summary>Technical telemetry</summary><dl class="growth-telemetry" id="growthTelemetryDetails"></dl></details><p id="growthLatencyNote">Local timings and platform reporting are measured separately.</p></section>
     </div>
+    <div class="growth-evidence"><section class="growth-panel"><div class="growth-panel-head"><h2>Tracked content</h2><span class="growth-note" id="growthPostCount">No snapshot loaded</span></div><p>Latest captured statistics for the selected platforms and publication period. Missing measurements remain unknown.</p><div class="growth-scroll"><table><thead><tr><th>Post</th><th>Platform</th><th>Streamer / category</th><th class="growth-number">Views</th><th class="growth-number">Likes</th><th class="growth-number">Score</th><th>Measured at</th></tr></thead><tbody id="growthPosts"><tr><td colspan="7" class="growth-empty">Waiting for tracked posts.</td></tr></tbody></table></div></section>
+      <section class="growth-panel"><h2>What performs</h2><p id="growthSteering">Waiting for performance analysis.</p><p id="growthOutcomeStatus">Watch outcomes have not been checked.</p><button class="btn" type="button" id="growthOutcomesRefresh">Refresh platform outcomes</button><div class="growth-group-tabs" aria-label="Compare performance groups"><button class="btn" type="button" data-growth-group="streamer" aria-pressed="true">Streamers</button><button class="btn" type="button" data-growth-group="category" aria-pressed="false">Categories</button><button class="btn" type="button" data-growth-group="kind" aria-pressed="false">Moments</button></div><p>This profile's measured posts in the learning window. Scores compare views with its platform median; sufficient YouTube watch and subscriber outcomes add bounded weight. Small samples shrink toward zero.</p><ol class="growth-groups" id="growthGroups"><li class="growth-empty">Waiting for comparisons.</li></ol></section></div>
+    <section class="growth-panel growth-library"><div class="growth-panel-head"><h2>My YouTube channel</h2><span class="growth-note" id="growthYoutubeStatus">Not synced</span></div><p>The linked channel's metadata and statistics. Syncing reads existing uploads without downloading videos or importing source clips. Channel totals cover the channel, independently of the post filters above.</p><div class="growth-library-meta" id="growthYoutubeMeta"></div><div class="growth-scroll"><table><thead><tr><th>Video</th><th>Published</th><th class="growth-number">Views</th><th class="growth-number">Likes</th><th class="growth-number">Comments</th></tr></thead><tbody id="growthYoutubeVideos"><tr><td colspan="5" class="growth-empty">Sync your linked channel to load its existing video statistics.</td></tr></tbody></table></div></section>
   </section>
 
   <!-- SYSTEM -->
@@ -1092,11 +1150,12 @@ nav button:hover .i3{transform:scale(1.08)}
         <div class="savebar">
           <button class="btn primary" type="submit" id="saveBtn">Save changes</button>
           <button class="btn" type="button" id="revertBtn">Discard</button>
-          <span style="width:12px"></span>
+          <details class="settings-transfer"><summary>Transfer settings</summary><div class="settings-transfer-controls">
           <button class="btn ghost" type="button" id="exportBtn">Export</button>
           <label class="row small dim"><input type="checkbox" id="exportSecrets"> include secrets</label>
           <button class="btn ghost" type="button" id="importBtn">Import</button>
           <input type="file" id="importFile" accept="application/json,.json" hidden>
+          </div></details>
           <span class="msg" id="saveMsg" role="status" aria-live="polite"></span>
         </div>
       </form>
@@ -1121,6 +1180,7 @@ nav button:hover .i3{transform:scale(1.08)}
     <video id="pvVideo" controls preload="metadata" playsinline></video>
     <div>
       <section id="pvReview" class="viewer-review" aria-label="Viewer judgement"></section>
+      <section id="pvFeedback" class="viewer-review" aria-label="Your clip feedback"></section>
       <dl class="kv" id="pvKv"></dl>
       <div class="copyrow" id="pvCopy"></div>
       <div class="publish"><div class="label" style="margin-bottom:10px">Publish now — skips caps, gaps and the posting window</div><div class="copyrow" id="pvPublish"></div></div>
@@ -1206,6 +1266,7 @@ function clock(ts) { return new Date(ts * 1000).toLocaleTimeString([], {hour: "2
 
 /* ---------------- tabs ---------------- */
 const PAGES = {
+  supervisor: ["Supervisor", "Shared improvement agents · all businesses"],
   social: ["Social Studio · Clients", "Client profiles, content drafts and calendars."],
   music: ["Resonance · Create", "Local music composition and REAPER production."],
   stories: ["Stories · Create", "Original narrated stories, from manuscript to finished video."],
@@ -1567,7 +1628,7 @@ function runFind() {
 }
 $("#snav").addEventListener("click", e => { const a = e.target.closest("a[data-sec]"); if (!a) return; e.preventDefault(); openSection(a.dataset.sec); });
 $("#sfind").addEventListener("input", runFind);
-const SUBGUIDE = {"posting.youtube": "Shorts go up as soon as they are rendered, inside your daily cap and posting hours. Uploads are marked 18+ by default: stream clips carry swearing and adult humour, and the rating keeps them off kids' feeds. Category 20 is Gaming. The title suffix is what makes YouTube treat a vertical video as a Short.", "posting.tiktok": "TikTok posts to your drafts or straight to the feed depending on the privacy picked here. Until TikTok audits an app it can only post privately, so start there. Keep captions short - TikTok truncates them early.", "posting.instagram": "Reels go through the Instagram Graph API, which needs a Business or Creator account linked to a Facebook Page and a token from developers.facebook.com. Instagram counts every upload against a rolling 24-hour limit, so keep the daily cap under it.", "posting.facebook": "Reels post to a Page you administer, not a personal profile, using the same Meta token as Instagram.", "posting.discord": "A webhook URL from your own server: Server Settings - Integrations - Webhooks. It needs no app review, so it is the easiest place to watch what Ashvane is producing before pointing it at a public channel."};
+const SUBGUIDE = {"posting.youtube": "Vertical clips publish within your configured daily caps and posting hours. The optional manual 18+ hold blocks automatic upload until you turn it off or handle the upload and age restriction yourself in YouTube Studio. Shorts eligibility depends on the video's format and duration; a title suffix is ordinary title text. Category 20 is Gaming.", "posting.tiktok": "TikTok posts to your drafts or straight to the feed depending on the privacy picked here. Until TikTok audits an app it can only post privately, so start there. Keep captions short - TikTok truncates them early.", "posting.instagram": "Reels go through the Instagram Graph API, which needs a Business or Creator account linked to a Facebook Page and a token from developers.facebook.com. Instagram counts every upload against a rolling 24-hour limit, so keep the daily cap under it.", "posting.facebook": "Reels post to a Page you administer, not a personal profile, using the same Meta token as Instagram.", "posting.discord": "A webhook URL from your own server: Server Settings - Integrations - Webhooks. It needs no app review, so it is the easiest place to watch what Ashvane is producing before pointing it at a public channel."};
 const GUIDE = {"start": "<b>1. Connect a source.</b> Twitch and/or Kick need free developer keys (Twitch → Client ID/secret from dev.twitch.tv; Kick → from kick.com/settings/developer). Paste them in their sections and save. <b>2. Check Setup.</b> The Setup tab shows what is still missing (ffmpeg, Ollama, AI models). Models download on their own the first time. <b>3. Choose what to watch.</b> Forced streamers are always watched; the rest are picked from the top categories. More streams = more clips but more load. <b>4. Connect where to post.</b> Accounts → Connect YouTube/TikTok, or paste Meta tokens. Turn each platform on under Posting. <b>5. Pick a look.</b> The Studio tab restyles clips; “Use for all new clips” saves it here. <b>6. Let it run.</b> Clips flow Live → judged → rendered → posted on your schedule. Click the status card any time to see what it's doing and why.", "app": "How the app behaves on Windows: start with Windows (runs quietly in the tray), what closing the window does, where your data lives, logging, and the auto-lock that protects your profile. Folder changes apply after a restart and your files move with them.", "dashboard": "<b>Connect your phone</b><ol class=\"steps\"><li>Turn on <b>Phone remote</b> below and press <b>Save</b>. Say yes when Ashvane asks to restart.</li><li>Press <b>Test connection</b>. It tries every way your phone can reach this PC and shows the address to use.</li><li>On the phone, open Ashvane, tap <b>Remote</b>, type that address, pick your profile and enter your password.</li></ol><b>Away from home too?</b> Install Tailscale (free) on this PC and on the phone and sign both into the same account. Test connection then shows a name ending in <b>.ts.net</b>: use that on the phone and it works anywhere.<br><br><span class=\"dim\">Only your own network and Tailscale are ever accepted, and your password is always required. The rest of this section is the desktop panel itself: refresh speed and app sounds.</span>", "paths": "Where ffmpeg, ffprobe and Streamlink are. Leave empty to find them automatically; set a full path only if the Setup tab says one is missing.", "pets": "Your desktop companion. It lives on your desktop while the app runs (even closed to the tray), reacts to clips, posts and spikes with bubbles and sounds, and shows stats on hover. Turn it on or off instantly; drag it anywhere; double-click it to open the app. Pick a pet, its size, how lively it is, and which events it reacts to.", "twitch": "Twitch discovery. Needs a free Client ID + secret (dev.twitch.tv → Your Console → Register Application, any https redirect). <b>Capture slots</b> = streams watched at once. <b>Minimum viewers</b> skips small streams; <b>Fill empty slots</b> tops up with the biggest remaining ones. Forced streamers are always watched when live; Blocked streamers are never clipped (use this for takedown requests). Type lists one per line or comma-separated.", "kick": "Kick discovery, same as Twitch. Kick keys come from kick.com → Settings → Developer. If Kick's website blocks the chat lookup, that stream still clips from audio spikes.", "discovery": "How streams are chosen: every interval it takes forced streamers, forced categories, then the top categories × streamers per category, up to your capture slots. Unknown category names are warned about once — check the exact spelling on the site.", "capture": "Each watched stream records into a rolling buffer on disk so a moment can be cut after it happens. <b>Buffer</b> = how many seconds are kept. <b>Quality</b> tries each option left to right. Higher quality = sharper clips but more download bandwidth (≈6–8 Mbps per 1080p60 stream).", "chat": "Chat is read anonymously (no account). Twitch uses an IRC websocket; Kick uses its public chat socket. Join spacing keeps Twitch from rate-limiting you.", "detector": "Decides when something happened. It compares chat speed to that stream's normal speed (<b>z-score</b>): 3 means “three times more unusual than normal”. Keywords (like W, LMAO, CLIP IT) and audio loudness jumps also count. Raise the thresholds for fewer, bigger moments; lower them for more clips. Cooldown stops one moment from being cut twice.", "clip": "How long cuts are: seconds before and after the spike, and the min/max final length the AI may trim to. Rejected cuts are kept for a while so you can review or publish them anyway.", "backlog": "The safety valve. When too many clips wait for the AI (capacity × pause-at), capturing pauses until the queue drains to resume-at. If you see Failsafe often, watch fewer streams or raise the detector thresholds.", "ai": "The local AI that judges and writes. <b>Judge profile</b>: auto picks from your GPU — light (small model, stricter rules), balanced (one multimodal model sees, judges and writes — no GPU swapping; best for 10–24 GB cards) or strong (big separate judge, 24 GB+). <b>Min score</b> is the pass mark (0–10). Vision lets the AI look at frames from the clip. Missing models download on first start.", "whisper": "Speech-to-text for captions and the AI. large-v3-turbo on the GPU is fast and accurate; the app falls back to the CPU automatically if CUDA isn't available.", "copywriter": "Writes titles, descriptions, tags, hashtags, a first comment and the on-screen hook — separately for each platform. With <b>Watch the clip</b> on, it looks at frames (one at the exact spike) and reads chat's reaction so the copy is about what really happened. Edit each platform's style rules to change the voice.", "edit": "How clips are rendered: 1080×1920 vertical, captions with the spoken word highlighted, the hook box, punch-in zoom at the spike, a progress bar, loudness normalisation and your watermark. Layout facecam stacks the streamer's cam over the gameplay (found automatically); blur fits the whole stream over a blurred copy. Lower CRF = sharper, bigger files. The Studio tab is the easy way to change the look.", "brand": "Your channel name and handles. The watermark and the {brand} / {handle} placeholders in post templates come from here.", "studio": "Settings for the Studio tab: preview speed/quality and the font list offered there. Studio previews are quick drafts; Apply renders at full quality.", "accounts": "Where posts go. YouTube and TikTok connect with the buttons (sign in in your browser). Instagram and Facebook use tokens from developers.facebook.com (see the README for the click-by-click). Discord uses a webhook URL. Keys are encrypted on this PC.", "posting": "When and how posts go out: per-platform on/off, daily caps, minimum gap between posts, the posting-hours window, privacy, and the title/caption templates ({title} {streamer} {platform} {category} {hashtags} {brand} {handle}). Publish now in a clip's preview skips caps and windows for testing.", "safety": "Protects your channels. Slurs and derogatory terms are masked in titles, captions, hashtags and comments, masked in on-screen captions, bleeped in the audio, and clips where someone says one are skipped. Casual slang and everyday swearing are left alone unless you raise the level. Add your own words under Also block; exceptions under Always allow.", "analytics": "Learns what performs. After posts are measured (next-day and periodic checks), it steers the scheduler and the copywriter toward the streamers, categories and styles that get views — while still exploring so it doesn't get stuck on one thing.", "clip_import": "Optionally reposts the most popular Twitch clips from the streamers you watch, with your editing on top and a credit line to the original clipper.", "workers": "How much runs in parallel. <b>AI stage at once</b> should stay 1 on a single GPU. Render workers and transcribers can go up on strong PCs. System → Scan this PC recommends values.", "viewer": "The live viewer (click any monitor on the Live tab) plays exactly what the app captures, ~6 s behind live, with chat and the hype gauges.", "updates": "Automatic updates from GitHub Releases. Set the repo (owner/name) and the app checks on start; Update now downloads the new installer, updates in place and restarts. Your data is kept."};
 /** The Dashboard section shows the address this PC is actually answering on right now. */
 function liveAddress(section) {
@@ -1885,7 +1946,7 @@ async function unlock() {
     if (r.body.restarting) { $("#lockErr").textContent = "Switching profile — restarting…"; setTimeout(() => location.reload(), 6000); return; }
     // signed in on a phone: the desk is a desktop layout, so hand over to the remote panel
     if (matchMedia("(max-width: 820px)").matches) { location.href = "/remote"; return; }
-    $("#lock").classList.remove("show"); poll(); loadSetup(true);
+    $("#lock").classList.remove("show"); window.dispatchEvent(new Event('ashvane-authenticated')); poll(); loadSetup(true);
   } else $("#lockErr").textContent = (r.body && (r.body.error || r.body.detail)) || "Sign-in failed";
 }
 $("#lockBtnTop").addEventListener("click", async () => { await _api0("/api/auth/logout", {method: "POST"}); showLock(); });
@@ -2007,44 +2068,39 @@ openPreview = function(id) {
   $("#pvVideo").onerror = () => toast("This clip's video was already cleaned up (see Clip → Keep rejected cuts).");
 };
 
-/* growth */
-async function loadGrowth() {
-  const r = await api("/api/analytics"); if (!r.ok) return;
-  const a = r.body;
-  $("#growthSub").textContent = a.steering ? "Steering ON — picks lean toward what performs" : `Learning — ${a.measured} measured post(s) so far (steering starts at Settings → Analytics → Posts needed)`;
-  const acc = a.accounts || {};
-  $("#kpis").innerHTML = [["Measured posts", a.measured], ...Object.entries(acc).map(([k, v]) => [`${k} followers`, v.followers.toLocaleString()]),
-    ...Object.entries(a.medians || {}).map(([k, v]) => [`${k} median views`, Math.round(v).toLocaleString()])]
-    .map(([k, v]) => `<div class="kpi"><div class="label">${esc(k)}</div><div class="v num">${esc(v)}</div></div>`).join("")
-    + Object.entries(a.status || {}).map(([k, v]) => `<div class="kpi"><div class="label">${esc(k)} stats</div><div class="small">${esc(v)}</div></div>`).join("");
-  const rows = [];
-  for (const [g, label] of [["streamer", "Streamer"], ["category", "Category"], ["kind", "Moment"]])
-    Object.entries((a.groups || {})[g] || {}).sort((x, y) => y[1].score - x[1].score).slice(0, 6).forEach(([k, v]) => rows.push([`${label}: ${k}`, v]));
-  $("#groupBars").innerHTML = rows.length ? rows.map(([k, v]) => { const w = Math.min(50, Math.abs(v.score) * 25);
-    return `<div><span class="trunc">${esc(k)}</span><span class="bar"><i class="${v.score < 0 ? "neg" : ""}" style="${v.score < 0 ? `left:${50 - w}%;right:50%` : `left:50%;right:${50 - w}%`}"></i></span><span class="num">${v.score >= 0 ? "+" : ""}${v.score.toFixed(2)} (${v.n})</span></div>`; }).join("")
-    : `<div class="empty">Post some clips; results appear after the next-day check.</div>`;
-  $("#topPosts").innerHTML = (a.top_posts || []).map(p => `<tr><td class="trunc">${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>` : esc(p.title)}</td><td>${esc(p.platform)}</td><td>${esc(p.display_name)}</td><td class="num">${Number(p.views).toLocaleString()}</td><td class="num">${p.perf.toFixed(2)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No measured posts yet.</td></tr>`;
-}
-$("#refreshAnalytics").addEventListener("click", async () => { toast("Refreshing analytics…"); await api("/api/analytics/refresh", {method: "POST"}); loadGrowth(); });
+/* Growth rendering lives in growth.js; source import remains a clip-library action. */
+async function loadGrowth() { return window.loadGrowthDashboard?.(); }
 $("#runImport").addEventListener("click", async () => { toast("Pulling popular Twitch clips…"); const r = await api("/api/clip_import/run", {method: "POST"}); toast(r.ok ? `${r.body.imported} new clip(s) imported` : "Import failed"); });
 
 /* system: auto-tune + storage */
 let recs = [];
 $("#scanBtn").addEventListener("click", async () => {
   $("#scanBtn").disabled = true; $("#scanBtn").classList.add("busy"); $("#hwBox").textContent = "Scanning CPU, RAM, GPU, NVENC, disk and download speed…";
+  recs = []; $("#recBar").hidden = true; $("#recs").innerHTML = ""; $("#recMsg").textContent = "";
+  try {
   const r = await api("/api/system/scan", {method: "POST", json: {network: true}});
-  $("#scanBtn").disabled = false; $("#scanBtn").classList.remove("busy"); if (!r.ok) { $("#hwBox").textContent = "Scan failed."; return; }
+  if (!r.ok || !r.body?.hardware || !Array.isArray(r.body.recommendations)) throw new Error(r.body?.detail || "Scan did not return hardware recommendations");
   const h = r.body.hardware; recs = r.body.recommendations;
   if(r.body.readiness){window.deskSetupState=r.body.readiness;renderBusinessReadiness(r.body.readiness,"systemReadiness");renderBusinessReadiness(r.body.readiness,"checks");}
   $("#hwBox").innerHTML = `<b>${h.cpu_threads}</b> CPU threads · <b>${h.ram_gb}</b> GB RAM · <b>${esc(h.gpu_name || "no NVIDIA GPU")}</b> ${h.vram_gb ? h.vram_gb + " GB VRAM" : ""} · NVENC ${h.nvenc ? "yes" : "no"} · ${h.disk_free_gb} GB free · ${h.net_mbps ? h.net_mbps + " Mbps down" : "speed test skipped"} · Whisper on ${h.whisper_device}`;
   $("#recs").innerHTML = recs.map((x, i) => `<label class="rec"><input type="checkbox" data-i="${i}" ${x.change ? "checked" : ""}><b>${esc(x.field)}</b><span>${esc(String(x.current))} → <b style="color:var(--amber)">${esc(String(x.value))}</b></span><span class="dim">${esc(x.reason)}</span></label>`).join("");
   $("#recBar").hidden = false;
+  // Business readiness has its own probes and can complete after recommendations.
+  api("/api/setup").then(r => { if (r.ok && r.body) { window.deskSetupState = r.body; renderBusinessReadiness(r.body,"systemReadiness"); renderBusinessReadiness(r.body,"checks"); } }).catch(e => console.warn("setup after scan", e));
+  } catch (e) { $("#hwBox").textContent = `Scan failed: ${e.message}. Press Scan this PC to retry.`; }
+  finally { $("#scanBtn").disabled = false; $("#scanBtn").classList.remove("busy"); }
 });
 $("#applyRecs").addEventListener("click", async () => {
   const pick = $$("#recs input:checked").map(el => recs[+el.dataset.i]);
+  if (!pick.length) { $("#recMsg").textContent = "Select at least one recommendation to apply."; return; }
+  $("#applyRecs").disabled = true;
+  try {
   const r = await api("/api/system/apply", {method: "POST", json: {apply: pick}});
-  $("#recMsg").textContent = r.ok ? `Applied ${pick.length} setting(s)${r.body.restart_required.length ? " — restart needed for " + r.body.restart_required.join(", ") : ""}` : "Could not apply";
+  if (!r.ok || !r.body?.ok) throw new Error(r.body?.detail || r.body?.errors?.map(e => `${e.field}: ${e.msg}`).join("; ") || "Could not apply recommendations");
+  $("#recMsg").textContent = `Applied ${pick.length} setting(s)${r.body.restart_required.length ? " — restart needed for " + r.body.restart_required.join(", ") : ""}`;
   poll();
+  } catch (e) { $("#recMsg").textContent = `${e.message}. Retry applying your selection.`; }
+  finally { $("#applyRecs").disabled = false; }
 });
 function fmtBytes(b) { const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (b >= 1024 && i < 4) { b /= 1024; i++; } return `${b.toFixed(i ? 1 : 0)} ${u[i]}`; }
 async function loadStorage() {
@@ -2074,7 +2130,7 @@ setInterval(() => { if ($("#view-clips").classList.contains("active")) loadClips
 
 /* ---------------- live viewer: what Ashvane sees, near-live from its own capture buffer ---------------- */
 const W = {key: null, timer: null, queue: [], seen: new Set(), chat: [], official: false, info: null, playing: null,
-           ms: null, sb: null, pending: [], fetching: false, mse: false, started: false, lastName: null};
+           ms: null, sb: null, pending: [], fetching: false, mse: false, started: false, lastName: null, generation: 0, abort: null, objectUrl: null};
 // One continuous stream instead of two <video> elements taking turns. Each buffer segment is
 // already fragmented MP4, so they can be appended into a single SourceBuffer: the browser then
 // keeps one clock for picture and sound, which is what stops the audio sliding out of step, and
@@ -2092,16 +2148,18 @@ const WEDGE_S = 0.4;        // land just inside the newest video, not exactly on
 const WQUEUE_MAX = 3;       // more than this waiting means we are behind: skip to the newest
 const wPlayers = () => [$("#wVideo"), $("#wVideo2")];
 function wStop() {
+  W.generation++; W.abort?.abort(); W.abort = null;
   clearTimeout(W.timer); W.timer = null; W.key = null; W.queue = []; W.seen.clear(); W.chat = []; W.playing = null; W.settled = false;
-  W.pending = []; W.fetching = false; W.mse = false; W.started = false; W.sb = null;
+  W.pending = []; W.fetching = false; W.mse = false; W.started = false; W.sb = null; W.lastName = null; W.info = null;
   if (W.ms && W.ms.readyState === "open") { try { W.ms.endOfStream(); } catch {} }
   W.ms = null;
-  for (const v of wPlayers()) { v.pause(); v.removeAttribute("src"); v.load(); v.onended = null; }
+  if (W.objectUrl) URL.revokeObjectURL(W.objectUrl); W.objectUrl = null;
+  for (const v of wPlayers()) { v.onended = null; v.onerror = null; v.removeEventListener("waiting", wSeam); v.removeEventListener("stalled", wSeam); v.pause(); v.removeAttribute("src"); delete v.dataset.seg; v.load(); }
   $("#wFrame").src = "about:blank";
 }
 function wClose() { wStop(); $("#watch").classList.remove("show"); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
 async function openWatch(key) {
-  wStop(); W.key = key; W.official = false; sfx("open");
+  wStop(); W.key = key; W.abort = new AbortController(); W.official = false; sfx("open");
   $("#watch").classList.add("show"); $("#wFrame").hidden = true;
   wPlayers().forEach((v, i) => { v.hidden = false; v.classList.toggle("on", i === 0); v.volume = +$("#wVol").value; });
   $("#wChat").innerHTML = ""; $("#wHud").innerHTML = ""; $("#wSpark").innerHTML = ""; $("#wClips").innerHTML = "";
@@ -2109,10 +2167,11 @@ async function openWatch(key) {
   wTick();
 }
 async function wTick() {
-  const key = W.key; if (!key) return;
-  const r = await api(`/api/watch/${encodeURIComponent(key)}`);
-  if (key !== W.key) return;
-  if (!r.ok) { toast("That stream isn't being captured right now"); wClose(); return; }
+  const key = W.key, generation = W.generation; if (!key) return;
+  try {
+  const r = await api(`/api/watch/${encodeURIComponent(key)}`, {signal: W.abort.signal});
+  if (generation !== W.generation) return;
+  if (!r.ok) { if (r.status === 404 || r.status === 401) { toast("That stream isn't being captured right now"); wClose(); return; } throw new Error(r.body?.detail || `Viewer request failed (${r.status})`); }
   const d = W.info = r.body;
   $("#wPlat").className = `plat ${d.platform}`; $("#wPlat").textContent = d.platform === "twitch" ? "TW" : "KICK";
   $("#wName").textContent = d.name; $("#wMeta").textContent = `${d.category} · ${Number(d.viewers).toLocaleString()} viewers`;
@@ -2126,23 +2185,29 @@ async function wTick() {
   else if (!W.playing && W.queue.length) wNext();
   else wPreload();
   wHud(d); wChat(d.chat); wSide(d);
-  W.timer = setTimeout(wTick, (state && state.viewer_poll_ms) || 1500);
+  if (!d.segments.length) $("#wMeta").textContent += d.buffer?.error ? " · Buffer unavailable; check System issues" : " · Waiting for a complete capture segment";
+  else if (Math.max(d.buffer?.age_s || 0, d.buffer?.segment_age_s || 0) > wMaxLag()) $("#wMeta").textContent += " · Capture buffer is stale; check System issues";
+  } catch (e) { if (generation !== W.generation) return; report_watch(e); $("#wMeta").textContent = "Live preview could not refresh; retrying…"; }
+  finally { if (generation === W.generation && W.key) W.timer = setTimeout(wTick, (state && state.viewer_poll_ms) || 1500); }
 }
 const wUrl = name => `/media/live/${encodeURIComponent(W.key)}/${name}.mp4`;
 function wStartMse() {
   const type = wMseType();
   if (!type) return false;                   // no MediaSource: the swap player below still works
   const v = $("#wVideo"), ms = W.ms = new MediaSource();
-  v.src = URL.createObjectURL(ms);
+  const generation = W.generation;
+  v.src = W.objectUrl = URL.createObjectURL(ms);
   ms.addEventListener("sourceopen", () => {
-    URL.revokeObjectURL(v.src);
+    if (generation !== W.generation || W.ms !== ms || !W.mse) return;
+    URL.revokeObjectURL(W.objectUrl); W.objectUrl = null;
     try {
       const sb = W.sb = ms.addSourceBuffer(type);
       // Every segment starts its own clock at zero. "sequence" tells the browser to lay each one
       // after the last instead of on top of it, which is what makes playback continuous.
       sb.mode = "sequence";
-      sb.addEventListener("updateend", wPump);
-      sb.addEventListener("error", wFallback);
+      sb.addEventListener("updateend", () => { if (W.sb === sb) wPump(); });
+      sb.addEventListener("error", () => { if (W.sb === sb) wFallback(); });
+      v.onerror = () => { if (generation === W.generation && W.mse) wFallback(); };
       v.addEventListener("waiting", wSeam);
       v.addEventListener("stalled", wSeam);
       wPump();
@@ -2153,7 +2218,7 @@ function wStartMse() {
 }
 function wPump() {
   const sb = W.sb;
-  if (!W.mse || !sb || sb.updating) return;
+  if (W.official || !W.mse || !sb || sb.updating) return;
   if (W.pending.length) {
     try { sb.appendBuffer(W.pending.shift()); } catch (e) { report_watch(e); wFallback(); }
     return;                                  // updateend calls us back
@@ -2164,16 +2229,19 @@ function wPump() {
 async function wFetch() {
   if (W.fetching || !W.queue.length) return;
   W.fetching = true;
-  const name = W.queue.shift(), key = W.key;
+  const name = W.queue.shift(), generation = W.generation, ms = W.ms;
+  W.lastName = name;
   try {
-    const r = await fetch(wUrl(name));
+    const r = await fetch(wUrl(name), {signal: W.abort.signal});
     if (!r.ok) throw new Error(`segment ${name}: ${r.status}`);
     const buf = await r.arrayBuffer();
-    if (key !== W.key) return;               // the viewer moved on while we were fetching
+    if (generation !== W.generation || !W.mse || W.ms !== ms) return;
     W.pending.push(buf); W.playing = name; W.lastName = name;
-  } catch (e) { report_watch(e); }
-  finally { W.fetching = false; }
+  } catch (e) { if (generation !== W.generation) return; report_watch(e); $("#wMeta").textContent = "Capture segment unavailable; waiting for the next segment…"; }
+  finally { if (generation === W.generation) W.fetching = false; }
+  if (generation !== W.generation || !W.mse || W.ms !== ms) return;
   wPump();
+  if (W.official) return;
   const v = $("#wVideo");
   if (v.paused) v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
 }
@@ -2221,6 +2289,9 @@ function wFallback() {
   W.mse = false; W.sb = null; W.ms = null; W.pending = [];
   logger_warn("viewer: MediaSource refused the stream, falling back to segment playback");
   const v = $("#wVideo");
+  v.onerror = null; v.removeEventListener("waiting", wSeam); v.removeEventListener("stalled", wSeam);
+  if (W.objectUrl) URL.revokeObjectURL(W.objectUrl); W.objectUrl = null;
+  delete v.dataset.seg;
   try { v.removeAttribute("src"); v.load(); } catch (e) { report_watch(e); }
   if (W.lastName && !W.queue.includes(W.lastName)) W.queue.unshift(W.lastName);
   W.playing = null;
@@ -2240,6 +2311,7 @@ function wNext() {                           // swap to the preloaded player (ne
   if (target.dataset.seg !== name) { target.dataset.seg = name; target.src = wUrl(name); }
   target.volume = +$("#wVol").value; target.muted = false;
   target.onended = wNext;
+  target.onerror = () => { $("#wMeta").textContent = "Capture segment could not play; trying the next segment. Open the official player if this continues."; W.playing = null; if (W.queue.length) wNext(); };
   target.play().catch(() => { target.muted = true; target.play().catch(() => {}); });
   if (target !== cur) { cur.pause(); cur.classList.remove("on"); target.classList.add("on"); }
   W.playing = name; wPreload();
@@ -2283,7 +2355,7 @@ $("#wMode").addEventListener("click", () => {
   $("#wFrame").hidden = !W.official;
   wPlayers().forEach(v => { v.hidden = W.official; if (W.official) v.pause(); });
   if (W.official) $("#wFrame").src = `https://player.kick.com/${encodeURIComponent(d.login)}?autoplay=true`;
-  else { $("#wFrame").src = "about:blank"; W.playing = null; wNext(); }
+  else { $("#wFrame").src = "about:blank"; if (W.mse) { wPump(); $("#wVideo").play().catch(report_watch); } else { W.playing = null; wNext(); } }
   $("#wMode").textContent = W.official ? "What Ashvane sees" : "Official player";
 });
 $("#wClips").addEventListener("click", e => { const b = e.target.closest("[data-clip]"); if (b) { wClose(); openPreview(b.dataset.clip); } });
@@ -2569,7 +2641,7 @@ $$("nav button[data-view]").forEach((b, i, tabs) => {
   b.addEventListener("keydown", e => {
     const horizontal = matchMedia("(max-width:640px)").matches;
     const delta = e.key === (horizontal ? "ArrowRight" : "ArrowDown") ? 1 : e.key === (horizontal ? "ArrowLeft" : "ArrowUp") ? -1 : 0;
-    if (delta) { e.preventDefault(); const available = tabs.filter(t => !t.closest("nav").hidden); const next = available[(available.indexOf(b) + delta + available.length) % available.length]; next.focus(); next.click(); }
+    if (delta) { e.preventDefault(); const available = tabs.filter(t => !t.closest("nav").hidden && !t.closest("details:not([open])")); const next = available[(available.indexOf(b) + delta + available.length) % available.length]; next.focus(); next.click(); }
   });
 });
 /* ---------------- boot ---------------- */
@@ -2583,13 +2655,19 @@ window.startAshvane = function() {
   setTimeout(() => { if (state && state.updates_on_start) checkUpdates(true); }, 4000);
 };
 </script>
+<script src="/ui-runtime.js"></script>
 <script src="/static/desk.js?v=58a7dd72e9d0abb0"></script>
+<script src="/static/clip-feedback.js?v=4bc445e956ed863f"></script>
 <script src="/static/creative.js?v=30b375f805ec3272"></script>
-<script src="/static/stories.js?v=45d9637174ad5ad5"></script>
+<script src="/static/stories.js?v=2fc0da54a9537bb0"></script>
 <script src="/static/cosmic.js?v=35802f62e4e04bd1"></script>
 <script src="/static/music.js?v=f4ff7e3045bbf428"></script>
 <script src="/static/social.js?v=207e9a50c584a238"></script>
-<script src="/static/business.js?v=dfaef0e4b887e046"></script>
+<script src="/static/business.js?v=ed820c66809e7b2d"></script>
+<script src="/static/supervisor.js?v=71fba9551059fa47"></script>
+<script src="/static/growth.js?v=dfb4623b6ac31471"></script>
+<script src="/static/simplification.js?v=d75ad279a63e81e6"></script>
 <script src="/static/accounts.js?v=7d6c62b3c5570780"></script>
+<script src="/static/observatory.js?v=b1187d4e5703c0cb"></script>
 </body>
 </html>

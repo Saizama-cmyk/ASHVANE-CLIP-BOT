@@ -17,6 +17,28 @@ RUNTIME_HOOKS = {"music": ("music_api", "music_runtime_state", "set_music_runnin
                  "social": ("social_api", "social_runtime_state", "set_social_running")}
 
 
+def resource_budget_snapshot(ctx):
+    """Aggregate existing reservations without inspecting saved/private work."""
+    pipeline = getattr(ctx, "pipeline", None)
+    pipeline_budget = pipeline.resource_budget_snapshot() if hasattr(pipeline, "resource_budget_snapshot") else None
+    creative = getattr(ctx, "creative_tools", None)
+    if creative is not None and hasattr(creative, "snapshot"):
+        creative_budget = creative.snapshot()
+    else:
+        creative_budget = {business: {"pending": 0, "active": 0, "waiting": 0, "preparing": 0,
+                                      "finishing": 0, "limit": ctx.settings.creative.max_pending_per_business,
+                                      "waiting_reason": None, "admission_full": False} for business in BUSINESSES}
+    stories = getattr(pipeline, "stories", None)
+    producer = getattr(getattr(ctx, "music_bridge", None), "producer", None)
+    story_busy = getattr(stories, "busy", None)
+    producer_busy = getattr(producer, "busy", None)
+    return {"pipeline": pipeline_budget, "creative": creative_budget,
+            "story_production": {"limit": 1, "active": int(story_busy) if type(story_busy) is bool else None,
+                                 "queue_policy": "reject_while_active"},
+            "music_production": {"limit": 1, "active": int(producer_busy) if type(producer_busy) is bool else 0 if producer is None else None,
+                                 "queue_policy": "reject_while_active"}}
+
+
 def _work_business(path: str, method: str) -> str | None:
     if method != "POST":
         return None
@@ -25,7 +47,7 @@ def _work_business(path: str, method: str) -> str | None:
         return "clips"
     if path.startswith("/api/clips/") and path.endswith("/publish"):
         return "clips"
-    if path in {"/api/stories", "/api/stories/projects", "/api/stories/ideas"} or (path.startswith("/api/stories/") and
+    if path in {"/api/stories", "/api/stories/projects", "/api/stories/ideas", "/api/stories/compilations"} or (path.startswith("/api/stories/") and
             path.rsplit("/", 1)[-1] in {"render", "review", "retry", "publish"}):
         return "stories"
     return None
@@ -89,7 +111,14 @@ def install_business_runtime_routes(app, ctx) -> None:
                          "enabled": getattr(ctx.settings.businesses, field)})
             if business in runtime_errors:
                 rows[-1]["message"] = runtime_errors[business]
-        return {"businesses": rows}
+        budgets = resource_budget_snapshot(ctx)
+        for row in rows:
+            row["resource_budget"] = {"creative": budgets["creative"][row["id"]]}
+            if row["id"] == "clips":
+                row["resource_budget"]["pipeline"] = budgets["pipeline"]
+            elif row["id"] in {"stories", "music"}:
+                row["resource_budget"]["production"] = budgets["story_production" if row["id"] == "stories" else "music_production"]
+        return {"businesses": rows, "resource_budget": budgets}
 
     async def change_runtime(business, enabled):
         module_name, _state_hook, set_hook = RUNTIME_HOOKS[business]

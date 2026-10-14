@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 
 import httpx
@@ -30,11 +31,55 @@ class CreativeTools:
         self.ctx = ctx
         self.lock = asyncio.Lock()
         self.tasks = {business: set() for business in FIELDS}
+        self.phases = {business: {} for business in FIELDS}
 
-    async def chat(self, business, contract, payload):
+    @property
+    def gpu_lock(self):
+        pipeline = getattr(self.ctx, "pipeline", None)
+        return (getattr(pipeline, "gpu_lock", None)
+                or getattr(getattr(pipeline, "stories", None), "_gpu_lock", None) or self.lock)
+
+    @asynccontextmanager
+    async def admission(self, business):
         require_creative_running(self.ctx, business)
         task = asyncio.current_task()
-        self.tasks[business].add(task)
+        # Admission contains no await: concurrent HTTP handlers cannot both
+        # reserve the final slot. Nested use in one request keeps one reservation.
+        owned = task not in self.tasks[business]
+        if owned:
+            if len(self.tasks[business]) >= self.ctx.settings.creative.max_pending_per_business:
+                raise HTTPException(429, "This business's local generation queue is full. Wait for current work or cancel it before retrying.")
+            self.tasks[business].add(task)
+            self.phases[business][task] = "preparing"
+        try:
+            yield
+        finally:
+            if owned:
+                self.tasks[business].discard(task)
+                self.phases[business].pop(task, None)
+
+    def set_phase(self, business, phase):
+        task = asyncio.current_task()
+        if task in self.tasks[business]:
+            self.phases[business][task] = phase
+
+    def snapshot(self, business=None):
+        rows = {}
+        for name in (FIELDS if business is None else (business,)):
+            phases = list(self.phases[name].values())
+            waiting = phases.count("shared_gpu_wait")
+            rows[name] = {"pending": len(self.tasks[name]), "limit": self.ctx.settings.creative.max_pending_per_business,
+                          "active": phases.count("local_inference"), "waiting": waiting,
+                          "preparing": phases.count("preparing"), "finishing": phases.count("finishing"),
+                          "waiting_reason": "shared_gpu_busy" if waiting else None,
+                          "admission_full": len(self.tasks[name]) >= self.ctx.settings.creative.max_pending_per_business}
+        return rows[business] if business else rows
+
+    async def chat(self, business, contract, payload):
+        async with self.admission(business):
+            return await self._chat(business, contract, payload)
+
+    async def _chat(self, business, contract, payload):
         settings, cfg = self.ctx.settings, self.ctx.settings.creative
         current = plan(settings, None)
         model = cfg.model.strip() or current.judge_model or settings.ai.model
@@ -44,10 +89,12 @@ class CreativeTools:
                 "options": {"temperature": cfg.temperature, "num_ctx": settings.ai.num_ctx, "num_predict": cfg.max_tokens}}
         if settings.ai.vision_disable_thinking:
             body["think"] = False
-        gpu_lock = getattr(getattr(getattr(self.ctx, "pipeline", None), "stories", None), "_gpu_lock", self.lock)
+        gpu_lock = self.gpu_lock
         try:
+            self.set_phase(business, "shared_gpu_wait")
             async with gpu_lock:
                 require_creative_running(self.ctx, business)
+                self.set_phase(business, "local_inference")
                 async with httpx.AsyncClient(trust_env=False, follow_redirects=False, timeout=cfg.timeout_s) as http:
                     async def request():
                         async with http.stream("POST", settings.ai.ollama_url.rstrip("/") + "/api/chat", json=body) as response:
@@ -63,6 +110,7 @@ class CreativeTools:
                         code, raw = await request()
                     if code >= HTTPStatus.BAD_REQUEST:
                         raise HTTPException(503, "The configured local creative model is unavailable. Check the model settings and retry.")
+            self.set_phase(business, "finishing")
             require_creative_running(self.ctx, business)
             result = _extract_json(json.loads(raw).get("message", {}).get("content", ""))
             if not isinstance(result, dict):
@@ -72,8 +120,6 @@ class CreativeTools:
             raise HTTPException(409, "Creative generation stopped; saved work is kept.") from exc
         except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
             raise HTTPException(503, "No usable creative response was returned. Check the local model and retry.") from exc
-        finally:
-            self.tasks[business].discard(task)
 
     async def cancel_business(self, business):
         tasks = [task for task in self.tasks.get(business, ()) if task is not asyncio.current_task()]

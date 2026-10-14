@@ -38,6 +38,10 @@ class YouTubePublisher(Publisher):
         super().__init__(settings, http, tokens)
         self.oauth = oauth
 
+    async def outcomes(self, remote_ids: list[str]) -> dict:
+        from ..youtube_outcomes import collect_outcomes
+        return await collect_outcomes(self, remote_ids)
+
     def configured(self) -> tuple[bool, str]:
         a = self.settings.accounts
         if not (a.youtube_client_id and a.youtube_client_secret):

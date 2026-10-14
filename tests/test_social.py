@@ -422,7 +422,9 @@ def test_pending_reference_can_be_reanalyzed_without_reupload_and_guides_next_dr
             assert "quiet opening" in payload["reference_text"]
             assert payload["creator_notes"] == "Keep the quiet opening"
             return {"summary": "Favor a quiet opening", "rules": ["Use spaced, readable captions"]}
-        ctx.creative_tools = SimpleNamespace(chat=chat)
+        from clipbot.creative_tools import CreativeTools
+        ctx.creative_tools = CreativeTools(ctx)
+        ctx.creative_tools.chat = chat
         retried = await studio.analyze_reference(client["id"], identifier, {})
         assert retried["asset"]["id"] == identifier
         assert len(studio.assets) == 1

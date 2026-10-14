@@ -7,7 +7,7 @@ Ashvane and its creative workflows; they are not additional business workspaces.
 
 [Official repository](https://github.com/cathrynlavery/diagram-design).
 An agent skill for self-contained HTML/SVG diagrams. Installed locally at
-`C:/Users/wilco/.codex/skills/diagram-design`; a new Codex session is needed to load
+`~/.codex/skills/diagram-design`; a new Codex session is needed to load
 the installed skill. It is not bundled into the Ashvane desktop or phone app.
 
 Useful for visualizing queue stages, account ownership, business boundaries and

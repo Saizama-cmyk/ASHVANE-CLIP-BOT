@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, Switch, Text
 import * as FileSystem from "expo-file-system";
 import { WebView } from "react-native-webview";
 import { call } from "./api";
-import { Button, C, Card, Empty, Field, MONO, Pill, Section, t } from "./theme";
+import { Button, C, Card, Empty, Field, Icon, IconButton, MONO, Pill, Section, t } from "./theme";
 import Learning from "./Learning";
 
 const POLL_MS = 6000;
@@ -132,7 +132,58 @@ function Preview({ host, token, project, onClose, onUnauthorized }) {
 }
 
 const projectBuffers = new Map();
+const isCompilation = project => project?.kind === "compilation" || project?.format === "compilation";
+const chapterTime = value => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "Time pending";
+  const seconds = Math.floor(value), hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60), rest = String(seconds % 60).padStart(2,"0");
+  return hours ? `${hours}:${String(minutes).padStart(2,"0")}:${rest}` : `${String(minutes).padStart(2,"0")}:${rest}`;
+};
+
+function CompilationBuilder({data,request,load,buffer,scopeKey,onDirtyChange}) {
+  const profile = data?.account_profile_id || "", maximum = data?.compilation?.max_stories;
+  const saved = buffer.current?.scope === scopeKey ? buffer.current : null;
+  const [open,setOpen] = useState(!!buffer.current?.open), [title,setTitle] = useState(saved?.title || ""), [selected,setSelected] = useState(saved?.selected || []), [landscape,setLandscape] = useState(saved?.landscape ?? true), [busy,setBusy] = useState(false), [error,setError] = useState(""), [notice,setNotice] = useState("");
+  const scope = useRef(profile), flight = useRef(false), mounted = useRef(true);
+  scope.current = profile;
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  useEffect(()=>{buffer.current={scope:scopeKey,open,title,selected,landscape};onDirtyChange(!!title||selected.length>0||!landscape);},[buffer,scopeKey,open,title,selected,landscape,onDirtyChange]);
+  useEffect(()=>()=>onDirtyChange(false),[onDirtyChange]);
+  const eligible = (data?.projects || []).filter(project=>!isCompilation(project) && project.status === "ready" && project.review?.passed === true && !!(project.video_url || project.output?.video_path) && (project.account_profile_id || "default") === profile);
+  const knownLimit = Number.isInteger(maximum) && maximum >= 2;
+  const valid = !!profile && knownLimit && title.trim() && selected.length >= 2 && selected.length <= maximum && selected.every(id=>eligible.some(project=>project.id===id));
+  const disabled = busy || !!data?.busy;
+  const move = (index,offset) => setSelected(items=>{const next=[...items], other=index+offset;if(other<0||other>=next.length)return items;[next[index],next[other]]=[next[other],next[index]];return next;});
+  const assemble = async () => {
+    if (flight.current || disabled || !valid) return;
+    const owner=profile; flight.current=true;setBusy(true);setError("");setNotice("");
+    try { await request("/api/stories/compilations",{method:"POST",timeout:300000,body:{title:title.trim(),project_ids:[...selected],landscape,account_profile_id:owner}});if(mounted.current&&scope.current===owner){setSelected([]);setTitle("");setLandscape(true);setNotice("Compilation assembly started on your PC. Cancel or retry from its library project.");} }
+    catch(e){if(mounted.current&&scope.current===owner)setError(e.message||"Assembly could not start. Reload the library and retry.");}
+    finally{flight.current=false;if(mounted.current)setBusy(false);}
+  };
+  return <Card style={{marginBottom:20,gap:14}}>
+    <Button label="Make horror compilation" icon="albums-outline" accessibilityState={{expanded:open}} onPress={()=>setOpen(value=>!value)} />
+    {open && <>
+      <Text style={t.muted}>Choose finished, approved stories from this Hollow account. Their voices and visuals stay intact; silent opening and chapter cards join them into a new video.</Text>
+      {!profile || !knownLimit ? <Text style={t.error}>Compilation tools are unavailable. Reload the library after updating the PC app.</Text> : <Text style={t.faint}>Choose 2–{maximum} stories. The PC rechecks current source approvals before assembly.{Number.isFinite(data.compilation.opening_s)&&Number.isFinite(data.compilation.between_s)?` Opening card: ${data.compilation.opening_s}s · chapter cards: ${data.compilation.between_s}s.`:""}</Text>}
+      <Field label="Compilation title" value={title} onChangeText={setTitle} maxLength={data?.settings?.max_title_chars || 100} editable={!disabled} />
+      <View style={{flexDirection:"row",alignItems:"center",gap:14}}><View style={{flex:1}}><Text style={t.label}>Landscape compilation</Text><Text style={t.faint}>{landscape?"16:9 collection video":"Portrait collection video"}</Text></View><Switch accessibilityLabel="Landscape compilation" value={landscape} disabled={disabled} onValueChange={setLandscape} trackColor={{false:C.s4,true:C.emberLine}} thumbColor={landscape?C.ember:C.ink2} /></View>
+      <Text style={t.label}>Story order · {selected.length} selected</Text>
+      {!selected.length && <Text style={t.faint}>Add finished stories below, then arrange their order.</Text>}
+      {selected.map((id,index)=>{const story=eligible.find(project=>project.id===id),name=story?.title||"Source no longer eligible";return <View key={id} style={{gap:6,padding:14,borderRadius:8,backgroundColor:C.s2}}><Text style={t.body}>{index+1}. {name}</Text><View style={{flexDirection:"row",gap:10}}><IconButton icon="arrow-up-outline" label={`Move ${name} up`} disabled={disabled||index===0} onPress={()=>move(index,-1)} /><IconButton icon="arrow-down-outline" label={`Move ${name} down`} disabled={disabled||index===selected.length-1} onPress={()=>move(index,1)} /><IconButton icon="close-outline" label={`Remove ${name} from compilation`} disabled={disabled} onPress={()=>setSelected(items=>items.filter(value=>value!==id))} /></View></View>;})}
+      <Text style={t.label}>Add a finished story</Text>
+      {eligible.filter(project=>!selected.includes(project.id)).map(project=><Pressable key={project.id} accessibilityRole="button" accessibilityLabel={`Add ${project.title} to compilation`} disabled={disabled||!knownLimit||selected.length>=maximum} accessibilityState={{disabled:disabled||!knownLimit||selected.length>=maximum}} onPress={()=>setSelected(items=>items.includes(project.id)||items.length>=maximum?items:[...items,project.id])} style={({pressed})=>({minHeight:48,padding:14,borderRadius:8,backgroundColor:pressed?C.s3:C.s2,flexDirection:"row",gap:10,alignItems:"center",opacity:(disabled||selected.length>=maximum)?0.55:1})}><Text style={[t.body,{flex:1}]}>{project.title}</Text><Icon name="add-outline" color={C.ember} /></Pressable>)}
+      {!eligible.length && <Text style={t.faint}>No eligible finished stories in this account. Render and approve at least two individual stories first.</Text>}
+      {!!data?.busy && <Text accessibilityLiveRegion="polite" style={t.faint}>Hollow production is already in progress. New assembly waits until it finishes.</Text>}
+      {!!error && <Text accessibilityRole="alert" style={t.error}>{error}</Text>}
+      {!!notice && <Text accessibilityLiveRegion="polite" style={[t.muted,{color:C.good}]}>{notice}</Text>}
+      <Button label="Assemble compilation" kind="primary" disabled={disabled||!valid} busy={busy} onPress={assemble} />
+      <Button label="Reload compilation sources" disabled={busy} onPress={load} />
+    </>}
+  </Card>;
+}
+
 function Project({ project, request, host, token, publishing, onUnauthorized, onError, onDirtyChange, workspaceActive }) {
+  const compilation = isCompilation(project);
   const bufferKey = `${host}:${token}:${project.id}`, buffer = projectBuffers.get(bufferKey);
   const [open, setOpen] = useState(!!buffer), [preview, setPreview] = useState(false), [busy, setBusy] = useState("");
   const [title, setTitle] = useState(buffer?.title ?? project.title ?? ""), [script, setScript] = useState(buffer?.script ?? project.script ?? "");
@@ -155,7 +206,7 @@ function Project({ project, request, host, token, publishing, onUnauthorized, on
     try { await request(`${projectPath(project.id)}${name === "save" ? "" : `/${name}`}`, { method: name === "save" ? "PUT" : "POST", ...(body ? { body } : {}) }); if (name === "save") setDirty(false); }
     catch (e) { onError(e.message); } finally { setBusy(""); }
   };
-  const save = () => action("save", { title, script, ...(script === project.script ? { scenes: sceneEdits } : {}), public_copy: { ...project.public_copy, youtube: { ...project.public_copy?.youtube, title: publicTitle, description } } });
+  const save = () => action("save", { title, ...(!compilation?{script,...(script === project.script ? { scenes: sceneEdits } : {})}:{}), public_copy: { ...project.public_copy, youtube: { ...project.public_copy?.youtube, title: publicTitle, description } } });
   const remove = () => {
     const message = `Delete “${project.title || "Untitled story"}” and its production files? Published posts will stay online.`;
     const confirm = async () => { try { await request(projectPath(project.id), { method: "DELETE" }); } catch (e) { onError(e.message); } };
@@ -166,34 +217,35 @@ function Project({ project, request, host, token, publishing, onUnauthorized, on
   return <Card style={{ marginBottom: 16 }}>
     <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} style={({ pressed }) => ({ minHeight: 44, opacity: pressed ? 0.7 : 1, gap: 8 })}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}><Text style={[t.h2, { flex: 1 }]}>{project.title || project.topic || "Untitled story"}</Text><Pill label={(project.status || "draft").replace(/_/g, " ")} tone={project.status === "ready" ? "good" : project.status === "failed" ? "bad" : active ? "live" : "plain"} /></View>
-      <Text style={t.faint}>{project.genre?.replace(/_/g, " ")} · {project.format === "animated" ? "Animated" : "Illustrated"} · {Math.round(project.duration_s || 0)}s</Text>
+      <Text style={t.faint}>{compilation?`Horror compilation · ${project.compilation?.landscape===false?"Portrait":"Landscape"}`:`${project.genre?.replace(/_/g, " ") || "Story"} · ${project.format === "animated" ? "Animated" : "Illustrated"}`} · {Math.round(project.duration_s || 0)}s</Text>
     </Pressable>
     {active && <View style={{ marginTop: 12, gap: 8 }}><View style={{ height: 3, backgroundColor: C.s4 }}><View style={{ height: 3, width: `${Math.max(0, Math.min(1, Number(project.progress) || 0)) * 100}%`, backgroundColor: C.ember }} /></View><Text accessibilityLiveRegion="polite" style={t.faint}>{project.status} · {Math.round((Number(project.progress) || 0) * 100)}%</Text><Button small label="Cancel production" busy={busy === "cancel"} onPress={() => action("cancel")} /></View>}
     {!!project.error && <Text style={[t.error, { marginTop: 12 }]}>{text(project.error)}</Text>}
     {open && <View style={{ gap: 16, marginTop: 20 }}>
-      {!!project.review && <View style={{ gap: 6, borderLeftWidth: 2, borderLeftColor: project.review.passed ? C.good : C.ember, paddingLeft: 12 }}><Text style={t.label}>Private story review · {project.review.passed ? "Passed" : "Needs review"}</Text><Text style={t.muted}>{text(project.review.reason)}</Text>{(project.review.issues || []).map((issue, i) => <Text key={i} style={t.faint}>{text(issue)}</Text>)}</View>}
+      {!!project.review && <View style={{ gap: 6, borderLeftWidth: 2, borderLeftColor: project.review.passed ? C.good : C.ember, paddingLeft: 12 }}><Text style={t.label}>{compilation?"Source approvals & technical assembly":"Private story review"} · {project.review.passed ? "Passed" : "Needs review"}</Text><Text style={t.muted}>{text(project.review.reason)}</Text>{compilation&&<Text style={t.faint}>This checks source approvals, assembled media and chapter timing. It is not a new creative jury review.</Text>}{(project.review.issues || []).map((issue, i) => <Text key={i} style={t.faint}>{text(issue)}</Text>)}</View>}
       <Field label="Project title" value={title} editable={!active && !busy} onChangeText={edit(setTitle)} maxLength={100} />
-      <Field label="Narrated manuscript" value={script} multiline editable={!active && !busy} onChangeText={edit(setScript)} inputStyle={{ minHeight: 220, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", lineHeight: 25 }} />
-      {script !== project.script && <Text style={t.faint}>Saving a revised manuscript rebuilds its scenes. Save it before adjusting scene direction.</Text>}
-      {!!sceneEdits.length && <View style={{ gap: 12 }}><Text style={t.label}>Scene direction</Text>{sceneEdits.map((scene, i) => <View key={scene.id || i} style={{ gap: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10 }}>
+      {!compilation&&<Field label="Narrated manuscript" value={script} multiline editable={!active && !busy} onChangeText={edit(setScript)} inputStyle={{ minHeight: 220, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif", lineHeight: 25 }} />}
+      {!compilation&&script !== project.script && <Text style={t.faint}>Saving a revised manuscript rebuilds its scenes. Save it before adjusting scene direction.</Text>}
+      {!compilation&&!!sceneEdits.length && <View style={{ gap: 12 }}><Text style={t.label}>Scene direction</Text>{sceneEdits.map((scene, i) => <View key={scene.id || i} style={{ gap: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10 }}>
         <Text style={[t.faint, { fontFamily: MONO }]}>SCENE {String(i + 1).padStart(2, "0")}</Text><Text style={t.muted}>{scene.narration}</Text>
         {Object.entries(visualOptions).map(([property, options]) => <Choices key={property} label={`Stage ${property}`} options={options} value={scene.visual?.[property] || options[0][0]} disabled={active || !!busy || script !== project.script}
           onChange={value => { setSceneEdits(items => items.map((s, index) => index === i ? { ...s, visual: { setting: "corridor", subject: "figure", action: "approach", ...s.visual, [property]: value } } : s)); setDirty(true); }} />)}
         <Field label="Illustration direction" value={scene.visual_prompt || ""} multiline editable={!active && !busy && script === project.script} onChangeText={value => { setSceneEdits(items => items.map((s, index) => index === i ? { ...s, visual_prompt: value } : s)); setDirty(true); }} />
         <Text style={t.faint}>Stage controls drive the shadow-theatre render. Illustration direction describes the scene for an image provider.</Text>
       </View>)}</View>}
+      {compilation&&<View style={{gap:10}}><Text style={t.label}>Measured chapters</Text>{(project.compilation?.chapters||[]).length?(project.compilation.chapters.map((chapter,index)=><View key={`${chapter.project_id||chapter.kind}-${index}`} style={{gap:4}}><Text style={t.body}>{chapter.title||`Chapter ${index+1}`}</Text><Text style={t.mono}>{chapterTime(chapter.start_s)}{Number.isFinite(chapter.end_s)?` – ${chapterTime(chapter.end_s)}`:""}</Text></View>)):<Text style={t.faint}>Chapter timestamps appear after the assembled video is measured.</Text>}</View>}
       <View style={{ gap: 12, paddingTop: 16, borderTopWidth: 1, borderTopColor: C.line }}><Text style={t.h2}>Public YouTube copy</Text><Field label="Video title" value={publicTitle} maxLength={100} editable={!active && !busy} onChangeText={edit(setPublicTitle)} /><Field label="Description" value={description} multiline maxLength={5000} editable={!active && !busy} onChangeText={edit(setDescription)} /><Text style={t.faint}>{(project.public_copy?.youtube?.hashtags || []).join(" ")}</Text></View>
-      {dirty && <Text style={t.faint}>Unsaved changes. Saving clears the previous approval and render; review the revised story before production.</Text>}
+      {dirty && <Text style={t.faint}>{compilation?"Unsaved metadata changes. Save, then reassemble if the PC invalidates the existing approval or output.":"Unsaved changes. Saving clears the previous approval and render; review the revised story before production."}</Text>}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <Button label="Save changes" disabled={!dirty || active || !!busy} busy={busy === "save"} onPress={save} />
-        <Button label="Review story" disabled={dirty || active || !!busy || !script} busy={busy === "review"} onPress={() => action("review")} />
-        <Button label="Render video" kind="primary" disabled={dirty || active || !!busy || !project.review?.passed} busy={busy === "render"} onPress={() => action("render")} />
+        {!compilation&&<Button label="Review story" disabled={dirty || active || !!busy || !script} busy={busy === "review"} onPress={() => action("review")} />}
+        <Button label={compilation?"Reassemble compilation":"Render video"} kind="primary" disabled={dirty || active || !!busy || (!compilation&&!project.review?.passed)} busy={busy === "render"} onPress={() => action("render")} />
         {["failed", "interrupted"].includes(project.status) && <Button label="Retry production" disabled={dirty || !!busy} busy={busy === "retry"} onPress={() => action("retry")} />}
         {!!project.video_url && <Button label={preview ? "Hide video" : "Preview video"} disabled={dirty || active} onPress={() => setPreview(!preview)} />}
         <Button label="Publish now" disabled={dirty || active || !!busy || !project.video_url || !project.review?.passed || !publishing?.config?.destinations?.length} busy={busy === "publish"} onPress={() => action("publish", { destinations: publishing.config.destinations })} />
         <Button label="Delete story" kind="danger" disabled={active || !!busy} onPress={remove} />
       </View>
-      {!project.review?.passed && <Text style={t.faint}>A passing story review is required before rendering and publishing.</Text>}
+      {!project.review?.passed && <Text style={t.faint}>{compilation?"Assembly validates approved source stories and the finished media before publishing.":"A passing story review is required before rendering and publishing."}</Text>}
       {!!records.length && <View style={{ gap: 8 }}><Text style={t.label}>Publishing history</Text>{records.map((r, i) => <View key={`${r.platform}-${i}`}><Text style={t.muted}>{r.platform || r.destination} · {r.status || "pending"}</Text>{!!r.error && <Text style={t.error}>{text(r.error)}</Text>}{!!r.url && <Text selectable style={t.faint}>{r.url}</Text>}</View>)}</View>}
       {preview && !dirty && <Preview host={host} token={token} project={project} onClose={() => setPreview(false)} onUnauthorized={onUnauthorized} />}
     </View>}
@@ -206,10 +258,11 @@ export default function Stories({ screen = "stories", studio, host, token, onUna
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(""), [failure, setFailure] = useState("");
   const [topicMode, setTopicMode] = useState("generated"), [direction, setDirection] = useState(""), [generatedTopic, setGeneratedTopic] = useState(""), [ideas, setIdeas] = useState([]);
   const [ideaProfile, setIdeaProfile] = useState(""), [selectedIdeaProfile, setSelectedIdeaProfile] = useState("");
-  const initialized = useRef(false), formEdits = useRef(false), learningEdits = useRef(false);
+  const initialized = useRef(false), formEdits = useRef(false), learningEdits = useRef(false), compilationEdits = useRef(false), compilationBuffer = useRef(null);
   const edited = useRef(new Set());
-  const reportDirty = useCallback(() => onDirtyChange?.({ dirty: formEdits.current || learningEdits.current || edited.current.size > 0, persistent: edited.current.size === 0 }), [onDirtyChange]);
+  const reportDirty = useCallback(() => onDirtyChange?.({ dirty: formEdits.current || learningEdits.current || compilationEdits.current || edited.current.size > 0, persistent: edited.current.size === 0 && !compilationEdits.current }), [onDirtyChange]);
   const projectDirty = useCallback((id, dirty) => { if (dirty) edited.current.add(id); else edited.current.delete(id); reportDirty(); }, [reportDirty]);
+  const compilationDirty = useCallback(value => { compilationEdits.current = value; reportDirty(); }, [reportDirty]);
   const memoryDirty = useCallback(value => { learningEdits.current = value; reportDirty(); }, [reportDirty]);
   const editForm = setter => value => { setter(value); formEdits.current = true; reportDirty(); };
   const suggest = async () => {
@@ -254,6 +307,7 @@ export default function Stories({ screen = "stories", studio, host, token, onUna
     </Card></Section>}
     {screen === "story-publishing" && <Publishing state={publishing} request={request} onError={setFailure} />}
     {screen === "story-library" && <Section title={`Production library${data?.projects ? ` · ${data.projects.length}` : ""}`} right={<Button small label="Refresh" busy={loading} onPress={load} />}>
+      <CompilationBuilder key={`${host}:${token}:${data?.account_profile_id || ""}`} data={data} request={request} load={load} buffer={compilationBuffer} scopeKey={`${host}:${token}:${data?.account_profile_id || ""}`} onDirtyChange={compilationDirty} />
       {!data?.projects?.length ? <Card><Empty icon="moon-outline" title="Your first story starts here" body="Choose a premise, genre and narrator. Manuscripts, scenes, final videos and publishing history stay together." /></Card> : data.projects.map(project => <Project key={project.id} project={project} request={request} host={host} token={token} publishing={publishing} onUnauthorized={onUnauthorized} onError={setFailure} onDirtyChange={projectDirty} workspaceActive={active} />)}
     </Section>}
     <Learning active={active} host={host} token={token} onUnauthorized={onUnauthorized} business="stories" onDirtyChange={memoryDirty} example={screen === "stories" && topicMode === "generated" && generatedTopic ? { title: "Selected story premise", text: generatedTopic, account_profile_id: selectedIdeaProfile } : data?.projects?.[0] ? { title: data.projects[0].title, text: data.projects[0].script || data.projects[0].topic, account_profile_id: data.projects[0].account_profile_id } : undefined} />

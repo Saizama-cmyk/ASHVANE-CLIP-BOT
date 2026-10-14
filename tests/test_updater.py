@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import os
 
 import httpx
 import pytest
@@ -135,6 +136,7 @@ def test_download_network_error_cleans_partial(tmp_path):
     assert not list(dl.iterdir())
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows process job integration")
 def test_installer_breaks_away_from_app_job(tmp_path, monkeypatch):
     exe = tmp_path / "Ashvane-Setup.exe"
     exe.write_bytes(PAYLOAD)

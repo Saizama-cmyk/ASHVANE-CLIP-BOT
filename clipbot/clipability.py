@@ -8,6 +8,7 @@ the item instead of rejecting it.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -276,6 +277,7 @@ class Clipability:
             body.pop("format")
             if ai.vision_disable_thinking:
                 body["think"] = False
+        self._last_request_model = body["model"]
         try:
             r = await self.http.post(f"{self.base}/api/chat", json=body, timeout=patience or ai.timeout_s)
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
@@ -326,6 +328,8 @@ class Clipability:
                             raise BadModelOutput("Required viewer_review object was omitted")
                         if require_review:
                             verdict = enforce_viewer_review(verdict, s)
+                        verdict["_judge"] = {"model": getattr(self, "_last_request_model", None),
+                            "system_prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
                         self.last_error = ""
                         return verdict
                     except BadModelOutput as exc:

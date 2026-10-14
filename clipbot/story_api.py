@@ -193,6 +193,15 @@ def install_story_routes(app, ctx) -> None:
         return operation(studio().create, topic, data.get("genre", cfg.default_genre),
                          data.get("format", cfg.default_format), data.get("duration_s", cfg.default_duration_s), data.get("voice", cfg.voice))
 
+    @router.post("/compilations")
+    async def compilation(request: Request):
+        data = await body(request, {"title", "project_ids", "landscape", "account_profile_id"})
+        current = studio().state()["account_profile_id"]
+        if data.get("account_profile_id") != current:
+            raise HTTPException(409, "The Hollow account profile changed. Reload the library before compiling")
+        return operation(studio().create_compilation, data.get("title", ""), data.get("project_ids"),
+                         data.get("landscape", True), current)
+
     @router.get("/projects/{project_id}")
     async def get(project_id: str):
         result = operation(studio().get, project_id)

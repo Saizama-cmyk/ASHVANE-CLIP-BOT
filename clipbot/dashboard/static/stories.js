@@ -3,6 +3,7 @@
 (() => {
   const byId = id => document.getElementById(id);
   let data = null, selected = null, edited = false, manuscriptChanged = false;
+  let compilationOrder = [], compilationProfile = "";
   let scenes = [], fetching = false, sending = false, initialized = false, publication = null, publicationEdited = false, composeDirty = false, ideaBusy = false, ideas = [], currentIdea = null;
   const working = new Set(["queued","directing","writing","judging","narrating","rendering"]);
   const names = {queued:"Queued",directing:"Directing",writing:"Writing manuscript",judging:"Reviewing story",draft:"Draft ready",needs_review:"Needs review",narrating:"Recording narration",rendering:"Rendering scenes",ready:"Video ready",failed:"Needs attention",interrupted:"Interrupted",cancelled:"Cancelled"};
@@ -13,28 +14,46 @@
   function project() { return data?.projects?.find(p=>p.id===selected)||null; }
   function active(p) { return !!p && working.has(p.status); }
   function label(value) { return names[value]||String(value||"Draft").replaceAll("_"," "); }
+  function formatName(format) { if(format==="compilation")return "Story compilation"; return format==="animated"?(data?.capabilities?.visual_provider?.generated_motion?"Generated animation":(data?.capabilities?.visual_provider?.id==="shadow_theatre"?"Shadow theatre":"Illustrated with motion")):"Still illustrations"; }
   function genreName(id) { return data?.genres?.find(g=>g.id===id)?.label||String(id||"Horror").replaceAll("_"," "); }
   function putProject(p) { if(!p?.id)return; data.projects=[p,...(data.projects||[]).filter(v=>v.id!==p.id)]; }
   function selectedDestinations() { return [...document.querySelectorAll('[name="story_destination"]:checked')].map(el=>el.value); }
   function publicData(p) { return p?.public_copy?.youtube||p?.public_copy||{}; }
   function updateDirty(value=true) { edited=value; byId("storiesSave").disabled=!value||sending; byId("storiesDiscard").disabled=!value||sending; byId("storiesSaveMessage").textContent=value?"Unsaved changes":"Saved on this PC"; renderControls(); }
   function renderControls() {
-    const p=project(), caps=data?.capabilities||{}, busy=active(p), canRender=!!caps.render_available;
+    const p=project(), caps=data?.capabilities||{}, busy=active(p), compilation=p?.kind==="compilation", canRender=compilation?!!caps.still_available:!!caps.render_available;
     byId("storiesCreate").disabled=!data||sending||ideaBusy||!!data.busy;
     byId("storiesIdeasGenerate").disabled=!data||sending||ideaBusy||!!data.busy;
     byId("storiesCreate").textContent=sending?"Working…":data?.busy?"Another story is in production":"Create story draft";
-    byId("storiesRender").disabled=!p||busy||!!data?.busy||sending||edited||!canRender||!p.script;
-    byId("storiesRenderReason").textContent=edited?"Save your edits before rendering.":busy?"Production is running. You can cancel below.":data?.busy?"Another story is using the production engine.":!canRender?(caps.reasons?.join(" ")||"Configure a narrator and visual provider in Story settings."):!p?.script?"A completed manuscript is needed before rendering.":"Render this saved manuscript with its scene direction and chosen narrator.";
+    byId("storiesRender").disabled=!p||busy||!!data?.busy||sending||edited||!canRender||(!compilation&&!p.script);
+    byId("storiesRenderReason").textContent=edited?"Save your edits before rendering.":busy?"Production is running. You can cancel below.":data?.busy?"Another story is using the production engine.":!canRender?(caps.reasons?.join(" ")||"Configure a narrator and visual provider in Story settings."):compilation?"Reassemble this collection from its saved story copies. Original voices and visuals are retained.":!p?.script?"A completed manuscript is needed before rendering.":"Render this saved manuscript with its scene direction and chosen narrator.";
     byId("storiesCancel").hidden=!busy; byId("storiesRetry").hidden=!p||!["failed","interrupted","cancelled"].includes(p.status);
     byId("storiesDelete").disabled=busy||sending;
-    byId("storiesReview").disabled=!p||busy||!!data?.busy||sending||edited||!p.script;
+    byId("storiesReview").disabled=!p||compilation||busy||!!data?.busy||sending||edited||!p.script;
+    byId("storiesRender").textContent=compilation?"Reassemble compilation":"Render narrated video";
+    byId("storiesCompilationCreate").disabled=!data||sending||!!data?.busy||compilationOrder.length<2;
     const publish=byId("storiesPublishNow"); if(publish)publish.disabled=!p||p.status!=="ready"||edited||sending||!selectedDestinations().length;
   }
+  function renderCompilation(){
+    if(!data)return;
+    const profile=data.account_profile_id||'default';
+    if(compilationProfile&&compilationProfile!==profile){compilationOrder=[];byId('storiesCompilationTitle').value='';message('storiesCompilationStatus','Profile changed. Choose stories from this Hollow profile.');}
+    compilationProfile=profile;
+    const eligible=(data.projects||[]).filter(p=>p.kind!=='compilation'&&p.status==='ready'&&p.review?.passed===true&&(p.account_profile_id||'default')===profile);
+    compilationOrder=compilationOrder.filter(id=>eligible.some(p=>p.id===id));
+    const pick=byId('storiesCompilationPick'),before=pick.value,available=eligible.filter(p=>!compilationOrder.includes(p.id));
+    pick.innerHTML=available.length?available.map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join(''):'<option value="">No other finished stories</option>';
+    if(available.some(p=>p.id===before))pick.value=before;
+    byId('storiesCompilationAdd').disabled=!available.length||sending||compilationOrder.length>=(data.compilation?.max_stories||2);
+    byId('storiesCompilationOrder').innerHTML=compilationOrder.map((id,index)=>`<li><span>${esc(eligible.find(p=>p.id===id)?.title||'Story')}</span><div><button class="btn ghost" type="button" data-compilation-move="${index}" data-step="-1" aria-label="Move story ${index+1} earlier" ${index===0?'disabled':''}>↑</button><button class="btn ghost" type="button" data-compilation-move="${index}" data-step="1" aria-label="Move story ${index+1} later" ${index===compilationOrder.length-1?'disabled':''}>↓</button><button class="btn ghost" type="button" data-compilation-remove="${index}" aria-label="Remove story ${index+1}">×</button></div></li>`).join('');
+    byId('storiesCompilationCreate').disabled=!data||sending||!!data.busy||compilationOrder.length<2;
+  }
   function renderLibrary() {
+    renderCompilation();
     const all=data?.projects||[], query=byId("storiesLibrarySearch").value.trim().toLowerCase();
     const list=all.filter(p=>`${p.title||""} ${p.topic||""} ${p.genre||""}`.toLowerCase().includes(query));
     byId("storiesLibraryCount").textContent=`${all.length} saved`;
-    byId("storiesLibrary").innerHTML=list.length?list.map(p=>`<button type="button" class="story-library-item" data-story-id="${esc(p.id)}" aria-current="${p.id===selected}"><strong>${esc(p.title||"Untitled story")}</strong><span class="story-library-meta">${esc(genreName(p.genre))} · ${p.format==="animated"?"Animated":"Illustrated"} · ${esc(p.duration_s)}s</span><span class="stories-status ${esc(p.status)}">${esc(label(p.status))}</span></button>`).join(""):`<p class="stories-library-empty">${query?"No stories match this search. Try another title or genre.":"Your first story starts with a premise above. Completed drafts and videos stay here."}</p>`;
+    byId("storiesLibrary").innerHTML=list.length?list.map(p=>`<button type="button" class="story-library-item" data-story-id="${esc(p.id)}" aria-current="${p.id===selected}"><strong>${esc(p.title||"Untitled story")}</strong><span class="story-library-meta">${esc(genreName(p.genre))} · ${esc(formatName(p.format))} · ${esc(p.duration_s)}s</span><span class="stories-status ${esc(p.status)}">${esc(label(p.status))}</span></button>`).join(""):`<p class="stories-library-empty">${query?"No stories match this search. Try another title or genre.":"Your first story starts with a premise above. Completed drafts and videos stay here."}</p>`;
   }
   function renderScenes() {
     byId("storiesScenes").innerHTML=scenes.map((s,i)=>`<section class="story-scene" data-scene="${i}"><div class="story-scene-heading"><h3>Scene ${i+1}</h3><button class="btn ghost" type="button" data-remove-scene="${i}">Remove scene ${i+1}</button></div><div class="story-scene-grid"><div class="stories-field"><label for="story-narration-${i}">Narration</label><textarea class="scene-narration" id="story-narration-${i}" data-scene-field="narration" data-index="${i}" rows="5">${esc(s.narration||"")}</textarea></div><div class="stories-field"><label for="story-direction-${i}">Visual direction</label><textarea id="story-direction-${i}" data-scene-field="visual_prompt" data-index="${i}" rows="5">${esc(s.visual_prompt||"")}</textarea></div></div><div class="story-stage-controls">${[{key:"setting",label:"Stage setting",values:["corridor","forest","street","room","station"]},{key:"subject",label:"Subject",values:["figure","creature","none"]},{key:"action",label:"Scene motion",values:["approach","reveal","vanish","follow","wait"]}].map(control=>`<div class="stories-field"><label for="story-${control.key}-${i}">${control.label}</label><select id="story-${control.key}-${i}" data-scene-field="visual_${control.key}" data-index="${i}">${control.values.map(value=>`<option value="${value}" ${(s.visual?.[control.key]||({setting:"corridor",subject:"figure",action:"wait"})[control.key])===value?"selected":""}>${value.charAt(0).toUpperCase()+value.slice(1)}</option>`).join("")}</select></div>`).join("")}</div><p class="story-asset-note">Stage controls direct the original shadow theatre. Visual direction guides any configured image provider.</p>${s.asset_path?'<p class="story-asset-note">This scene has a saved visual asset.</p>':""}</section>`).join("")||'<p class="stories-library-empty">No scenes yet. Add a scene or save a manuscript to build the scene sequence.</p>';
@@ -42,10 +61,16 @@
   function renderProject(fill=false) {
     const p=project(); byId("storiesEmpty").hidden=!!p; byId("storiesEditor").hidden=!p;
     if(!p){renderControls();return;}
+    const compilation=p.kind==='compilation';
+    byId('storyScript').readOnly=compilation;
+    byId('storyScript').placeholder=compilation?'The original story audio is retained in this compilation. Edit individual manuscripts before adding them.':'The spoken story will appear here when the draft is ready.';
+    byId('storyManuscriptNote').textContent=compilation?'Compilation chapters and voices come from the selected finished videos.':'Read the whole story, then refine its scene direction before rendering.';
+    byId('story-tab-scenes').hidden=compilation;
+    if(compilation&&!byId('story-pane-scenes').hidden)byId('story-tab-public').click();
     storyDraftMemory.setScope({account_profile_id:p.account_profile_id||'default'});
     byId("storiesEditorHeading").textContent=p.title||"Untitled story";
     byId("storiesProjectStatus").textContent=label(p.status); byId("storiesProjectStatus").className=`stories-status ${p.status||""}`;
-    byId("storiesProjectMeta").textContent=`${genreName(p.genre)} · ${p.format==="animated"?"Animated scenes":"Still illustrations"} · ${p.duration_s}s requested${p.voice?` · ${p.voice}`:""}`;
+    byId("storiesProjectMeta").textContent=`${genreName(p.genre)} · ${esc(formatName(p.format))} · ${p.duration_s}s requested${p.voice?` · ${p.voice}`:""}`;
     const job=data?.job?.project_id===p.id?data.job:null, progress=Math.round(Math.min(1,Math.max(0,Number(job?.progress??p.progress)||0))*100);
     byId("storiesJob").hidden=!active(p)&&!p.error; byId("storiesJobStage").textContent=label(job?.stage||p.status);
     byId("storiesJobPercent").textContent=`${progress}%`; byId("storiesJobProgress").value=progress;
@@ -80,7 +105,8 @@
   function renderReadiness() {
     const c=data?.capabilities||{};
     byId("storiesReadiness").innerHTML=`<p><strong>Narrator</strong> · ${c.narrator_available?"Available locally":"Not available"}</p><p><strong>Visuals</strong> · ${esc(c.visual_provider?.label||"Checking provider")}</p>${(c.reasons||[]).map(r=>`<p>${esc(r)}</p>`).join("")}`;
-    byId("storiesFormatNote").textContent=document.querySelector('[name="story_format"]:checked')?.value==="animated"?(c.animated_available?"Animated scene production is available.":"Animated production needs a configured visual provider."):(c.still_available?"Still illustration production is available.":"Still production needs a configured visual provider.");
+    document.querySelectorAll('[name="story_format"]').forEach(input=>{const span=input.closest("label")?.querySelector("span");if(span){span.querySelector("b").textContent=formatName(input.value);span.querySelector("small").textContent=c.visual_provider?.id==="shadow_theatre"?"Original shadow theatre":input.value==="animated"?(c.visual_provider?.generated_motion?"Local AI scene motion":"Cinematic art with restrained camera movement"):"Original cinematic AI artwork";}});
+    byId("storiesFormatNote").textContent=document.querySelector('[name="story_format"]:checked')?.value==="animated"?(c.animated_available?(c.visual_provider?.limitation||"Illustrated motion is available."):"Animated production needs a configured visual provider."):(c.still_available?"Still illustration production is available.":"Still production needs a configured visual provider.");
     byId("storiesCreateNote").textContent=data?.settings?.auto_render?"The director plans, the writer creates, and the reviewer checks your story. Passing drafts render automatically; publishing follows your Story publishing settings.":"The director plans, the writer creates, and the reviewer checks your story. Render the saved manuscript when it is ready.";
   }
   async function refresh(quiet=false) {
@@ -115,6 +141,9 @@
   byId('storiesCreateForm').addEventListener('input',()=>{composeDirty=true;});
   byId('storiesIdeasGenerate').onclick=async()=>{if(ideaBusy||sending)return;ideaBusy=true;renderControls();message('storiesIdeasStatus','Finding original story directions…');try{const result=await request('/api/stories/ideas',{method:'POST',json:{genre:byId('storiesGenre').value,format:document.querySelector('[name="story_format"]:checked').value,duration_s:Number(byId('storiesDuration').value),direction:byId('storiesDirection').value}});ideas=(result.ideas||[]).map(idea=>({...idea,account_profile_id:result.account_profile_id||'default'}));byId('storiesIdeas').innerHTML=ideas.map((idea,index)=>`<article class="creative-idea"><h4>${esc(idea.title)}</h4><p>${esc(idea.premise)}</p><p>${esc(idea.reason||'')}</p><button class="btn" type="button" data-story-idea="${index}">Use this premise</button></article>`).join('');message('storiesIdeasStatus',ideas.length?'Choose an idea, edit it, or create with an empty premise.':'No ideas returned. Try a different direction.');}catch(error){message('storiesIdeasStatus',error.message);}finally{ideaBusy=false;renderControls();}};
   byId('storiesIdeas').onclick=async event=>{const button=event.target.closest('[data-story-idea]');if(!button)return;const idea=ideas[Number(button.dataset.storyIdea)];if(byId('storiesTopic').value.trim()&&byId('storiesTopic').value!==idea.premise&&!await ask({title:'Replace this premise?',body:'The selected idea will replace the premise currently in Create.',ok:'Use premise',navigation:true}))return;currentIdea=idea;ideaFeedback.setScope({account_profile_id:idea.account_profile_id});byId('storiesTopic').value=idea.premise;composeDirty=true;byId('storiesIdeaFeedback').hidden=false;message('storiesIdeasStatus','Selected idea loaded. You can edit it before creating.');};
+  byId('storiesCompilationAdd').onclick=()=>{const id=byId('storiesCompilationPick').value;if(id&&!compilationOrder.includes(id))compilationOrder.push(id);renderCompilation();};
+  byId('storiesCompilationOrder').onclick=event=>{const move=event.target.closest('[data-compilation-move]'),remove=event.target.closest('[data-compilation-remove]');if(move){const from=Number(move.dataset.compilationMove),to=from+Number(move.dataset.step);if(to>=0&&to<compilationOrder.length)[compilationOrder[from],compilationOrder[to]]=[compilationOrder[to],compilationOrder[from]];}else if(remove)compilationOrder.splice(Number(remove.dataset.compilationRemove),1);renderCompilation();};
+  byId('storiesCompilationForm').onsubmit=async event=>{event.preventDefault();if(sending)return;if(edited&&!await ask({title:'Discard unsaved story changes?',navigation:true,body:'Save the current editor before starting a new collection.',ok:'Discard and compile',danger:true}))return;sending=true;renderControls();message('storiesCompilationStatus','Starting compilation assembly…');try{const result=projectBody(await request('/api/stories/compilations',{method:'POST',json:{title:byId('storiesCompilationTitle').value.trim(),project_ids:[...compilationOrder],landscape:byId('storiesCompilationLandscape').checked,account_profile_id:data.account_profile_id||'default'}}));putProject(result);selected=result.id;edited=false;compilationOrder=[];byId('storiesCompilationTitle').value='';renderLibrary();renderProject(true);message('storiesCompilationStatus','Assembly started. Your original stories stay intact.');await refresh();}catch(error){message('storiesCompilationStatus',error.message);}finally{sending=false;renderControls();renderCompilation();}};
   byId("storiesCreateForm").addEventListener("submit",async e=>{e.preventDefault();if(sending)return;if(edited&&!await ask({title:"Discard unsaved story changes?",navigation:true,body:"Starting a new story will replace the current editor. Save your edits first to keep them.",ok:"Discard and create",danger:true}))return;sending=true;renderControls();message("storiesCreateError","");try{const p=projectBody(await request("/api/stories/projects",{method:"POST",json:{topic_mode:document.querySelector('[name="story_topic_mode"]:checked').value,direction:byId("storiesDirection").value.trim(),topic:byId("storiesTopic").value.trim(),genre:byId("storiesGenre").value,format:document.querySelector('[name="story_format"]:checked').value,duration_s:Number(byId("storiesDuration").value),voice:byId("storiesVoice").value}}));putProject(p);selected=p.id;edited=false;composeDirty=false;manuscriptChanged=false;renderLibrary();renderProject(true);await refresh();}catch(err){message("storiesCreateError",err.message);}finally{sending=false;renderControls();}});
   byId("storiesLibrary").addEventListener("click",e=>{const b=e.target.closest('[data-story-id]');if(b)selectProject(b.dataset.storyId);});
   byId("storiesLibrarySearch").addEventListener("input",renderLibrary);
@@ -138,7 +167,7 @@
   byId("storiesPublishNow").addEventListener("click",async()=>{const p=project();if(!p)return;sending=true;renderControls();try{await request(`/api/stories/projects/${encodeURIComponent(p.id)}/publish`,{method:"POST",json:{destinations:selectedDestinations()}});toast("Story submitted to the publishing queue.");await refresh();}catch(err){message("storiesPublishError",err.message);}finally{sending=false;renderControls();}});
   window.addEventListener("beforeunload",e=>{if(window.storyHasUnsavedChanges()){e.preventDefault();e.returnValue="";}});
   window.loadStories=()=>{refresh();loadPublishing();};
-  window.storyHasUnsavedChanges=()=>edited||publicationEdited||composeDirty||window.creativeMemory.hasUnsaved('stories');
+  window.storyHasUnsavedChanges=()=>edited||publicationEdited||composeDirty||compilationOrder.length>0||!!byId('storiesCompilationTitle').value.trim()||window.creativeMemory.hasUnsaved('stories');
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&byId("view-stories").classList.contains("active"))refresh(true);});
   setInterval(()=>{if(!document.hidden&&byId("view-stories").classList.contains("active"))refresh(true);},4000);
   if(byId("view-stories").classList.contains("active"))window.loadStories();

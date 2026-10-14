@@ -7,11 +7,11 @@
     "icon": "./assets/icon-ios.png",
     "scheme": "ashvane",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#070A10",
+    "backgroundColor": "#05070D",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#070A10"
+      "backgroundColor": "#05070D"
     },
     "ios": {
       "bundleIdentifier": "app.ashvane.mobile",
@@ -40,7 +40,7 @@
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon-adaptive.png",
-        "backgroundColor": "#070A10"
+        "backgroundColor": "#05070D"
       },
       "icon": "./assets/icon-ios.png",
       "permissions": [
@@ -80,7 +80,7 @@
     ],
     "notification": {
       "icon": "./assets/icon-notification.png",
-      "color": "#070A10"
+      "color": "#05070D"
     },
     "web": {
       "favicon": "./assets/icon-ios.png"

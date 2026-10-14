@@ -18,6 +18,7 @@ import httpx
 from ..config import Settings, story_account_settings
 from ..util import ERR_SNIPPET
 from .base import PublishError, TokenStore
+from ..youtube_outcomes import ANALYTICS_SCOPE
 
 logger = logging.getLogger("clipbot.oauth")
 
@@ -94,9 +95,12 @@ class OAuthManager:
                 raise PublishError(f"Add the YouTube OAuth client ID and secret in Settings → {section}")
             self.cancel_pending(platform)
             self._states[state] = (platform, time.time())
+            scopes = YOUTUBE_SCOPES
+            if self.account_section == "accounts" and self.settings.analytics.youtube_outcomes_enabled:
+                scopes += " " + ANALYTICS_SCOPE
             return GOOGLE_AUTH_URL + "?" + urlencode({
                 "client_id": a.youtube_client_id, "redirect_uri": self.redirect_uri(platform),
-                "response_type": "code", "scope": YOUTUBE_SCOPES, "access_type": "offline",
+                "response_type": "code", "scope": scopes, "access_type": "offline",
                 "prompt": "consent", "include_granted_scopes": "true", "state": state})
         if platform == "tiktok":
             if not (a.tiktok_client_key and a.tiktok_client_secret):

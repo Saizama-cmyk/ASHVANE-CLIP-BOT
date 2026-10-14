@@ -21,6 +21,7 @@ from .config import Settings, ffmpeg_exe, streamlink_cmd
 from .models import Platform, StreamTarget
 from .sweeper import _remove, owned_buffer_folders, safe_buffer_folder, safe_cleanup_path
 from .util import Backoff, CmdTimeout, run_cmd, spawn, terminate
+from .storage_io import StorageIO
 
 logger = logging.getLogger("clipbot.capture")
 
@@ -45,25 +46,34 @@ def parse_segment_time(name: str) -> float | None:
     return time.mktime(time.strptime(m.group(1), "%Y%m%d%H%M%S"))
 
 
-def list_segments(folder: Path) -> list[Segment]:
+def _scan_segments(folder: Path) -> tuple[list[Segment], float | None]:
     """Complete segments (those with a successor), oldest first.
 
     A segment ends at the next one's start, or at its own last write if that is earlier —
     so a capture restart shows up as a gap instead of one impossibly long segment."""
     try:
-        entries = [(parse_segment_time(p.name), p) for p in folder.iterdir()]
+        entries = []
+        with os.scandir(folder) as listing:
+            for entry in listing:
+                stamp = parse_segment_time(entry.name)
+                if stamp is None or not entry.is_file(follow_symlinks=False):
+                    continue
+                try:
+                    entries.append((stamp, Path(entry.path), entry.stat(follow_symlinks=False).st_mtime))
+                except FileNotFoundError:
+                    continue
     except FileNotFoundError:
-        return []
-    timed = sorted((t, p) for t, p in entries if t is not None)
+        return [], None
+    timed = sorted(entries)
     out = []
-    for i, (t, p) in enumerate(timed[:-1]):
+    for i, (t, p, written) in enumerate(timed[:-1]):
         nxt = timed[i + 1][0]
-        try:
-            written = p.stat().st_mtime
-        except FileNotFoundError:
-            continue
         out.append(Segment(p, t, max(t, min(nxt, written))))
-    return out
+    return out, timed[-1][0] if timed else None
+
+
+def list_segments(folder: Path) -> list[Segment]:
+    return _scan_segments(folder)[0]
 
 
 def contiguous_run(segs: list[Segment], t: float, max_gap_s: float) -> list[Segment]:
@@ -118,11 +128,12 @@ class Capture:
     """One stream's capture processes and buffer folder."""
 
     def __init__(self, target: StreamTarget, settings: Settings, root: Path,
-                 kick_lookup: KickLookup | None) -> None:
+                 kick_lookup: KickLookup | None, storage_io: StorageIO | None = None) -> None:
         self.target = target
         self.settings = settings
         self.folder = root / f"{target.platform}_{re.sub(r'[^A-Za-z0-9_.-]', '_', target.login.lower())}"
         self.kick_lookup = kick_lookup
+        self.storage_io = storage_io
         self._task: asyncio.Task | None = None
         self._procs: list = []
         self._use_fallback = False
@@ -135,10 +146,32 @@ class Capture:
         self.audio_probe_s: float | None = None
         self._cleared = False
         self._last_lines: dict[str, str] = {}
+        # Immutable observations published by existing buffer workers. Dashboard reads
+        # must never enumerate/stat a capture drive on the shared asyncio engine loop.
+        self._buffer_observation: dict = {}
+        self._buffer_error = ""
 
     @property
     def key(self) -> str:
         return self.target.key
+
+    async def run_io(self, function, *args):
+        if self.storage_io is not None:
+            return await self.storage_io.run(function, *args)
+        return await asyncio.to_thread(function, *args)
+
+    async def read_segments(self):
+        return await self.run_io(self.segments)
+
+    @property
+    def cached_segments(self) -> tuple[Segment, ...]:
+        """Last complete buffer observation; never performs capture-drive I/O."""
+        return self._buffer_observation.get("complete", ())
+
+    def _reset_observation(self) -> None:
+        # A scan already in flight cannot publish files from before a clear/start.
+        self._buffer_observation = {"started": time.perf_counter()}
+        self._buffer_error = ""
 
     @property
     def running(self) -> bool:
@@ -147,6 +180,7 @@ class Capture:
     def start(self) -> None:
         if self.running:
             return
+        self._reset_observation()
         self._task = asyncio.create_task(self._supervise(), name=f"capture:{self.key}")
 
     async def stop(self) -> None:
@@ -170,7 +204,7 @@ class Capture:
         cap = self.settings.capture
         backoff = Backoff(cap.restart_backoff_min_s, cap.restart_backoff_max_s)
         if not self._cleared:  # stale files from an earlier run; keep the buffer across restarts
-            await asyncio.to_thread(self._clear_folder)
+            await self.run_io(self._clear_folder)
             self._cleared = True
         while True:
             produced = False
@@ -196,6 +230,7 @@ class Capture:
             await asyncio.sleep(delay)
 
     def _clear_folder(self) -> None:
+        self._reset_observation()
         if not safe_cleanup_path(self.folder.parent) or not safe_cleanup_path(self.folder):
             raise RuntimeError("capture buffer path is a root, link or junction; choose a dedicated buffer folder")
         if self.folder.exists():
@@ -203,11 +238,12 @@ class Capture:
                 raise RuntimeError("capture buffer contains unrelated files; choose a dedicated buffer folder")
             _remove(self.folder)
         self.folder.mkdir(parents=True, exist_ok=True)
+        self._reset_observation()
 
     async def _run_once(self) -> bool:
         """Run one capture attempt until it dies or stalls. Returns True if it produced."""
         s = self.settings
-        ffmpeg = ffmpeg_exe(s)
+        ffmpeg = await asyncio.to_thread(ffmpeg_exe, s)
         if not ffmpeg:
             raise RuntimeError("ffmpeg not found (Settings → Paths)")
         seg_args = ["-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-f", "segment",
@@ -252,10 +288,10 @@ class Capture:
                 await asyncio.sleep(s.capture.prune_interval_s)
                 if any(p.returncode is not None for p in self._procs):
                     break
-                newest = newest_segment_time(self.folder)
+                await self.run_io(self.prune)
+                newest = self._buffer_observation.get("newest")
                 if newest is not None and newest >= self.started_at - s.capture.segment_s:
                     produced = True
-                await asyncio.to_thread(self.prune)
                 last = newest if newest is not None and newest >= self.started_at else self.started_at
                 idle = time.time() - last
                 if idle > s.capture.stall_timeout_s + s.capture.segment_s:
@@ -295,11 +331,27 @@ class Capture:
 
     # ------------------------------------------------------------------ buffer access
     def segments(self) -> list[Segment]:
-        return list_segments(self.folder)
+        # Windows monotonic() can share a coarse clock tick across overlapping scans;
+        # the high-resolution monotonic counter preserves completion ordering.
+        started = time.perf_counter()
+        try:
+            segs, newest = _scan_segments(self.folder)
+        except OSError as exc:
+            self._buffer_error = str(exc)
+            raise
+        if started >= self._buffer_observation.get("started", 0):
+            self._buffer_observation = {
+                "started": started, "observed_at": time.time(), "newest": newest,
+                "segments": len(segs), "first": segs[0].start if segs else None,
+                "last": segs[-1].end if segs else None,
+                "complete": tuple(segs),
+            }
+            self._buffer_error = ""
+        return segs
 
     def prune(self) -> None:
         horizon = time.time() - self.settings.capture.buffer_s
-        for seg in list_segments(self.folder):
+        for seg in self.segments():
             if seg.end < horizon:
                 try:
                     seg.path.unlink()
@@ -313,14 +365,14 @@ class Capture:
 
         Measured at most once per segment and never more often than ``audio_cache_s``;
         callers feed the detector only when the segment name changes."""
-        segs = await asyncio.to_thread(self.segments)
+        segs = await self.read_segments()
         if not segs:
             return None
         newest = segs[-1]
         name, when, level = self._audio_cache
         if name == newest.path.name or time.time() - when < self.settings.capture.audio_cache_s:
             return (name, level) if name else None
-        ffmpeg = ffmpeg_exe(self.settings)
+        ffmpeg = await asyncio.to_thread(ffmpeg_exe, self.settings)
         if not ffmpeg:
             return None
         try:
@@ -335,18 +387,23 @@ class Capture:
         return newest.path.name, level
 
     def snapshot(self) -> dict:
-        segs = self.segments()
-        newest = newest_segment_time(self.folder)
+        observed = self._buffer_observation
+        if "observed_at" not in observed:
+            observed = {}
+        newest, last = observed.get("newest"), observed.get("last")
         now = time.time()
         return {"key": self.key, "status": self.status, "restarts": self.restarts,
-                "error": self.last_error, "segments": len(segs),
+                "error": self.last_error, "segments": observed.get("segments", 0),
+                "metadata_available": bool(observed), "metadata_error": self._buffer_error,
+                "metadata_updated_at": observed.get("observed_at"),
+                "metadata_age_s": round(max(0, now - observed["observed_at"]), 2) if observed else None,
                 "latest_segment_wall": newest,
                 "segment_open_age_s": round(max(0, now - newest), 2) if newest is not None else None,
-                "complete_segment_age_s": round(max(0, now - segs[-1].end), 2) if segs else None,
+                "complete_segment_age_s": round(max(0, now - last), 2) if last is not None else None,
                 "source_latency_s": None,  # Local filenames cannot measure provider/broadcaster delay.
                 "audio_sample_age_s": round(max(0, now - self.audio_sample_wall), 2) if self.audio_sample_wall is not None else None,
                 "audio_probe_s": round(self.audio_probe_s, 2) if self.audio_probe_s is not None else None,
-                "buffered_s": round(segs[-1].end - segs[0].start) if segs else 0}
+                "buffered_s": round(last - observed["first"]) if last is not None else 0}
 
 
 class CaptureManager:
@@ -354,6 +411,7 @@ class CaptureManager:
         self.settings = settings
         self.root = root
         self.kick_lookup = kick_lookup
+        self.storage_io = StorageIO(settings.capture.storage_workers)
         self.captures: dict[str, Capture] = {}
         self._retired: dict[Path, float] = {}
         self.paused = False
@@ -373,7 +431,7 @@ class CaptureManager:
             if key in self.captures:
                 self.captures[key].target = t
                 continue
-            cap = Capture(t, self.settings, self.root, self.kick_lookup)
+            cap = Capture(t, self.settings, self.root, self.kick_lookup, self.storage_io)
             self._retired.pop(cap.folder, None)
             self.captures[key] = cap
             if not self.paused:
@@ -396,6 +454,10 @@ class CaptureManager:
 
     def get(self, key: str) -> Capture | None:
         return self.captures.get(key)
+
+    async def close(self):
+        await self.stop_all()
+        self.storage_io.close()
 
     def cleanup_retired(self) -> None:
         """Delete buffer folders of streams no longer captured once they age out."""

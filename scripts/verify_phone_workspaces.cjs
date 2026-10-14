@@ -22,6 +22,11 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
     const req=route.request(),path=new URL(req.url()).pathname,method=req.method();
     if(method==='OPTIONS'){await route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'}});return;}
     const body=req.postData()?req.postDataJSON():null; calls.push({path,method});if(method!=='GET')mutations.push({path,method,body});
+    // Resonance reference metadata is independent of Social Studio reference uploads.
+    if(method==='GET'&&['/api/music/references/options','/api/music/references','/api/music/rap/capabilities'].includes(path)){
+      const referenceData=path.endsWith('/options')?{extensions:['.wav','.mp3','.mp4'],max_upload_bytes:10485760,max_lyrics_file_bytes:65536,max_notes_chars:2000,poll_ms:3000}:path.endsWith('/capabilities')?{describing:false,message:'Fixture listener unavailable'}:{references:[]};
+      await route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(referenceData)});return;
+    }
     let data={};
     if(path.startsWith('/api/music/media/')||path.startsWith('/api/music/reaper/media/')||path.startsWith('/api/social/assets/')){
       mediaHeaders.push({path,authorization:req.headers().authorization});

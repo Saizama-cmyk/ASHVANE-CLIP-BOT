@@ -43,6 +43,23 @@ def test_existing_ollama_is_reused_and_never_terminated(monkeypatch):
     asyncio.run(run())
 
 
+def test_core_alone_starts_local_dependencies(monkeypatch):
+    async def run():
+        settings = Settings()
+        for field in type(settings.businesses).model_fields:
+            setattr(settings.businesses, field, False)
+        settings.supervisor.enabled = True
+        service = LocalDependencies(SimpleNamespace(settings=settings))
+        service._ready = AsyncMock(return_value=True)
+        spawn = AsyncMock()
+        monkeypatch.setattr("clipbot.dependencies.spawn", spawn)
+        await service.ensure()
+        service._ready.assert_awaited_once()
+        assert service.message == "Local AI ready"
+        spawn.assert_not_awaited()
+    asyncio.run(run())
+
+
 def test_owned_ollama_starts_once_with_configured_host_and_closes(monkeypatch):
     async def run():
         settings = Settings()

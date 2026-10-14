@@ -22,6 +22,11 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
     const req=route.request(),path=new URL(req.url()).pathname,method=req.method();
     if(method==='OPTIONS'){await route.fulfill({status:204,headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'*'}});return;}
     const body=req.postData()?(path.endsWith('/references')?null:req.postDataJSON()):null; calls.push({path,method});if(method!=='GET')mutations.push({path,method,body});
+    // Resonance reference metadata is independent of Social Studio reference uploads.
+    if(method==='GET'&&['/api/music/references/options','/api/music/references','/api/music/rap/capabilities'].includes(path)){
+      const referenceData=path.endsWith('/options')?{extensions:['.wav','.mp3','.mp4'],max_upload_bytes:10485760,max_lyrics_file_bytes:65536,max_notes_chars:2000,poll_ms:3000}:path.endsWith('/capabilities')?{describing:false,message:'Fixture listener unavailable'}:{references:[]};
+      await route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(referenceData)});return;
+    }
     let data={};
     if(path.startsWith('/api/music/media/')||path.startsWith('/api/music/reaper/media/')||path.startsWith('/api/social/assets/')){
       mediaHeaders.push({path,authorization:req.headers().authorization});
@@ -53,7 +58,7 @@ const base = process.env.ASHVANE_PHONE_PREVIEW || 'http://127.0.0.1:8140';
     else if(path==='/api/stories/ideas')data={ideas:[{title:'Original fixture idea',premise:'A radio hears tomorrow',reason:'Original premise'}]};
     else if(path==='/api/stories/projects'&&method==='POST')data={ok:true,project:{id:'story-1'}};
     else if(path.endsWith('/ideas'))data={ideas:[{title:'Command spotlight',hook:'One original command',brief:'Show one real command with fresh footage.',reason:'Client-specific idea'}]};
-    else if(path.endsWith('/references')){assert.equal(req.headers().authorization,'Bearer fixture-token');assert.equal(req.headers()['x-style-profile'],'A');reference={id:'uploaded-reference',name:decodeURIComponent(req.headers()['x-filename']),kind:'text',reference:true,historical:false,analysis_status:'partial',analysis_summary:'Fixture text analysis'};data={ok:true,asset:reference};}
+    else if(method==='POST'&&path.startsWith('/api/social/clients/')&&path.endsWith('/references')){assert.equal(req.headers().authorization,'Bearer fixture-token');assert.equal(req.headers()['x-style-profile'],'A');reference={id:'uploaded-reference',name:decodeURIComponent(req.headers()['x-filename']),kind:'text',reference:true,historical:false,analysis_status:'partial',analysis_summary:'Fixture text analysis'};data={ok:true,asset:reference};}
     else if(path.endsWith('/style-profiles')&&method==='POST'){const profile={id:'custom-style',client_id:path.split('/')[4],...body};customProfiles.push(profile);data={ok:true,profile};}
     else if(path.endsWith('/style-profiles')){const id=path.split('/')[4];data={profiles:Object.entries(clients.find(c=>c.id===id)?.style_notes||{}).map(([key,instructions])=>({id:key,name:`Style ${key}`,instructions,client_id:id})).concat(customProfiles.filter(p=>p.client_id===id))};}
     else if(path.endsWith('/accounts')&&path.startsWith('/api/social/')){const id=path.split('/')[4];data={public_handles:clients.find(row=>row.id===id).public_handles,publishing_available:false};}
